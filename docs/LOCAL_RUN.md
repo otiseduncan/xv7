@@ -146,7 +146,57 @@ The launcher:
 
 ---
 
-## 4. Pull Ollama models
+## 4. Smoke test after launch
+
+After running the launcher, run the smoke proof script:
+
+```powershell
+python scripts/smoke_xv7_local.py
+```
+
+The smoke script checks:
+
+- `GET /health`
+- `GET /runtime/status`
+- `GET /runtime/ollama`
+- `GET /personas`
+- Protected-route auth behavior on `POST /sessions`:
+  - without key must return `401` when auth is configured
+  - with key header must not return `401`
+
+The script reads host ports from environment (with defaults):
+
+- `CORE_PORT` (default `8000`)
+- `WEBUI_PORT` (default `8080`)
+- `OLLAMA_PORT` (default `11434`)
+
+The summary table uses explicit states:
+
+- `configured`
+- `reachable`
+- `healthy`
+- `verified`
+- `not checked`
+- `failed`
+
+Exit behavior:
+
+- Exit `0` only when all required smoke checks pass.
+- Exit `1` when a required endpoint is down or auth behavior is incorrect.
+
+Security behavior:
+
+- API key values are never printed.
+- If auth probing needs a key, the script resolves it from process env first,
+  then `.env`, and always redacts printed output.
+
+What the smoke script does NOT do in this slice:
+
+- No browser automation.
+- No model generation prompt/response checks.
+- No GPU/mic/voice checks.
+
+## 5. Pull Ollama models
 
 After the stack starts, pull the models defined in `.env`:
 
@@ -163,7 +213,7 @@ docker exec xv7-ollama ollama list
 
 ---
 
-## 5. Stop the stack
+## 6. Stop the stack
 
 ```powershell
 docker compose down
@@ -177,7 +227,7 @@ docker compose down -v
 
 ---
 
-## 6. View logs
+## 7. View logs
 
 ```powershell
 # All services
@@ -192,7 +242,7 @@ Get-ChildItem runtime\logs\
 
 ---
 
-## 7. Local dev without Docker
+## 8. Local dev without Docker
 
 To run only the Core API (no Ollama, no WebUI):
 
@@ -214,7 +264,7 @@ The API will be available at `http://localhost:8000`.
 
 ---
 
-## 8. Environment variable reference
+## 9. Environment variable reference
 
 | Variable | Where used | Required | Notes |
 |---|---|---|---|
@@ -232,7 +282,7 @@ The API will be available at `http://localhost:8000`.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### docker compose up fails with "variable is not set"
 
