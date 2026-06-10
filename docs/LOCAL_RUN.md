@@ -381,6 +381,35 @@ Invoke-RestMethod -Method Delete `
 Remove-Variable coreApiKey -ErrorAction SilentlyContinue
 ```
 
+### Model profile control panel
+
+XV7 frontend now includes a local operator control panel for runtime model profile switching.
+
+Key points:
+
+- It is local/operator UI only for this deployment model.
+- It uses the authenticated backend profile switch API (`PUT /runtime/models/active`, `DELETE /runtime/models/active`).
+- It does not edit `.env` startup configuration.
+- It does not pull or delete models.
+- `.env` still controls startup default profile (`XV7_MODEL_PROFILE`).
+- Runtime override can be cleared at any time.
+- UI active selection is backed by `GET /runtime/models/active` and refreshed with `GET /runtime/models` and `GET /runtime/models/effective`.
+
+Operator workflow:
+
+1. Open the dashboard at `http://localhost:3000`.
+2. In **Model Profile Control**, review active profile, source, resolved tags, availability, and Ollama reachability.
+3. Enter API key in the panel and select a profile.
+4. Click **Apply Runtime Override** to switch with availability guard enabled.
+5. Click **Clear Override** to fall back to env/default selection.
+
+Safety behavior shown in UI:
+
+- Warning text explicitly states runtime-only override semantics.
+- Apply is disabled until profile and API key requirements are met.
+- Clear is enabled only when a runtime override is active.
+- API key is held in component state and not echoed in panel output.
+
 ## 6. Pull Ollama models
 
 After the stack starts, pull the models required by your selected profile:

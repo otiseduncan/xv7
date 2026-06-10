@@ -89,6 +89,87 @@
           </div>
         </section>
 
+        <section class="space-y-3 rounded-xl border border-xv7-line bg-xv7-panelSoft p-4">
+          <header class="space-y-1">
+            <h2 class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Model Profile Control</h2>
+            <p class="text-xs text-amber-200/90">
+              Runtime override only. This does not edit .env and does not pull/delete models.
+            </p>
+          </header>
+
+          <dl class="space-y-2 text-sm">
+            <div class="flex items-center justify-between gap-3">
+              <dt class="text-slate-400">Active Profile</dt>
+              <dd id="modelActiveProfile" class="font-mono text-teal-200">loading</dd>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <dt class="text-slate-400">Profile Source</dt>
+              <dd id="modelProfileSource" class="font-mono text-teal-200">loading</dd>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <dt class="text-slate-400">Ollama Reachable</dt>
+              <dd id="modelOllamaReachable" class="font-mono text-teal-200">loading</dd>
+            </div>
+          </dl>
+
+          <div class="space-y-2">
+            <label for="modelProfileSelect" class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Select Profile</label>
+            <select
+              id="modelProfileSelect"
+              class="w-full rounded-xl border border-xv7-line bg-xv7-panel px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-teal-300"
+            ></select>
+          </div>
+
+          <div class="space-y-2">
+            <label for="modelApiKeyInput" class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">API Key</label>
+            <input
+              id="modelApiKeyInput"
+              type="password"
+              autocomplete="off"
+              class="w-full rounded-xl border border-xv7-line bg-xv7-panel px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-teal-300"
+              placeholder="Enter API key to apply override"
+            />
+            <p class="text-xs text-slate-400">Used only for this request and never shown back in UI output.</p>
+          </div>
+
+          <div class="flex gap-2">
+            <button
+              id="modelApplyButton"
+              class="flex-1 rounded-xl border border-teal-300/60 bg-teal-300/10 px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-teal-100 transition hover:bg-teal-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Apply Runtime Override
+            </button>
+            <button
+              id="modelClearButton"
+              class="flex-1 rounded-xl border border-amber-300/60 bg-amber-300/10 px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-amber-100 transition hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Clear Override
+            </button>
+          </div>
+
+          <div class="rounded-lg border border-xv7-line bg-slate-950/70 p-3">
+            <p class="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Resolved Models</p>
+            <ul class="space-y-1 text-xs text-slate-200">
+              <li>chat: <span id="modelResolvedChat" class="font-mono text-teal-200">-</span></li>
+              <li>reasoning: <span id="modelResolvedReasoning" class="font-mono text-teal-200">-</span></li>
+              <li>code: <span id="modelResolvedCode" class="font-mono text-teal-200">-</span></li>
+              <li>embedding: <span id="modelResolvedEmbedding" class="font-mono text-teal-200">-</span></li>
+            </ul>
+          </div>
+
+          <div class="rounded-lg border border-xv7-line bg-slate-950/70 p-3">
+            <p class="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Availability</p>
+            <ul class="space-y-1 text-xs text-slate-200">
+              <li>chat: <span id="modelAvailabilityChat" class="font-mono text-teal-200">-</span></li>
+              <li>reasoning: <span id="modelAvailabilityReasoning" class="font-mono text-teal-200">-</span></li>
+              <li>code: <span id="modelAvailabilityCode" class="font-mono text-teal-200">-</span></li>
+              <li>embedding: <span id="modelAvailabilityEmbedding" class="font-mono text-teal-200">-</span></li>
+            </ul>
+          </div>
+
+          <p id="modelPanelStatus" class="text-xs text-slate-300">Loading model profile state...</p>
+        </section>
+
         <section id="alertBox" class="hidden rounded-xl border border-xv7-danger/70 bg-red-500/10 p-3 text-sm text-red-100"></section>
       </aside>
 
