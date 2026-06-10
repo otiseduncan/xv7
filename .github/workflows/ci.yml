@@ -1,6 +1,7 @@
 name: xv7 CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, develop]
   pull_request:
@@ -103,3 +104,5 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/open-webui:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+
