@@ -16,7 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.agents.base_agent import BaseAgent
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
-from core.runtime.models_api import build_runtime_model_profiles, fetch_runtime_models
+from core.runtime.models_api import (
+    build_effective_runtime_models,
+    build_runtime_model_profiles,
+    fetch_runtime_models,
+)
 from core.runtime.ollama_status import fetch_ollama_status
 from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
@@ -226,6 +230,11 @@ async def runtime_active_model_profile(profile: str | None = None) -> dict[str, 
         "ollama": payload["ollama"],
         "config_error": payload["config_error"],
     }
+
+
+@app.get("/runtime/models/effective")
+async def runtime_effective_models(profile: str | None = None) -> dict[str, Any]:
+    return build_effective_runtime_models(profile_override=profile)
 
 
 @app.get("/personas")
