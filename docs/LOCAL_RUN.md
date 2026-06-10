@@ -222,6 +222,49 @@ What the smoke script does NOT do in this slice:
 
 ---
 
+## Operator readiness report
+
+Run this as the final launch proof after `docker compose up`:
+
+```powershell
+python scripts/operator_readiness_report.py
+python scripts/operator_readiness_report.py --profile local_test
+python scripts/operator_readiness_report.py --skip-chat-proof
+python scripts/operator_readiness_report.py --json
+```
+
+What this report verifies:
+
+- Core readiness (`/health`, `/runtime/status`, `/runtime/ollama`)
+- Runtime model endpoints (`/runtime/models`, `/runtime/models/active`, `/runtime/models/effective`)
+- Personas endpoint
+- Frontend and Open WebUI reachability (can be made optional with flags)
+- Ollama model inventory via `/api/tags`
+- Auth behavior on `POST /sessions`:
+  - without key must return `401`
+  - with key must return `201`
+- Chat proof (unless `--skip-chat-proof`):
+  - apply runtime override profile (default: `local_test`)
+  - send controlled prompt `Return exactly: XV7_OPERATOR_READY`
+  - verify safe `metadata.model_use_receipt`
+  - verify `model_use_receipt.model_tag` matches effective chat model
+  - clear runtime override if set by the script
+
+Safety guarantees:
+
+- Does not edit `.env`
+- Does not restart Docker
+- Does not pull or delete models
+- Redacts API keys (never prints key values)
+- Never claims success when required checks fail
+
+Exit behavior:
+
+- Exit `0` only when all required checks pass
+- Nonzero exit when any required check fails
+
+---
+
 ## 5. Model inventory and selection
 
 XV7 supports multiple model roles and multiple installed Ollama models. The
