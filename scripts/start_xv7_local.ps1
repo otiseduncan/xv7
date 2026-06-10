@@ -331,4 +331,5 @@ Write-Host ''
 Write-Host '  View all logs  : docker compose logs -f'
 Write-Host '  Stop the stack : docker compose down'
 Write-Host "  Compose log    : $composeLog"
+Write-Host '  Final launch proof: python scripts/operator_readiness_report.py'
 Write-Host ''
