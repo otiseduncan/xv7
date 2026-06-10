@@ -410,6 +410,61 @@ Safety behavior shown in UI:
 - Clear is enabled only when a runtime override is active.
 - API key is held in component state and not echoed in panel output.
 
+### Chat effective model proof
+
+Model profile display by itself is not enough to prove runtime chat model usage.
+XV7 now emits a safe model-use receipt in session message responses so operators can verify the actual selected profile/model used by the chat runtime path.
+
+What this proves:
+
+- Chat runtime model selection is driven by effective profile resolution.
+- The response metadata includes `model_profile`, `profile_source`, `runtime_role`, `model_tag`, `model_selection_source`, and `request_id`.
+- Raw model tags still live only in `config/models.yml`.
+- Runtime override can be set and cleared through authenticated profile endpoints.
+- Hidden reasoning and secrets are not included in the model-use receipt.
+
+PowerShell proof flow:
+
+```powershell
+# Read API key from .env into a temporary variable (do not print it)
+$coreApiKey = (Get-Content .env | Select-String '^CORE_API_KEY=' | Select-Object -First 1).Line.Split('=',2)[1].Trim()
+
+# Set runtime override to local_test
+Invoke-RestMethod -Method Put `
+  -Uri "http://localhost:8000/runtime/models/active" `
+  -Headers @{"X-XV7-API-Key"=$coreApiKey} `
+  -ContentType "application/json" `
+  -Body (@{ profile = "local_test"; require_available = $true } | ConvertTo-Json)
+
+# Confirm effective chat model
+$effective = Invoke-RestMethod -Method Get -Uri "http://localhost:8000/runtime/models/effective"
+$effective.effective_models.chat
+
+# Create session and send controlled prompt
+$session = Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8000/sessions" `
+  -Headers @{"X-XV7-API-Key"=$coreApiKey} `
+  -ContentType "application/json" `
+  -Body (@{ current_persona = "default" } | ConvertTo-Json)
+
+$message = Invoke-RestMethod -Method Post `
+  -Uri ("http://localhost:8000/sessions/{0}/messages" -f $session.session_id) `
+  -Headers @{"X-XV7-API-Key"=$coreApiKey} `
+  -ContentType "application/json" `
+  -Body (@{ raw_text = "Return exactly: XV7_MODEL_PROOF" } | ConvertTo-Json)
+
+# Inspect safe model-use receipt
+$message.metadata.model_use_receipt
+
+# Clear runtime override and verify fallback
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:8000/runtime/models/active" `
+  -Headers @{"X-XV7-API-Key"=$coreApiKey}
+
+# Cleanup local variables
+Remove-Variable coreApiKey, effective, session, message -ErrorAction SilentlyContinue
+```
+
 ## 6. Pull Ollama models
 
 After the stack starts, pull the models required by your selected profile:

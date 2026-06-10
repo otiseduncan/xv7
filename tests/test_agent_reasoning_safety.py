@@ -46,7 +46,8 @@ def test_agent_resolve_model_uses_registry_profile_for_chat_role(
 
     resolved = BaseAgent._resolve_model("default")
 
-    assert resolved == "qwen3:8b"
+    assert resolved.canonical_role == "chat"
+    assert resolved.model_tag == "qwen3:8b"
 
 
 def test_agent_resolve_model_does_not_use_legacy_model_default_env(
@@ -57,4 +58,4 @@ def test_agent_resolve_model_does_not_use_legacy_model_default_env(
 
     resolved = BaseAgent._resolve_model("default")
 
-    assert resolved == "qwen3:8b"
+    assert resolved.model_tag == "qwen3:8b"

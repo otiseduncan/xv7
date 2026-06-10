@@ -56,6 +56,7 @@ class Xv7UI {
       modelActiveProfile: document.getElementById('modelActiveProfile'),
       modelProfileSource: document.getElementById('modelProfileSource'),
       modelOllamaReachable: document.getElementById('modelOllamaReachable'),
+      modelEffectiveChat: document.getElementById('modelEffectiveChat'),
       modelProfileSelect: document.getElementById('modelProfileSelect'),
       modelApiKeyInput: document.getElementById('modelApiKeyInput'),
       modelApplyButton: document.getElementById('modelApplyButton'),
@@ -69,6 +70,12 @@ class Xv7UI {
       modelAvailabilityCode: document.getElementById('modelAvailabilityCode'),
       modelAvailabilityEmbedding: document.getElementById('modelAvailabilityEmbedding'),
       modelPanelStatus: document.getElementById('modelPanelStatus'),
+      chatReceiptProfile: document.getElementById('chatReceiptProfile'),
+      chatReceiptSource: document.getElementById('chatReceiptSource'),
+      chatReceiptRole: document.getElementById('chatReceiptRole'),
+      chatReceiptModelTag: document.getElementById('chatReceiptModelTag'),
+      chatReceiptSelectionSource: document.getElementById('chatReceiptSelectionSource'),
+      chatReceiptRequestId: document.getElementById('chatReceiptRequestId'),
     };
 
     this.bindEvents();
@@ -170,6 +177,10 @@ class Xv7UI {
     const activeProfile = typeof activePayload?.active_profile === 'string' ? activePayload.active_profile : 'unknown';
     const profileSource = typeof activePayload?.profile_source === 'string' ? activePayload.profile_source : 'unknown';
     const reachable = Boolean(activePayload?.ollama?.reachable);
+    const effectiveChatModel =
+      typeof this.modelPayload.effective?.effective_models?.chat === 'string'
+        ? this.modelPayload.effective.effective_models.chat
+        : '-';
     const availableProfiles = Array.isArray(modelsPayload?.available_profiles)
       ? modelsPayload.available_profiles.filter((item) => typeof item === 'string' && item.trim())
       : [];
@@ -177,6 +188,7 @@ class Xv7UI {
     this.els.modelActiveProfile.textContent = activeProfile;
     this.els.modelProfileSource.textContent = profileSource;
     this.els.modelOllamaReachable.textContent = reachable ? 'yes' : 'no';
+    this.els.modelEffectiveChat.textContent = effectiveChatModel;
     this.els.modelOllamaReachable.classList.toggle('text-teal-200', reachable);
     this.els.modelOllamaReachable.classList.toggle('text-red-300', !reachable);
 
@@ -412,6 +424,8 @@ class Xv7UI {
 
         this.appendMessageCard('assistant', assistantText || 'No assistant content returned.', reasoningText);
 
+        this.renderModelUseReceipt(data?.metadata?.model_use_receipt);
+
         this.memoryLogCount = messages.length;
         this.updateSessionTelemetry();
         this.renderRetrievalJournal(data);
@@ -610,6 +624,25 @@ class Xv7UI {
     } finally {
       window.clearTimeout(timeout);
     }
+  }
+
+  renderModelUseReceipt(receipt) {
+    const safeReceipt = receipt && typeof receipt === 'object' ? receipt : {};
+
+    this.els.chatReceiptProfile.textContent = this.receiptField(safeReceipt.model_profile);
+    this.els.chatReceiptSource.textContent = this.receiptField(safeReceipt.profile_source);
+    this.els.chatReceiptRole.textContent = this.receiptField(safeReceipt.runtime_role);
+    this.els.chatReceiptModelTag.textContent = this.receiptField(safeReceipt.model_tag);
+    this.els.chatReceiptSelectionSource.textContent = this.receiptField(
+      safeReceipt.model_selection_source,
+    );
+    this.els.chatReceiptRequestId.textContent = this.receiptField(safeReceipt.request_id);
+  }
+
+  receiptField(value) {
+    if (typeof value !== 'string') return '-';
+    const cleaned = value.trim();
+    return cleaned || '-';
   }
 }
 
