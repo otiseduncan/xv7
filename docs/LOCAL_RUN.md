@@ -215,7 +215,63 @@ What the smoke script does NOT do in this slice:
 - No model generation prompt/response checks.
 - No GPU/mic/voice checks.
 
-## 5. Pull Ollama models
+---
+
+## 5. Model inventory and selection
+
+XV7 supports multiple model roles and multiple installed Ollama models. The
+active chat model is selected by configuration; it is not assumed to be the
+only model present.
+
+List installed models directly from Ollama:
+
+```powershell
+docker exec xv7-ollama ollama list
+```
+
+Run model inventory/selection proof:
+
+```powershell
+python scripts/check_ollama_models.py
+```
+
+Override active chat model for local testing (without editing code):
+
+```powershell
+$env:MODEL_DEFAULT = "qwen2.5-coder:14b"
+python scripts/check_ollama_models.py
+```
+
+Or set it in `.env`:
+
+```env
+MODEL_DEFAULT=qwen2.5-coder:14b
+```
+
+The checker reports each role (`chat`, `embedding`, `reasoning`, `code`) with:
+
+- `configured`
+- `installed`
+- `missing`
+- `not checked`
+
+Important notes:
+
+- `EMBEDDING_MODEL` / `MODEL_EMBED` is separate from chat selection.
+- Smoke proof verifies runtime endpoints and auth behavior; it does **not**
+  generate a chat response.
+- `chat_model_available=false` means the configured selected chat model is not
+  installed or does not match the selected tag alias.
+
+Optional explicit pull flow (never automatic):
+
+```powershell
+python scripts/check_ollama_models.py --pull-missing
+```
+
+When used, the script prints exact model names before pulling.
+
+## 6. Pull Ollama models
 
 After the stack starts, pull the models defined in `.env`:
 
@@ -232,7 +288,7 @@ docker exec xv7-ollama ollama list
 
 ---
 
-## 6. Stop the stack
+## 7. Stop the stack
 
 ```powershell
 docker compose down
@@ -246,7 +302,7 @@ docker compose down -v
 
 ---
 
-## 7. View logs
+## 8. View logs
 
 ```powershell
 # All services
@@ -261,7 +317,7 @@ Get-ChildItem runtime\logs\
 
 ---
 
-## 8. Local dev without Docker
+## 9. Local dev without Docker
 
 To run only the Core API (no Ollama, no WebUI):
 
@@ -283,7 +339,7 @@ The API will be available at `http://localhost:8000`.
 
 ---
 
-## 9. Environment variable reference
+## 10. Environment variable reference
 
 | Variable | Where used | Required | Notes |
 |---|---|---|---|
@@ -301,7 +357,7 @@ The API will be available at `http://localhost:8000`.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### docker compose up fails with "variable is not set"
 
