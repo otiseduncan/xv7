@@ -8,13 +8,14 @@ from uuid import UUID
 
 import aiosqlite
 import httpx
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.agents.base_agent import BaseAgent
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
+from core.runtime.auth import require_api_key
 from core.runtime.ollama_status import fetch_ollama_status
 from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
@@ -215,6 +216,7 @@ async def get_personas() -> dict[str, Any]:
     "/sessions",
     response_model=SessionState,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_api_key)],
 )
 async def create_session(payload: CreateSessionRequest) -> SessionState:
     """Initialize and return a new active session state."""
@@ -224,13 +226,20 @@ async def create_session(payload: CreateSessionRequest) -> SessionState:
     )
 
 
-@app.get("/sessions/{session_id}", response_model=SessionState)
+@app.get(
+    "/sessions/{session_id}",
+    response_model=SessionState,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_session(session_id: UUID) -> SessionState:
     """Retrieve the current session state by id."""
     return await memory_manager.get_session(session_id)
 
 
-@app.put("/sessions/{session_id}/facts")
+@app.put(
+    "/sessions/{session_id}/facts",
+    dependencies=[Depends(require_api_key)],
+)
 async def update_session_facts(
     session_id: UUID, payload: UpdateFactsRequest
 ) -> dict[str, str]:
@@ -242,6 +251,7 @@ async def update_session_facts(
 @app.post(
     "/sessions/{session_id}/messages",
     response_model=SessionState,
+    dependencies=[Depends(require_api_key)],
 )
 async def add_session_message(
     session_id: UUID,
