@@ -110,6 +110,10 @@
               <dt class="text-slate-400">Ollama Reachable</dt>
               <dd id="modelOllamaReachable" class="font-mono text-teal-200">loading</dd>
             </div>
+            <div class="flex items-center justify-between gap-3">
+              <dt class="text-slate-400">Effective Chat Model</dt>
+              <dd id="modelEffectiveChat" class="max-w-[160px] truncate font-mono text-teal-200">loading</dd>
+            </div>
           </dl>
 
           <div class="space-y-2">
@@ -208,6 +212,21 @@
               [ SEND ]
             </button>
           </div>
+        </section>
+
+        <section class="mt-4 rounded-xl border border-xv7-line bg-xv7-panelSoft p-3">
+          <header class="mb-2 flex items-center justify-between gap-3">
+            <h2 class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Last Model Use Receipt</h2>
+            <span class="text-[11px] text-slate-400">Safe runtime proof metadata</span>
+          </header>
+          <ul class="space-y-1 text-xs text-slate-200">
+            <li>profile: <span id="chatReceiptProfile" class="font-mono text-teal-200">-</span></li>
+            <li>source: <span id="chatReceiptSource" class="font-mono text-teal-200">-</span></li>
+            <li>runtime role: <span id="chatReceiptRole" class="font-mono text-teal-200">-</span></li>
+            <li>model tag: <span id="chatReceiptModelTag" class="font-mono text-teal-200">-</span></li>
+            <li>selection source: <span id="chatReceiptSelectionSource" class="font-mono text-teal-200">-</span></li>
+            <li>request id: <span id="chatReceiptRequestId" class="font-mono text-teal-200">-</span></li>
+          </ul>
         </section>
       </main>
     </div>

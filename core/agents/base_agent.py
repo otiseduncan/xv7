@@ -6,6 +6,7 @@ import asyncio
 import os
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -15,7 +16,10 @@ except ImportError:  # pragma: no cover - handled at runtime if unavailable
     yaml = None
 
 from core.runtime.schemas import ConversationMessage, SessionState
-from core.runtime.model_registry import resolve_model_for_runtime_role
+from core.runtime.model_registry import (
+    RuntimeRoleModelResolution,
+    resolve_model_for_runtime_role,
+)
 
 
 class BaseAgent:
@@ -41,7 +45,10 @@ class BaseAgent:
         """Close the underlying HTTP client and free pooled connections."""
         await self._client.aclose()
 
-    async def generate_response(self, session_state: SessionState) -> str:
+    async def generate_response(
+        self,
+        session_state: SessionState,
+    ) -> tuple[str, dict[str, str]]:
         """Generate a model response from the full active session history.
 
         Args:
@@ -55,7 +62,23 @@ class BaseAgent:
             ValueError: If no usable response content is returned.
         """
         persona = self.personas.get(session_state.current_persona)
-        model = self._resolve_model(session_state.current_persona, persona)
+        model_resolution = self._resolve_model(session_state.current_persona, persona)
+        model = model_resolution.model_tag
+        if model is None:
+            raise ValueError(
+                f"No model configured for runtime role '{model_resolution.canonical_role}' in profile '{model_resolution.profile}'."
+            )
+
+        model_use_receipt = {
+            "model_profile": model_resolution.profile or "unknown",
+            "profile_source": self._public_profile_source(
+                model_resolution.profile_source
+            ),
+            "runtime_role": model_resolution.canonical_role,
+            "model_tag": model,
+            "model_selection_source": "registry_effective_profile",
+            "request_id": str(uuid4()),
+        }
 
         options: dict[str, Any] = {
             "num_ctx": 8192,
@@ -124,12 +147,12 @@ class BaseAgent:
         if not isinstance(content, str) or not content.strip():
             raise ValueError("Invalid Ollama response: missing assistant content")
 
-        return content
+        return content, model_use_receipt
 
     @staticmethod
     def _resolve_model(
         current_persona: str, persona: dict[str, Any] | None = None
-    ) -> str:
+    ) -> RuntimeRoleModelResolution:
         """Resolve runtime chat model from the centralized model registry."""
         role_alias = "chat"
         if isinstance(persona, dict):
@@ -137,13 +160,13 @@ class BaseAgent:
             if isinstance(role_override, str) and role_override.strip():
                 role_alias = role_override.strip()
 
-        resolved = resolve_model_for_runtime_role(role_alias)
-        if resolved.model_tag is None:
-            raise ValueError(
-                f"No model configured for runtime role '{resolved.canonical_role}' in profile '{resolved.profile}'."
-            )
+        return resolve_model_for_runtime_role(role_alias)
 
-        return resolved.model_tag
+    @staticmethod
+    def _public_profile_source(source: str) -> str:
+        if source == "registry_default":
+            return "default"
+        return source
 
     @staticmethod
     def _to_ollama_message(message: ConversationMessage) -> dict[str, str]:

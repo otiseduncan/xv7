@@ -407,7 +407,9 @@ async def add_session_message(
         transient_context = ConversationMessage(role="system", content=context_block)
         inference_state.messages.append(transient_context)
 
-    raw_response = await base_agent.generate_response(inference_state)
+    raw_response, model_use_receipt = await base_agent.generate_response(
+        inference_state
+    )
 
     updated_state = await memory_manager.add_message(
         session_id=session_id,
@@ -425,6 +427,8 @@ async def add_session_message(
         assistant_role=assistant_message.role,
         assistant_content=assistant_message.content,
     )
+    model_use_receipt["session_id"] = str(session_id)
+    updated_state.metadata["model_use_receipt"] = model_use_receipt
     updated_state.metadata["vector_memory"] = vector_memory_receipt
     await memory_manager.update_session(updated_state)
 

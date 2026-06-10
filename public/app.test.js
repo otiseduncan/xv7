@@ -46,6 +46,7 @@ function buildDom() {
     <span id="modelActiveProfile"></span>
     <span id="modelProfileSource"></span>
     <span id="modelOllamaReachable"></span>
+    <span id="modelEffectiveChat"></span>
     <select id="modelProfileSelect"></select>
     <input id="modelApiKeyInput" type="password" />
     <button id="modelApplyButton"></button>
@@ -59,6 +60,13 @@ function buildDom() {
     <span id="modelAvailabilityCode"></span>
     <span id="modelAvailabilityEmbedding"></span>
     <p id="modelPanelStatus"></p>
+
+    <span id="chatReceiptProfile"></span>
+    <span id="chatReceiptSource"></span>
+    <span id="chatReceiptRole"></span>
+    <span id="chatReceiptModelTag"></span>
+    <span id="chatReceiptSelectionSource"></span>
+    <span id="chatReceiptRequestId"></span>
   `;
 }
 
@@ -204,6 +212,31 @@ function createRuntimeFetchMock(options = {}) {
       });
     }
 
+    if (path === '/sessions' && method === 'POST') {
+      return okJson({ session_id: 'session-1', current_persona: 'default', metadata: {}, messages: [] });
+    }
+
+    if (path === '/sessions/session-1/messages' && method === 'POST') {
+      return okJson({
+        session_id: 'session-1',
+        current_persona: 'default',
+        metadata: {
+          model_use_receipt: {
+            model_profile: state.activeProfile,
+            profile_source: state.source,
+            runtime_role: 'chat',
+            model_tag: profiles[state.activeProfile].chat,
+            model_selection_source: 'registry_effective_profile',
+            request_id: 'req-1',
+          },
+        },
+        messages: [
+          { role: 'user', content: 'x' },
+          { role: 'assistant', content: 'XV7_MODEL_PROOF' },
+        ],
+      });
+    }
+
     return errorText(404, `${method} ${path} not mocked`);
   });
 }
@@ -235,6 +268,7 @@ describe('ModelProfileControl', () => {
     await flushAsync();
 
     expect(document.getElementById('modelActiveProfile').textContent).toBe('balanced');
+    expect(document.getElementById('modelEffectiveChat').textContent).toBe('qwen3:8b');
 
     const optionValues = [...document.querySelectorAll('#modelProfileSelect option')].map((item) => item.value);
     expect(optionValues).toEqual(['low_resource', 'balanced', 'local_test', 'large_code']);
@@ -283,6 +317,26 @@ describe('ModelProfileControl', () => {
       profile: 'local_test',
       require_available: true,
     });
+    expect(document.getElementById('modelEffectiveChat').textContent).toBe('qwen3:14b');
+  });
+
+  it('renders model-use receipt after send action', async () => {
+    const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Return exactly: XV7_MODEL_PROOF';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.getElementById('chatReceiptProfile').textContent).toBe('local_test');
+    expect(document.getElementById('chatReceiptModelTag').textContent).toBe('qwen3:14b');
+    expect(document.getElementById('chatReceiptRole').textContent).toBe('chat');
+    expect(document.getElementById('chatReceiptSelectionSource').textContent).toBe('registry_effective_profile');
+    expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
   });
 
   it('clear action sends DELETE /runtime/models/active with API key header', async () => {
