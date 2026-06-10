@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.agents.base_agent import BaseAgent
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
+from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
 from core.runtime.vector_store import VectorMemoryEngine
 
@@ -187,6 +188,11 @@ async def http_error_handler(request: Request, exc: httpx.HTTPError) -> JSONResp
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/runtime/status")
+async def runtime_status() -> dict:
+    return build_runtime_status()
 
 
 @app.get("/personas")
