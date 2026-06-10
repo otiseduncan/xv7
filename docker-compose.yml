@@ -159,7 +159,7 @@ services:
       - ENV=${ENV:-development}
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_BASE_URL=http://open-webui:8080
-      - CORE_API_KEY=${CORE_API_KEY:?CORE_API_KEY must be set}
+      - XV7_API_KEY=${CORE_API_KEY:?CORE_API_KEY must be set}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DB_PATH=${DB_PATH:-/app/data/xv7.db}
       - VECTOR_DB_PATH=${VECTOR_DB_PATH:-/app/data/vectors}

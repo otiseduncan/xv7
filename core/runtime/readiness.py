@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.runtime.auth import configured_api_key_source
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -160,29 +162,47 @@ def build_readiness_report(repo_root: Path | None = None) -> ReadinessReport:
         )
 
     # ------------------------------------------------------------------
-    # 3. API key
+    # 3. Runtime auth configuration
     # ------------------------------------------------------------------
-    api_key = _env_str("XV7_API_KEY")
-    if api_key:
+    xv7_api_key = _env_str("XV7_API_KEY")
+    core_api_key = _env_str("CORE_API_KEY")
+    auth_source = configured_api_key_source()
+
+    if auth_source is not None:
         report.add(
             ReadinessItem(
-                key="XV7_API_KEY",
-                value="configured",  # never print the actual key
+                key="runtime_auth_source",
+                value=auth_source,
                 ok=True,
             )
         )
     else:
         report.add(
             ReadinessItem(
-                key="XV7_API_KEY",
+                key="runtime_auth_source",
                 value="not_set",
                 ok=False,
                 warning=(
-                    "XV7_API_KEY is not set — protected routes will be unguarded "
-                    "when the server starts."
+                    "Runtime auth key is not set — configure XV7_API_KEY or "
+                    "CORE_API_KEY to protect mutation/session routes."
                 ),
             )
         )
+
+    report.add(
+        ReadinessItem(
+            key="XV7_API_KEY",
+            value="configured" if xv7_api_key else "not_set",
+            ok=True,
+        )
+    )
+    report.add(
+        ReadinessItem(
+            key="CORE_API_KEY",
+            value="configured" if core_api_key else "not_set",
+            ok=True,
+        )
+    )
 
     # ------------------------------------------------------------------
     # 4. Ollama base URL
