@@ -59,6 +59,13 @@ def test_init_env_script_exists() -> None:
     )
 
 
+def test_model_profile_switch_script_exists() -> None:
+    """scripts/set_xv7_model_profile.ps1 must exist for safe profile switching."""
+    assert (_SCRIPTS_DIR / "set_xv7_model_profile.ps1").is_file(), (
+        "scripts/set_xv7_model_profile.ps1 is missing"
+    )
+
+
 # ---------------------------------------------------------------------------
 # LOCAL_RUN.md existence and content checks
 # ---------------------------------------------------------------------------
@@ -86,6 +93,21 @@ def test_local_run_doc_references_launcher() -> None:
 def test_local_run_doc_references_init_script() -> None:
     """LOCAL_RUN.md must reference init_xv7_env.ps1."""
     assert "init_xv7_env.ps1" in _local_run_text()
+
+
+def test_local_run_doc_references_model_profile_switch_script() -> None:
+    """LOCAL_RUN.md must reference set_xv7_model_profile.ps1."""
+    assert "set_xv7_model_profile.ps1" in _local_run_text()
+
+
+def test_local_run_doc_references_model_profile_switch_commands() -> None:
+    """LOCAL_RUN.md must include documented switch command examples."""
+    text = _local_run_text()
+    assert ".\\scripts\\set_xv7_model_profile.ps1 -Profile balanced" in text
+    assert (
+        ".\\scripts\\set_xv7_model_profile.ps1 -Profile local_test -RestartCore" in text
+    )
+    assert ".\\scripts\\set_xv7_model_profile.ps1 -Profile low_resource -DryRun" in text
 
 
 def test_local_run_doc_references_force_rotate() -> None:
@@ -145,6 +167,10 @@ def _launcher_text() -> str:
     return (_SCRIPTS_DIR / "start_xv7_local.ps1").read_text(encoding="utf-8")
 
 
+def _profile_switcher_text() -> str:
+    return (_SCRIPTS_DIR / "set_xv7_model_profile.ps1").read_text(encoding="utf-8")
+
+
 def test_launcher_runs_readiness_check() -> None:
     """Launcher must invoke check_readiness.py."""
     assert "check_readiness.py" in _launcher_text()
@@ -193,3 +219,28 @@ def test_launcher_prints_repo_root() -> None:
     """Launcher must print the detected repo root."""
     text = _launcher_text()
     assert "Repo root" in text or "repoRoot" in text
+
+
+def test_profile_switch_script_references_valid_profiles() -> None:
+    """Profile switcher docs/help should mention all supported profiles."""
+    text = _profile_switcher_text()
+    assert "low_resource" in text
+    assert "balanced" in text
+    assert "local_test" in text
+    assert "large_code" in text
+
+
+def test_profile_switch_script_updates_only_profile_key() -> None:
+    """Profile switcher should write only XV7_MODEL_PROFILE in .env."""
+    text = _profile_switcher_text()
+    assert "Set-EnvValueInLines -Lines $lines -Key 'XV7_MODEL_PROFILE'" in text
+    assert "WEBUI_SECRET_KEY" not in text
+    assert "CORE_API_KEY" not in text
+    assert "XV7_API_KEY" not in text
+
+
+def test_profile_switch_script_does_not_print_secret_values() -> None:
+    """Profile switcher output should not expose sensitive values."""
+    text = _profile_switcher_text()
+    assert "<redacted>" not in text
+    assert "Write-Host $entries" not in text
