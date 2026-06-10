@@ -96,7 +96,8 @@ The script reports:
 - `XV7_API_KEY` — configured or not set (key is **never** printed)
 - `CORE_API_KEY` — configured or not set (key is **never** printed)
 - `OLLAMA_BASE_URL` — set or missing
-- `MODEL_DEFAULT` / `EMBEDDING_MODEL` — set or missing
+- `XV7_MODEL_PROFILE` — set or missing
+- `model_registry_file` — present or missing
 - `MEMORY_DB_PATH` / `VECTOR_DB_PATH` — set or missing
 - `docker-compose.yml` present
 
@@ -238,14 +239,14 @@ python scripts/check_ollama_models.py
 Override active chat model for local testing (without editing code):
 
 ```powershell
-$env:MODEL_DEFAULT = "qwen2.5-coder:14b"
-python scripts/check_ollama_models.py
+$env:XV7_MODEL_PROFILE = "local_test"
+python scripts/check_ollama_models.py --profile local_test
 ```
 
 Or set it in `.env`:
 
 ```env
-MODEL_DEFAULT=qwen2.5-coder:14b
+XV7_MODEL_PROFILE=local_test
 ```
 
 The checker reports each role (`chat`, `embedding`, `reasoning`, `code`) with:
@@ -255,9 +256,16 @@ The checker reports each role (`chat`, `embedding`, `reasoning`, `code`) with:
 - `missing`
 - `not checked`
 
+Profile presets in `config/models.yml`:
+
+- `low_resource`: `qwen3:1.7b` / `qwen3:8b` / `qwen3:8b` / `nomic-embed-text:latest`
+- `balanced`: `qwen3:8b` / `qwen3:14b` / `qwen3:14b` / `nomic-embed-text:latest`
+- `local_test`: `qwen3:14b` / `qwen3:14b` / `qwen3-coder:30b` / `nomic-embed-text:latest`
+- `large_code`: `qwen3-coder:30b` / `qwen3:14b` / `qwen3-coder:30b` / `nomic-embed-text:latest`
+
 Important notes:
 
-- `EMBEDDING_MODEL` / `MODEL_EMBED` is separate from chat selection.
+- `EMBEDDING_MODEL` / `MODEL_EMBED` role is separate from chat selection.
 - Smoke proof verifies runtime endpoints and auth behavior; it does **not**
   generate a chat response.
 - `chat_model_available=false` means the configured selected chat model is not
@@ -273,10 +281,13 @@ When used, the script prints exact model names before pulling.
 
 ## 6. Pull Ollama models
 
-After the stack starts, pull the models defined in `.env`:
+After the stack starts, pull the models required by your selected profile:
 
 ```powershell
-docker exec xv7-ollama ollama pull llama3
+docker exec xv7-ollama ollama pull qwen3:14b
+docker exec xv7-ollama ollama pull qwen3:8b
+docker exec xv7-ollama ollama pull qwen3:1.7b
+docker exec xv7-ollama ollama pull qwen3-coder:30b
 docker exec xv7-ollama ollama pull nomic-embed-text
 ```
 
@@ -347,8 +358,7 @@ The API will be available at `http://localhost:8000`.
 | `CORE_API_KEY` | Docker `.env` and runtime fallback | **Yes** (Docker) | Used when `XV7_API_KEY` is unset |
 | `XV7_API_KEY` | Local uvicorn and runtime preferred key | No | Preferred key when both are set |
 | `OLLAMA_BASE_URL` | Core runtime | No | Default: `http://ollama:11434` |
-| `MODEL_DEFAULT` | Core runtime | No | Default: `llama3` |
-| `EMBEDDING_MODEL` | Core runtime | No | Default: `nomic-embed-text` |
+| `XV7_MODEL_PROFILE` | Core runtime model selection | No | Profile key from `config/models.yml` (`balanced` default) |
 | `MEMORY_DB_PATH` | Core runtime | No | Default: `data/memory` |
 | `VECTOR_DB_PATH` | Core runtime | No | Default: `data/vectors` |
 | `CORE_PORT` | Docker | No | Default: `8000` |
@@ -374,7 +384,7 @@ docker compose logs xv7-core
 
 ```powershell
 docker exec xv7-ollama ollama list
-docker exec xv7-ollama ollama pull llama3
+python scripts/check_ollama_models.py --profile local_test
 ```
 
 ### Readiness check shows import errors

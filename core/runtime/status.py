@@ -4,6 +4,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from core.runtime.model_registry import (
+    configured_ollama_base_url,
+    resolve_active_models,
+)
+
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -26,6 +31,8 @@ def build_runtime_status() -> dict[str, Any]:
     microphone, model, or Ollama availability unless a future verifier proves it.
     """
 
+    resolution = resolve_active_models()
+
     return {
         "status": "ok",
         "platform": {
@@ -37,9 +44,15 @@ def build_runtime_status() -> dict[str, Any]:
             "name": os.getenv("XV7_ASSISTANT_NAME", "Xoduz"),
         },
         "ollama": {
-            "base_url": os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
-            "chat_model": os.getenv("MODEL_DEFAULT", "llama3"),
-            "embedding_model": os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
+            "base_url": configured_ollama_base_url(),
+            "profile": resolution.profile,
+            "profile_source": resolution.profile_source,
+            "chat_model": resolution.roles.get("chat"),
+            "embedding_model": resolution.roles.get("embedding"),
+            "reasoning_model": resolution.roles.get("reasoning"),
+            "code_model": resolution.roles.get("code"),
+            "role_aliases": resolution.role_aliases,
+            "config_error": resolution.error,
             "verified": False,
             "verification": "not_checked",
         },

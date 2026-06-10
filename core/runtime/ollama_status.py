@@ -1,29 +1,32 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import httpx
 
+from core.runtime.model_registry import (
+    configured_ollama_base_url,
+    configured_ollama_timeout_seconds,
+    resolve_active_models,
+)
+
 
 def _configured_base_url() -> str:
-    return os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+    return configured_ollama_base_url()
 
 
-def _configured_chat_model() -> str:
-    return os.getenv("MODEL_DEFAULT", "llama3")
+def _configured_chat_model() -> str | None:
+    resolution = resolve_active_models()
+    return resolution.roles.get("chat")
 
 
-def _configured_embedding_model() -> str:
-    return os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+def _configured_embedding_model() -> str | None:
+    resolution = resolve_active_models()
+    return resolution.roles.get("embedding")
 
 
 def _configured_timeout() -> float:
-    raw_value = os.getenv("OLLAMA_STATUS_TIMEOUT_SECONDS", "2.0")
-    try:
-        return max(0.1, float(raw_value))
-    except ValueError:
-        return 2.0
+    return configured_ollama_timeout_seconds()
 
 
 def _model_name(raw_model: Any) -> str | None:
@@ -38,7 +41,10 @@ def _model_name(raw_model: Any) -> str | None:
     return value or None
 
 
-def _model_matches(requested: str, available: str) -> bool:
+def _model_matches(requested: str | None, available: str) -> bool:
+    if requested is None:
+        return False
+
     requested = requested.strip()
     available = available.strip()
 
@@ -54,7 +60,7 @@ def _model_matches(requested: str, available: str) -> bool:
     return False
 
 
-def _has_model(requested: str, available_models: list[str]) -> bool:
+def _has_model(requested: str | None, available_models: list[str]) -> bool:
     return any(_model_matches(requested, model) for model in available_models)
 
 
@@ -67,6 +73,7 @@ async def fetch_ollama_status(
 ) -> dict[str, Any]:
     """Verify Ollama reachability and configured model visibility."""
 
+    resolution = resolve_active_models()
     resolved_base_url = (base_url or _configured_base_url()).rstrip("/")
     resolved_chat_model = chat_model or _configured_chat_model()
     resolved_embedding_model = embedding_model or _configured_embedding_model()
@@ -92,6 +99,10 @@ async def fetch_ollama_status(
         return {
             "reachable": True,
             "base_url": resolved_base_url,
+            "profile": resolution.profile,
+            "profile_source": resolution.profile_source,
+            "role_aliases": resolution.role_aliases,
+            "resolved_models": resolution.roles,
             "chat_model": resolved_chat_model,
             "embedding_model": resolved_embedding_model,
             "models": available_models,
@@ -104,11 +115,16 @@ async def fetch_ollama_status(
                 available_models,
             ),
             "error": None,
+            "config_error": resolution.error,
         }
     except Exception as exc:
         return {
             "reachable": False,
             "base_url": resolved_base_url,
+            "profile": resolution.profile,
+            "profile_source": resolution.profile_source,
+            "role_aliases": resolution.role_aliases,
+            "resolved_models": resolution.roles,
             "chat_model": resolved_chat_model,
             "embedding_model": resolved_embedding_model,
             "models": [],
@@ -118,6 +134,7 @@ async def fetch_ollama_status(
                 "type": type(exc).__name__,
                 "message": str(exc),
             },
+            "config_error": resolution.error,
         }
     finally:
         if should_close_client:

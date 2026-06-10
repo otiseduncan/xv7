@@ -107,7 +107,7 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY must be set}
       - WEBUI_AUTH=${WEBUI_AUTH:-true}
-      - DEFAULT_MODELS=${DEFAULT_MODELS:-llama3}
+      - DEFAULT_MODELS=${DEFAULT_MODELS:-}
       - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH:-false}
       - RAG_WEB_SEARCH_ENGINE=${RAG_WEB_SEARCH_ENGINE:-}
     depends_on:
@@ -165,10 +165,7 @@ services:
       - VECTOR_DB_PATH=${VECTOR_DB_PATH:-/app/data/vectors}
       - MEMORY_DB_PATH=${MEMORY_DB_PATH:-/app/data/memory}
       - ASSETS_PATH=${ASSETS_PATH:-/app/shared/assets}
-      - MODEL_DEFAULT=${MODEL_DEFAULT:-llama3}
-      - MODEL_REASONING=${MODEL_REASONING:-deepseek-r1:8b}
-      - MODEL_CODE=${MODEL_CODE:-qwen2.5-coder:7b}
-      - MODEL_EMBED=${MODEL_EMBED:-nomic-embed-text}
+      - XV7_MODEL_PROFILE=${XV7_MODEL_PROFILE:-balanced}
     depends_on:
       ollama:
         condition: service_healthy

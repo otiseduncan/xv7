@@ -25,9 +25,11 @@ def test_parse_ollama_tags_payload_handles_multiple_models() -> None:
 
     payload = {
         "models": [
-            {"name": "qwen2.5-coder:14b"},
-            {"model": "nomic-embed-text:latest"},
+            {"name": "qwen3:1.7b"},
+            {"name": "qwen3:8b"},
+            {"name": "qwen3:14b"},
             {"name": "qwen3-coder:30b"},
+            {"model": "nomic-embed-text:latest"},
         ]
     }
 
@@ -35,72 +37,98 @@ def test_parse_ollama_tags_payload_handles_multiple_models() -> None:
 
     assert models == [
         "nomic-embed-text:latest",
-        "qwen2.5-coder:14b",
         "qwen3-coder:30b",
+        "qwen3:1.7b",
+        "qwen3:14b",
+        "qwen3:8b",
     ]
-
-
-def test_active_chat_model_prefers_env_over_dotenv_and_defaults() -> None:
-    mod = _load_module()
-
-    value = mod.resolve_setting(
-        "MODEL_DEFAULT",
-        env={"MODEL_DEFAULT": "qwen2.5-coder:14b"},
-        dotenv={"MODEL_DEFAULT": "llama3"},
-        defaults={"MODEL_DEFAULT": "llama3.2"},
-    )
-
-    assert value == "qwen2.5-coder:14b"
 
 
 def test_14b_style_model_name_treated_as_normal() -> None:
     mod = _load_module()
 
-    assert mod.model_matches("qwen2.5-coder:14b", "qwen2.5-coder:14b") is True
-    assert mod.has_model("qwen2.5-coder:14b", ["qwen2.5-coder:14b"]) is True
+    assert mod.model_matches("qwen3:14b", "qwen3:14b") is True
+    assert mod.has_model("qwen3:14b", ["qwen3:14b"]) is True
 
 
 def test_missing_selected_chat_model_fails_required_check() -> None:
     mod = _load_module()
 
     checks = mod.build_role_checks(
-        active_chat_model="qwen2.5-coder:14b",
-        embedding_model="nomic-embed-text",
-        reasoning_model=None,
-        code_model=None,
-        installed_models=["nomic-embed-text:latest"],
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
+        installed_models=["nomic-embed-text:latest", "qwen3-coder:30b"],
+    )
+    alias_checks = mod.build_alias_checks(
+        role_aliases={"default": "chat", "model_embed": "embedding"},
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
     )
 
     chat = next(c for c in checks if c.role == "chat")
     assert chat.inventory_status == mod.STATUS_MISSING
-    assert mod.compute_exit_code(checks) == 1
+    assert mod.compute_exit_code(checks, alias_checks) == 1
 
 
 def test_installed_selected_chat_model_passes() -> None:
     mod = _load_module()
 
     checks = mod.build_role_checks(
-        active_chat_model="qwen2.5-coder:14b",
-        embedding_model="nomic-embed-text",
-        reasoning_model=None,
-        code_model=None,
-        installed_models=["qwen2.5-coder:14b", "nomic-embed-text:latest"],
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
+        installed_models=[
+            "qwen3:14b",
+            "nomic-embed-text:latest",
+            "qwen3-coder:30b",
+        ],
+    )
+    alias_checks = mod.build_alias_checks(
+        role_aliases={"default": "chat", "model_embed": "embedding"},
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
     )
 
     chat = next(c for c in checks if c.role == "chat")
     assert chat.inventory_status == mod.STATUS_INSTALLED
-    assert mod.compute_exit_code(checks) == 0
+    assert mod.compute_exit_code(checks, alias_checks) == 0
 
 
 def test_embedding_checked_separately_from_chat() -> None:
     mod = _load_module()
 
     checks = mod.build_role_checks(
-        active_chat_model="qwen2.5-coder:14b",
-        embedding_model="nomic-embed-text",
-        reasoning_model=None,
-        code_model=None,
-        installed_models=["qwen2.5-coder:14b"],
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
+        installed_models=["qwen3:14b", "qwen3-coder:30b"],
+    )
+    alias_checks = mod.build_alias_checks(
+        role_aliases={"default": "chat", "model_embed": "embedding"},
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
     )
 
     chat = next(c for c in checks if c.role == "chat")
@@ -108,18 +136,31 @@ def test_embedding_checked_separately_from_chat() -> None:
 
     assert chat.inventory_status == mod.STATUS_INSTALLED
     assert embedding.inventory_status == mod.STATUS_MISSING
-    assert mod.compute_exit_code(checks) == 1
+    assert mod.compute_exit_code(checks, alias_checks) == 1
+
+
+def test_alias_check_fails_on_unknown_canonical_role() -> None:
+    mod = _load_module()
+
+    alias_checks = mod.build_alias_checks(
+        role_aliases={"foo": "unknown_role"},
+        roles={"chat": "qwen3:14b", "embedding": "nomic-embed-text:latest"},
+    )
+
+    assert alias_checks[0].status == mod.STATUS_FAILED
 
 
 def test_no_secret_values_are_printed_in_summary_context() -> None:
     mod = _load_module()
 
     checks = mod.build_role_checks(
-        active_chat_model="qwen2.5-coder:14b",
-        embedding_model="nomic-embed-text",
-        reasoning_model="deepseek-r1:8b",
-        code_model="qwen2.5-coder:7b",
-        installed_models=["qwen2.5-coder:14b", "nomic-embed-text:latest"],
+        roles={
+            "chat": "qwen3:14b",
+            "embedding": "nomic-embed-text:latest",
+            "reasoning": "qwen3:14b",
+            "code": "qwen3-coder:30b",
+        },
+        installed_models=["qwen3:14b", "nomic-embed-text:latest"],
     )
 
     text = "\n".join(

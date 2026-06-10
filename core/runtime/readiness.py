@@ -227,43 +227,48 @@ def build_readiness_report(repo_root: Path | None = None) -> ReadinessReport:
         )
 
     # ------------------------------------------------------------------
-    # 5. Model names
+    # 5. Model profile selection
     # ------------------------------------------------------------------
-    model_default = _env_str("MODEL_DEFAULT")
-    if model_default:
+    model_profile = _env_str("XV7_MODEL_PROFILE")
+    if model_profile:
         report.add(
             ReadinessItem(
-                key="MODEL_DEFAULT",
-                value=model_default,
+                key="XV7_MODEL_PROFILE",
+                value=model_profile,
                 ok=True,
             )
         )
     else:
         report.add(
             ReadinessItem(
-                key="MODEL_DEFAULT",
+                key="XV7_MODEL_PROFILE",
                 value="not_set",
                 ok=False,
-                warning="MODEL_DEFAULT is not set; runtime will fall back to llama3.",
+                warning=(
+                    "XV7_MODEL_PROFILE is not set; runtime will use the registry "
+                    "active_profile from config/models.yml."
+                ),
             )
         )
 
-    embedding_model = _env_str("EMBEDDING_MODEL")
-    if embedding_model:
+    registry_file = (
+        Path(detected_root / "config" / "models.yml") if detected_root else None
+    )
+    if registry_file is not None and registry_file.exists():
         report.add(
             ReadinessItem(
-                key="EMBEDDING_MODEL",
-                value=embedding_model,
+                key="model_registry_file",
+                value=str(registry_file),
                 ok=True,
             )
         )
     else:
         report.add(
             ReadinessItem(
-                key="EMBEDDING_MODEL",
-                value="not_set",
+                key="model_registry_file",
+                value="not_found",
                 ok=False,
-                warning="EMBEDDING_MODEL is not set; runtime will fall back to nomic-embed-text.",
+                warning="config/models.yml was not found; model registry resolution may fail.",
             )
         )
 

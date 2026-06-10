@@ -1,68 +1,59 @@
 # =============================================================================
-# xv7 — Model Registry
+# xv7 — Centralized Ollama Model Registry
 # =============================================================================
-# Defines all LLM and embedding model configurations used by the Core service.
-# Add entries here as new models are pulled into Ollama.
+# Raw Ollama model tags are defined only in this file.
+# Runtime selection happens via XV7_MODEL_PROFILE.
 # =============================================================================
 
 ollama:
-  base_url: "http://ollama:11434"    # Internal Docker network URL
-  timeout_seconds: 120
+  base_url: "http://ollama:11434"
+  timeout_seconds: 2.0
 
-# ---------------------------------------------------------------------------
-# Generation Models
-# ---------------------------------------------------------------------------
-models:
+registry:
+  active_profile: balanced
 
-  default:
-    name: llama3.2
-    provider: ollama
-    context_window: 131072
-    temperature: 0.7
-    top_p: 0.9
-    max_tokens: 4096
-    system_prompt: >
-      You are xv7, a helpful and knowledgeable local AI assistant.
-      You are direct, accurate, and concise.
+  role_aliases:
+    default: chat
+    chat: chat
+    model_default: chat
+    assistant: chat
 
-  reasoning:
-    name: deepseek-r1:8b
-    provider: ollama
-    context_window: 65536
-    temperature: 0.3
-    top_p: 0.95
-    max_tokens: 8192
-    system_prompt: >
-      You are a careful and methodical reasoning assistant. Think step by step.
+    embedding: embedding
+    embed: embedding
+    embedding_model: embedding
+    model_embed: embedding
 
-  code:
-    name: qwen2.5-coder:7b
-    provider: ollama
-    context_window: 32768
-    temperature: 0.2
-    top_p: 0.95
-    max_tokens: 8192
-    system_prompt: >
-      You are an expert software engineer. Write clean, well-structured code.
+    reasoning: reasoning
+    model_reasoning: reasoning
 
-# ---------------------------------------------------------------------------
-# Embedding Models
-# ---------------------------------------------------------------------------
-embeddings:
+    code: code
+    model_code: code
 
-  default:
-    name: nomic-embed-text
-    provider: ollama
-    dimensions: 768
+  profiles:
+    low_resource:
+      chat: qwen3:1.7b
+      reasoning: qwen3:8b
+      code: qwen3:8b
+      embedding: nomic-embed-text:latest
 
-  large:
-    name: mxbai-embed-large
-    provider: ollama
-    dimensions: 1024
+    balanced:
+      chat: qwen3:8b
+      reasoning: qwen3:14b
+      code: qwen3:14b
+      embedding: nomic-embed-text:latest
 
-# ---------------------------------------------------------------------------
-# Pull manifest — models to auto-pull on Core service startup
-# ---------------------------------------------------------------------------
-auto_pull:
-  - llama3.2
-  - nomic-embed-text
+    local_test:
+      chat: qwen3:14b
+      reasoning: qwen3:14b
+      code: qwen3-coder:30b
+      embedding: nomic-embed-text:latest
+
+    large_code:
+      chat: qwen3-coder:30b
+      reasoning: qwen3:14b
+      code: qwen3-coder:30b
+      embedding: nomic-embed-text:latest
+
+  legacy:
+    unused:
+      - qwen2.5-coder:14b
