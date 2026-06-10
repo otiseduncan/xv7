@@ -139,7 +139,9 @@ class MemoryManager:
         """
         text = raw_text.strip()
         reasoning_parts = [
-            match.strip() for match in _THINK_BLOCK_PATTERN.findall(text) if match.strip()
+            match.strip()
+            for match in _THINK_BLOCK_PATTERN.findall(text)
+            if match.strip()
         ]
         visible = _THINK_BLOCK_PATTERN.sub("", text).strip()
 

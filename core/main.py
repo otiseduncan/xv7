@@ -218,7 +218,9 @@ async def get_session(session_id: UUID) -> SessionState:
 
 
 @app.put("/sessions/{session_id}/facts")
-async def update_session_facts(session_id: UUID, payload: UpdateFactsRequest) -> dict[str, str]:
+async def update_session_facts(
+    session_id: UUID, payload: UpdateFactsRequest
+) -> dict[str, str]:
     """Upsert session-scoped persistent memory facts."""
     await upsert_session_facts(str(session_id), payload.facts)
     return {"status": "ok", "session_id": str(session_id)}

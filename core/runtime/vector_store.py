@@ -31,7 +31,9 @@ class VectorMemoryEngine:
 
         self._db_path = db_path
         self._model_embed = os.getenv("MODEL_EMBED", "nomic-embed-text")
-        self._ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+        self._ollama_base_url = os.getenv(
+            "OLLAMA_BASE_URL", "http://ollama:11434"
+        ).rstrip("/")
         self._init_lock = asyncio.Lock()
         self._initialized = False
 
@@ -99,7 +101,9 @@ class VectorMemoryEngine:
             response = await self._client.post("/api/embeddings", json=payload)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
-            raise RuntimeError("Timed out while calling Ollama /api/embeddings") from exc
+            raise RuntimeError(
+                "Timed out while calling Ollama /api/embeddings"
+            ) from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text
             raise RuntimeError(
@@ -111,12 +115,16 @@ class VectorMemoryEngine:
         data: dict[str, Any] = response.json()
         vector = data.get("embedding")
         if not isinstance(vector, list) or not vector:
-            raise ValueError("Invalid embedding response: missing non-empty 'embedding' array")
+            raise ValueError(
+                "Invalid embedding response: missing non-empty 'embedding' array"
+            )
 
         try:
             return [float(value) for value in vector]
         except (TypeError, ValueError) as exc:
-            raise ValueError("Invalid embedding response: non-numeric embedding values") from exc
+            raise ValueError(
+                "Invalid embedding response: non-numeric embedding values"
+            ) from exc
 
     async def store_memory(
         self,
@@ -154,7 +162,9 @@ class VectorMemoryEngine:
             )
             await conn.commit()
 
-    async def query_similar_memories(self, query_text: str, limit: int = 3) -> list[dict[str, Any]]:
+    async def query_similar_memories(
+        self, query_text: str, limit: int = 3
+    ) -> list[dict[str, Any]]:
         """Return top-N stored memories by cosine similarity to the query."""
         await self._ensure_db()
 

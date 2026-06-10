@@ -65,8 +65,12 @@ class BaseAgent:
         if isinstance(persona_options, dict):
             options.update(persona_options)
 
-        messages = [self._to_ollama_message(message) for message in session_state.messages]
-        persona_system_prompt = persona.get("system_prompt") if isinstance(persona, dict) else None
+        messages = [
+            self._to_ollama_message(message) for message in session_state.messages
+        ]
+        persona_system_prompt = (
+            persona.get("system_prompt") if isinstance(persona, dict) else None
+        )
         if isinstance(persona_system_prompt, str) and persona_system_prompt.strip():
             messages.insert(
                 0,
@@ -123,7 +127,9 @@ class BaseAgent:
         return content
 
     @staticmethod
-    def _resolve_model(current_persona: str, persona: dict[str, Any] | None = None) -> str:
+    def _resolve_model(
+        current_persona: str, persona: dict[str, Any] | None = None
+    ) -> str:
         """Resolve model from persona config, then env vars, then fallback."""
         if isinstance(persona, dict):
             persona_model = persona.get("model")
@@ -147,8 +153,7 @@ class BaseAgent:
         """
         if message.reasoning_content:
             content = (
-                f"<|think|>{message.reasoning_content}</|think|>\n"
-                f"{message.content}"
+                f"<|think|>{message.reasoning_content}</|think|>\n{message.content}"
             )
         else:
             content = message.content
@@ -169,7 +174,9 @@ class BaseAgent:
         if config_override:
             candidates.append(Path(config_override))
 
-        candidates.append(Path(__file__).resolve().parents[2] / "config" / "personas.yaml")
+        candidates.append(
+            Path(__file__).resolve().parents[2] / "config" / "personas.yaml"
+        )
         candidates.append(Path.cwd() / "config" / "personas.yaml")
 
         config_path = next((path for path in candidates if path.exists()), None)
