@@ -160,21 +160,30 @@ def test_report_docker_compose_not_ok_when_absent(tmp_path: Path) -> None:
 
 
 def test_report_api_key_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CORE_API_KEY", raising=False)
     monkeypatch.setenv("XV7_API_KEY", "super-secret-key")
     report = build_readiness_report(repo_root=Path("."))
-    item = next(i for i in report.items if i.key == "XV7_API_KEY")
-    assert item.ok is True
-    # Value must NEVER include the actual key
-    assert "super-secret-key" not in item.value
-    assert item.value == "configured"
-    assert item.warning is None
+    source_item = next(i for i in report.items if i.key == "runtime_auth_source")
+    xv7_item = next(i for i in report.items if i.key == "XV7_API_KEY")
+    core_item = next(i for i in report.items if i.key == "CORE_API_KEY")
+
+    assert source_item.ok is True
+    assert source_item.value == "XV7_API_KEY"
+    assert xv7_item.value == "configured"
+    assert core_item.value == "not_set"
+    assert source_item.warning is None
+    assert "super-secret-key" not in source_item.value
+    assert "super-secret-key" not in xv7_item.value
+    assert "super-secret-key" not in core_item.value
 
 
 def test_report_api_key_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("XV7_API_KEY", raising=False)
+    monkeypatch.delenv("CORE_API_KEY", raising=False)
     report = build_readiness_report(repo_root=Path("."))
-    item = next(i for i in report.items if i.key == "XV7_API_KEY")
+    item = next(i for i in report.items if i.key == "runtime_auth_source")
     assert item.ok is False
+    assert item.value == "not_set"
     assert item.warning is not None
 
 
@@ -182,9 +191,41 @@ def test_report_api_key_empty_string_treated_as_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("XV7_API_KEY", "   ")
+    monkeypatch.setenv("CORE_API_KEY", "\t")
     report = build_readiness_report(repo_root=Path("."))
-    item = next(i for i in report.items if i.key == "XV7_API_KEY")
+    item = next(i for i in report.items if i.key == "runtime_auth_source")
     assert item.ok is False
+
+
+def test_report_api_key_uses_core_when_xv7_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("XV7_API_KEY", raising=False)
+    monkeypatch.setenv("CORE_API_KEY", "core-secret")
+    report = build_readiness_report(repo_root=Path("."))
+
+    source_item = next(i for i in report.items if i.key == "runtime_auth_source")
+    xv7_item = next(i for i in report.items if i.key == "XV7_API_KEY")
+    core_item = next(i for i in report.items if i.key == "CORE_API_KEY")
+
+    assert source_item.ok is True
+    assert source_item.value == "CORE_API_KEY"
+    assert xv7_item.value == "not_set"
+    assert core_item.value == "configured"
+    assert "core-secret" not in source_item.value
+    assert "core-secret" not in xv7_item.value
+    assert "core-secret" not in core_item.value
+
+
+def test_report_api_key_prefers_xv7_when_both_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "xv7-secret")
+    monkeypatch.setenv("CORE_API_KEY", "core-secret")
+    report = build_readiness_report(repo_root=Path("."))
+    source_item = next(i for i in report.items if i.key == "runtime_auth_source")
+    assert source_item.ok is True
+    assert source_item.value == "XV7_API_KEY"
 
 
 def test_report_ollama_url_configured(monkeypatch: pytest.MonkeyPatch) -> None:

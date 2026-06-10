@@ -47,9 +47,18 @@ the API key is read from `XV7_API_KEY` in the current shell:
 $env:XV7_API_KEY = (python -c "import secrets; print(secrets.token_hex(32))")
 ```
 
-> **Note:** In Docker mode, the container reads `CORE_API_KEY` from `.env`.
-> The environment variable name differs between the two modes.
-> This is a known gap; a future slice will align them.
+### Runtime auth variable precedence (local and Docker)
+
+XV7 uses this precedence everywhere:
+
+1. `XV7_API_KEY` (highest priority)
+2. `CORE_API_KEY` (fallback when `XV7_API_KEY` is unset)
+
+This means either variable can protect routes, but `XV7_API_KEY` wins when both
+are set. Key values are never printed by readiness output.
+
+For Docker, keep setting `CORE_API_KEY` in `.env`; the compose stack maps it to
+the app runtime key internally.
 
 ---
 
@@ -72,7 +81,9 @@ The script reports:
 
 - Repo root detected
 - Python import readiness (fastapi, uvicorn, httpx, pydantic, ollama, chromadb, aiosqlite, structlog)
+- Runtime auth source: `XV7_API_KEY`, `CORE_API_KEY`, or `not_set`
 - `XV7_API_KEY` — configured or not set (key is **never** printed)
+- `CORE_API_KEY` — configured or not set (key is **never** printed)
 - `OLLAMA_BASE_URL` — set or missing
 - `MODEL_DEFAULT` / `EMBEDDING_MODEL` — set or missing
 - `MEMORY_DB_PATH` / `VECTOR_DB_PATH` — set or missing
@@ -208,8 +219,8 @@ The API will be available at `http://localhost:8000`.
 | Variable | Where used | Required | Notes |
 |---|---|---|---|
 | `WEBUI_SECRET_KEY` | Docker / Open WebUI | **Yes** (Docker) | Generate with `secrets.token_hex(32)` |
-| `CORE_API_KEY` | Docker / Core container | **Yes** (Docker) | Protects Core API in Docker mode |
-| `XV7_API_KEY` | Local uvicorn | No | Protects Core API in local dev mode |
+| `CORE_API_KEY` | Docker `.env` and runtime fallback | **Yes** (Docker) | Used when `XV7_API_KEY` is unset |
+| `XV7_API_KEY` | Local uvicorn and runtime preferred key | No | Preferred key when both are set |
 | `OLLAMA_BASE_URL` | Core runtime | No | Default: `http://ollama:11434` |
 | `MODEL_DEFAULT` | Core runtime | No | Default: `llama3` |
 | `EMBEDDING_MODEL` | Core runtime | No | Default: `nomic-embed-text` |
