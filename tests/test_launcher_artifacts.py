@@ -52,6 +52,13 @@ def test_launcher_script_exists() -> None:
     )
 
 
+def test_init_env_script_exists() -> None:
+    """scripts/init_xv7_env.ps1 must exist for first-run secret bootstrap."""
+    assert (_SCRIPTS_DIR / "init_xv7_env.ps1").is_file(), (
+        "scripts/init_xv7_env.ps1 is missing"
+    )
+
+
 # ---------------------------------------------------------------------------
 # LOCAL_RUN.md existence and content checks
 # ---------------------------------------------------------------------------
@@ -74,6 +81,16 @@ def test_local_run_doc_references_check_readiness() -> None:
 def test_local_run_doc_references_launcher() -> None:
     """LOCAL_RUN.md must reference start_xv7_local.ps1."""
     assert "start_xv7_local.ps1" in _local_run_text()
+
+
+def test_local_run_doc_references_init_script() -> None:
+    """LOCAL_RUN.md must reference init_xv7_env.ps1."""
+    assert "init_xv7_env.ps1" in _local_run_text()
+
+
+def test_local_run_doc_references_force_rotate() -> None:
+    """LOCAL_RUN.md must describe intentional secret rotation."""
+    assert "-ForceRotate" in _local_run_text()
 
 
 def test_local_run_doc_mentions_xv7_api_key() -> None:
@@ -131,6 +148,11 @@ def _launcher_text() -> str:
 def test_launcher_runs_readiness_check() -> None:
     """Launcher must invoke check_readiness.py."""
     assert "check_readiness.py" in _launcher_text()
+
+
+def test_launcher_references_init_script_on_preflight_failure() -> None:
+    """Launcher must direct users to init_xv7_env.ps1 when secrets are invalid."""
+    assert "init_xv7_env.ps1" in _launcher_text()
 
 
 def test_launcher_runs_docker_compose_up() -> None:
