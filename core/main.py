@@ -44,7 +44,7 @@ class UpdateFactsRequest(BaseModel):
     facts: dict[str, Any] = Field(default_factory=dict)
 
 
-memory_path = Path(os.getenv("MEMORY_DB_PATH", "/app/data/memory"))
+memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
 if memory_path.suffix == ".db":
     facts_db_path = memory_path
 else:
@@ -303,3 +303,4 @@ async def add_session_message(
         pass
 
     return updated_state
+

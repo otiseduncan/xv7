@@ -22,7 +22,7 @@ class VectorMemoryEngine:
     """
 
     def __init__(self) -> None:
-        vector_db_path = os.getenv("VECTOR_DB_PATH", "/app/data/vectors")
+        vector_db_path = os.getenv("VECTOR_DB_PATH", "data/vectors")
         db_path = Path(vector_db_path)
         if db_path.suffix != ".db":
             db_path = db_path / "vector_memory.db"
@@ -221,3 +221,4 @@ class VectorMemoryEngine:
             return 0.0
 
         return dot / (left_norm * right_norm)
+
