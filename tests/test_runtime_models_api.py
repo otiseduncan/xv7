@@ -225,3 +225,144 @@ def test_runtime_models_effective_endpoint_does_not_return_secret_values(
     payload_text = str(response.json())
     assert "very-secret" not in payload_text
     assert "also-very-secret" not in payload_text
+
+
+def test_runtime_models_effective_uses_runtime_override_when_set(
+    monkeypatch: MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv(
+        "XV7_RUNTIME_PROFILE_STATE_PATH",
+        str(tmp_path / "runtime" / "model_profile_selection.json"),
+    )
+
+    from core.runtime.model_profile_selection import set_runtime_profile_override
+
+    set_runtime_profile_override(
+        "large_code",
+        {"low_resource", "balanced", "local_test", "large_code"},
+    )
+
+    payload = build_effective_runtime_models()
+
+    assert payload["active_profile"] == "large_code"
+    assert payload["profile_source"] == "runtime_override"
+    assert payload["effective_models"]["chat"] == "qwen3-coder:30b"
+
+
+def test_runtime_models_active_put_rejects_unknown_profile(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "test-secret")
+    client = TestClient(app)
+
+    response = client.put(
+        "/runtime/models/active",
+        json={"profile": "unknown_profile", "require_available": False},
+        headers={"X-XV7-API-Key": "test-secret"},
+    )
+
+    assert response.status_code == 400
+    assert "Unknown profile" in response.json()["detail"]
+
+
+def test_runtime_models_active_put_can_skip_availability_gate(
+    monkeypatch: MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "test-secret")
+    monkeypatch.setenv(
+        "XV7_RUNTIME_PROFILE_STATE_PATH",
+        str(tmp_path / "runtime" / "model_profile_selection.json"),
+    )
+
+    async def fake_fetch_runtime_models(**_kwargs: object) -> dict[str, object]:
+        return {
+            "active_profile": "local_test",
+            "profile_source": "runtime_override",
+            "resolved_models": {
+                "chat": "qwen3:14b",
+                "reasoning": "qwen3:14b",
+                "code": "qwen3-coder:30b",
+                "embedding": "nomic-embed-text:latest",
+            },
+            "role_aliases": {"default": "chat"},
+            "availability": {
+                "chat": False,
+                "reasoning": False,
+                "code": False,
+                "embedding": False,
+            },
+            "ollama": {
+                "reachable": False,
+                "base_url": "http://ollama:11434",
+                "models": [],
+                "error": {"type": "ConnectError", "message": "connect failed"},
+            },
+            "config_error": None,
+        }
+
+    monkeypatch.setattr("core.main.fetch_runtime_models", fake_fetch_runtime_models)
+
+    client = TestClient(app)
+    response = client.put(
+        "/runtime/models/active",
+        json={"profile": "local_test", "require_available": False},
+        headers={"X-XV7-API-Key": "test-secret"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["active_profile"] == "local_test"
+    assert payload["profile_source"] == "runtime_override"
+    assert payload["availability"]["chat"] is False
+    assert payload["ollama"]["reachable"] is False
+
+
+def test_runtime_models_active_put_enforces_availability_gate(
+    monkeypatch: MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "test-secret")
+    monkeypatch.setenv(
+        "XV7_RUNTIME_PROFILE_STATE_PATH",
+        str(tmp_path / "runtime" / "model_profile_selection.json"),
+    )
+
+    async def fake_fetch_runtime_models(**_kwargs: object) -> dict[str, object]:
+        return {
+            "active_profile": "local_test",
+            "profile_source": "runtime_override",
+            "resolved_models": {
+                "chat": "qwen3:14b",
+                "reasoning": "qwen3:14b",
+                "code": "qwen3-coder:30b",
+                "embedding": "nomic-embed-text:latest",
+            },
+            "role_aliases": {"default": "chat"},
+            "availability": {
+                "chat": False,
+                "reasoning": False,
+                "code": False,
+                "embedding": False,
+            },
+            "ollama": {
+                "reachable": False,
+                "base_url": "http://ollama:11434",
+                "models": [],
+                "error": {"type": "ConnectError", "message": "connect failed"},
+            },
+            "config_error": None,
+        }
+
+    monkeypatch.setattr("core.main.fetch_runtime_models", fake_fetch_runtime_models)
+
+    client = TestClient(app)
+    response = client.put(
+        "/runtime/models/active",
+        json={"profile": "local_test", "require_available": True},
+        headers={"X-XV7-API-Key": "test-secret"},
+    )
+
+    assert response.status_code == 400
+    assert "Ollama is unreachable" in response.json()["detail"]

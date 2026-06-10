@@ -342,6 +342,45 @@ Notes:
 - Suggested apply command: `docker compose up -d --force-recreate xv7-core`.
 - UI profile selection will come in a later slice.
 
+### Authenticated runtime profile switching API
+
+XV7 also supports runtime profile override through authenticated API routes:
+
+- `PUT /runtime/models/active`
+- `DELETE /runtime/models/active`
+
+Behavior and constraints:
+
+- Both routes require API key auth (`X-XV7-API-Key` or `Authorization: Bearer ...`).
+- The override is stored in runtime state under the core data path.
+- This API does not mutate `.env` and does not edit `config/models.yml`.
+- Runtime precedence is: runtime override -> `XV7_MODEL_PROFILE` -> registry default.
+- Public read-only routes (`/runtime/models`, `/runtime/models/active`, `/runtime/models/effective`, `/runtime/ollama`) reflect the active runtime override when set.
+
+PowerShell example:
+
+```powershell
+# Resolve API key (same precedence used by runtime auth)
+$coreApiKey = (Get-Content .env | Select-String '^CORE_API_KEY=').Line.Split('=',2)[1]
+
+# Set runtime override with availability gate enabled
+Invoke-RestMethod -Method Put `
+  -Uri "http://localhost:8000/runtime/models/active" `
+  -Headers @{"X-XV7-API-Key"=$coreApiKey} `
+  -ContentType "application/json" `
+  -Body (@{ profile = "local_test"; require_available = $true } | ConvertTo-Json)
+
+# Inspect effective model routing
+Invoke-RestMethod -Method Get -Uri "http://localhost:8000/runtime/models/effective"
+
+# Clear runtime override and fall back to env/default selection
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:8000/runtime/models/active" `
+  -Headers @{"X-XV7-API-Key"=$coreApiKey}
+
+Remove-Variable coreApiKey -ErrorAction SilentlyContinue
+```
+
 ## 6. Pull Ollama models
 
 After the stack starts, pull the models required by your selected profile:

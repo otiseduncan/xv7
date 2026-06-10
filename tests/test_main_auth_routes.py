@@ -71,3 +71,76 @@ def test_create_session_accepts_core_api_key_when_xv7_not_set(
 
     assert response.status_code == 201
     assert response.json()["current_persona"] == "default"
+
+
+def test_runtime_active_model_mutation_requires_api_key(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "test-secret")
+    monkeypatch.delenv("CORE_API_KEY", raising=False)
+    client = TestClient(app)
+
+    put_response = client.put(
+        "/runtime/models/active",
+        json={"profile": "balanced", "require_available": False},
+    )
+    delete_response = client.delete("/runtime/models/active")
+
+    assert put_response.status_code == 401
+    assert delete_response.status_code == 401
+
+
+def test_runtime_active_model_mutation_accepts_api_key(
+    monkeypatch: MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "test-secret")
+    monkeypatch.delenv("CORE_API_KEY", raising=False)
+    monkeypatch.setenv(
+        "XV7_RUNTIME_PROFILE_STATE_PATH",
+        str(tmp_path / "runtime" / "model_profile_selection.json"),
+    )
+
+    async def fake_fetch_runtime_models(**_kwargs: object) -> dict[str, object]:
+        return {
+            "active_profile": "balanced",
+            "profile_source": "runtime_override",
+            "resolved_models": {
+                "chat": "qwen3:8b",
+                "reasoning": "qwen3:14b",
+                "code": "qwen3:14b",
+                "embedding": "nomic-embed-text:latest",
+            },
+            "role_aliases": {"default": "chat"},
+            "availability": {
+                "chat": True,
+                "reasoning": True,
+                "code": True,
+                "embedding": True,
+            },
+            "ollama": {
+                "reachable": True,
+                "base_url": "http://ollama:11434",
+                "models": ["qwen3:8b"],
+                "error": None,
+            },
+            "config_error": None,
+        }
+
+    monkeypatch.setattr("core.main.fetch_runtime_models", fake_fetch_runtime_models)
+
+    client = TestClient(app)
+
+    put_response = client.put(
+        "/runtime/models/active",
+        json={"profile": "balanced", "require_available": True},
+        headers={"X-XV7-API-Key": "test-secret"},
+    )
+    delete_response = client.delete(
+        "/runtime/models/active",
+        headers={"X-XV7-API-Key": "test-secret"},
+    )
+
+    assert put_response.status_code == 200
+    assert put_response.json()["profile_source"] == "runtime_override"
+    assert delete_response.status_code == 200
