@@ -304,6 +304,34 @@ Current selection source:
 - UI-driven profile selection is planned for a later slice.
 - This API does not mutate profiles, write `.env`, or pull/delete models.
 
+### Switch model profile
+
+Use the profile switch helper to update only `XV7_MODEL_PROFILE` in `.env`:
+
+```powershell
+.\scripts\set_xv7_model_profile.ps1 -Profile balanced
+```
+
+Switch profile and recreate only the core container:
+
+```powershell
+.\scripts\set_xv7_model_profile.ps1 -Profile local_test -RestartCore
+```
+
+Preview changes without editing `.env`:
+
+```powershell
+.\scripts\set_xv7_model_profile.ps1 -Profile low_resource -DryRun
+```
+
+Notes:
+
+- The script validates profile names from `config/models.yml`.
+- It preserves all other `.env` keys and updates only `XV7_MODEL_PROFILE`.
+- Profile changes affect runtime behavior after core is recreated.
+- Suggested apply command: `docker compose up -d --force-recreate xv7-core`.
+- UI profile selection will come in a later slice.
+
 ## 6. Pull Ollama models
 
 After the stack starts, pull the models required by your selected profile:
