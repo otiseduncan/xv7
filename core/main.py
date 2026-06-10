@@ -16,6 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.agents.base_agent import BaseAgent
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
+from core.runtime.model_profile_selection import (
+    clear_runtime_profile_override,
+    set_runtime_profile_override,
+)
 from core.runtime.models_api import (
     build_effective_runtime_models,
     build_runtime_model_profiles,
@@ -51,6 +55,15 @@ class UpdateFactsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     facts: dict[str, Any] = Field(default_factory=dict)
+
+
+class SetActiveModelProfileRequest(BaseModel):
+    """Payload for setting runtime active model profile override."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = Field(min_length=1)
+    require_available: bool = Field(default=True)
 
 
 memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
@@ -221,6 +234,68 @@ async def runtime_model_profiles() -> dict[str, Any]:
 @app.get("/runtime/models/active")
 async def runtime_active_model_profile(profile: str | None = None) -> dict[str, Any]:
     payload = await fetch_runtime_models(profile_override=profile)
+    return {
+        "active_profile": payload["active_profile"],
+        "profile_source": payload["profile_source"],
+        "resolved_models": payload["resolved_models"],
+        "role_aliases": payload["role_aliases"],
+        "availability": payload["availability"],
+        "ollama": payload["ollama"],
+        "config_error": payload["config_error"],
+    }
+
+
+@app.put(
+    "/runtime/models/active",
+    dependencies=[Depends(require_api_key)],
+)
+async def set_runtime_active_model_profile(
+    payload: SetActiveModelProfileRequest,
+) -> dict[str, Any]:
+    profiles_payload = build_runtime_model_profiles()
+    available_profiles = set(profiles_payload.get("available_profiles", []))
+
+    set_runtime_profile_override(payload.profile, available_profiles)
+
+    runtime_payload = await fetch_runtime_models()
+    if payload.require_available:
+        if not runtime_payload.get("ollama", {}).get("reachable", False):
+            clear_runtime_profile_override()
+            raise ValueError(
+                "Cannot apply profile with require_available=true because Ollama is unreachable."
+            )
+
+        availability = runtime_payload.get("availability", {})
+        missing = [
+            role
+            for role in ("chat", "reasoning", "code", "embedding")
+            if not bool(availability.get(role, False))
+        ]
+        if missing:
+            clear_runtime_profile_override()
+            raise ValueError(
+                "Cannot apply profile with require_available=true; missing required "
+                f"models for roles: {', '.join(missing)}."
+            )
+
+    return {
+        "active_profile": runtime_payload["active_profile"],
+        "profile_source": runtime_payload["profile_source"],
+        "resolved_models": runtime_payload["resolved_models"],
+        "role_aliases": runtime_payload["role_aliases"],
+        "availability": runtime_payload["availability"],
+        "ollama": runtime_payload["ollama"],
+        "config_error": runtime_payload["config_error"],
+    }
+
+
+@app.delete(
+    "/runtime/models/active",
+    dependencies=[Depends(require_api_key)],
+)
+async def clear_runtime_active_model_profile() -> dict[str, Any]:
+    clear_runtime_profile_override()
+    payload = await fetch_runtime_models()
     return {
         "active_profile": payload["active_profile"],
         "profile_source": payload["profile_source"],

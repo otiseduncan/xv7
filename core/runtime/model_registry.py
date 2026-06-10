@@ -237,6 +237,26 @@ def resolve_active_models(
 
     selected_profile = _normalized(profile_override)
     profile_source = "override"
+    warning_parts: list[str] = []
+
+    if selected_profile is None:
+        try:
+            from core.runtime.model_profile_selection import (
+                get_runtime_profile_override,
+            )
+
+            runtime_override = _normalized(get_runtime_profile_override())
+        except Exception:
+            runtime_override = None
+
+        if runtime_override is not None:
+            if isinstance(profiles, dict) and runtime_override in profiles:
+                selected_profile = runtime_override
+                profile_source = "runtime_override"
+            else:
+                warning_parts.append(
+                    f"Runtime override profile '{runtime_override}' was not found."
+                )
 
     if selected_profile is None:
         selected_profile = _normalized(env.get("XV7_MODEL_PROFILE"))
@@ -296,12 +316,14 @@ def resolve_active_models(
             ),
         )
 
+    warning = "; ".join(warning_parts) if warning_parts else None
+
     return ModelResolution(
         profile=selected_profile,
         profile_source=profile_source,
         roles=roles,
         role_aliases=role_aliases,
-        error=None,
+        error=warning,
     )
 
 
