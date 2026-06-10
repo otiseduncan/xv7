@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from core.agents.base_agent import BaseAgent
 from core.runtime.schemas import ConversationMessage
 
@@ -35,3 +37,24 @@ def test_to_ollama_message_preserves_visible_user_content() -> None:
         "role": "user",
         "content": "visible user request",
     }
+
+
+def test_agent_resolve_model_uses_registry_profile_for_chat_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XV7_MODEL_PROFILE", "balanced")
+
+    resolved = BaseAgent._resolve_model("default")
+
+    assert resolved == "qwen3:8b"
+
+
+def test_agent_resolve_model_does_not_use_legacy_model_default_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XV7_MODEL_PROFILE", "balanced")
+    monkeypatch.setenv("MODEL_DEFAULT", "llama3")
+
+    resolved = BaseAgent._resolve_model("default")
+
+    assert resolved == "qwen3:8b"

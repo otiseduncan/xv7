@@ -152,6 +152,7 @@ preflight fails, it prints the exact variable names and tells you to run:
 | Runtime models | `http://localhost:8000/runtime/models` | No |
 | Runtime model profiles | `http://localhost:8000/runtime/models/profiles` | No |
 | Runtime active model | `http://localhost:8000/runtime/models/active` | No |
+| Runtime effective model routing | `http://localhost:8000/runtime/models/effective` | No |
 | Personas | `http://localhost:8000/personas` | No |
 | Ollama check | `http://localhost:8000/runtime/ollama` | No |
 | Open WebUI | `http://localhost:8080` | No (login required inside UI) |
@@ -289,6 +290,7 @@ XV7 now exposes read-only runtime profile discovery endpoints:
 - `GET /runtime/models`
 - `GET /runtime/models/profiles`
 - `GET /runtime/models/active`
+- `GET /runtime/models/effective`
 
 These endpoints report:
 
@@ -303,6 +305,14 @@ Current selection source:
 - Profile selection currently comes from `XV7_MODEL_PROFILE`.
 - UI-driven profile selection is planned for a later slice.
 - This API does not mutate profiles, write `.env`, or pull/delete models.
+
+### Effective runtime model routing
+
+- Raw model tags live only in `config/models.yml`.
+- `GET /runtime/models/active` shows the configured active profile state.
+- `GET /runtime/models/effective` shows the exact model tags runtime would use for `chat`, `reasoning`, `code`, and `embedding`.
+- This endpoint is diagnostic and read-only: it does not generate text, mutate profile state, or expose secrets.
+- UI model/profile selection will come in a later slice.
 
 ### Switch model profile
 

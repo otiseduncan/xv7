@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ except ImportError:  # pragma: no cover - handled at runtime if unavailable
     yaml = None
 
 from core.runtime.schemas import ConversationMessage, SessionState
+from core.runtime.model_registry import resolve_model_for_runtime_role
 
 
 class BaseAgent:
@@ -130,19 +130,20 @@ class BaseAgent:
     def _resolve_model(
         current_persona: str, persona: dict[str, Any] | None = None
     ) -> str:
-        """Resolve model from persona config, then env vars, then fallback."""
+        """Resolve runtime chat model from the centralized model registry."""
+        role_alias = "chat"
         if isinstance(persona, dict):
-            persona_model = persona.get("model")
-            if isinstance(persona_model, str) and persona_model.strip():
-                return persona_model.strip()
+            role_override = persona.get("model_role") or persona.get("model_alias")
+            if isinstance(role_override, str) and role_override.strip():
+                role_alias = role_override.strip()
 
-        persona_key = re.sub(r"[^A-Za-z0-9]+", "_", current_persona).strip("_").upper()
-        if persona_key:
-            persona_model = os.getenv(f"MODEL_{persona_key}")
-            if persona_model:
-                return persona_model
+        resolved = resolve_model_for_runtime_role(role_alias)
+        if resolved.model_tag is None:
+            raise ValueError(
+                f"No model configured for runtime role '{resolved.canonical_role}' in profile '{resolved.profile}'."
+            )
 
-        return os.getenv("MODEL_DEFAULT", "llama3")
+        return resolved.model_tag
 
     @staticmethod
     def _to_ollama_message(message: ConversationMessage) -> dict[str, str]:

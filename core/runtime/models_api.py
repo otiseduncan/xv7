@@ -4,7 +4,11 @@ from typing import Any
 
 import httpx
 
-from core.runtime.model_registry import load_registry_config, resolve_active_models
+from core.runtime.model_registry import (
+    load_registry_config,
+    resolve_active_models,
+    resolve_model_for_runtime_role,
+)
 from core.runtime.ollama_status import fetch_ollama_status
 
 
@@ -89,4 +93,55 @@ async def fetch_runtime_models(
             "models": ollama_payload.get("models", []),
             "error": ollama_payload.get("error"),
         },
+    }
+
+
+def build_effective_runtime_models(
+    *,
+    profile_override: str | None = None,
+) -> dict[str, Any]:
+    profile_payload = build_runtime_model_profiles(profile_override=profile_override)
+
+    effective_chat = resolve_model_for_runtime_role("chat", profile=profile_override)
+    effective_reasoning = resolve_model_for_runtime_role(
+        "reasoning", profile=profile_override
+    )
+    effective_code = resolve_model_for_runtime_role("code", profile=profile_override)
+    effective_embedding = resolve_model_for_runtime_role(
+        "embedding", profile=profile_override
+    )
+
+    return {
+        "active_profile": profile_payload["active_profile"],
+        "profile_source": profile_payload["profile_source"],
+        "effective_models": {
+            "chat": effective_chat.model_tag,
+            "reasoning": effective_reasoning.model_tag,
+            "code": effective_code.model_tag,
+            "embedding": effective_embedding.model_tag,
+        },
+        "role_resolutions": {
+            "chat": {
+                "alias_used": effective_chat.alias_used,
+                "canonical_role": effective_chat.canonical_role,
+                "model_tag": effective_chat.model_tag,
+            },
+            "reasoning": {
+                "alias_used": effective_reasoning.alias_used,
+                "canonical_role": effective_reasoning.canonical_role,
+                "model_tag": effective_reasoning.model_tag,
+            },
+            "code": {
+                "alias_used": effective_code.alias_used,
+                "canonical_role": effective_code.canonical_role,
+                "model_tag": effective_code.model_tag,
+            },
+            "embedding": {
+                "alias_used": effective_embedding.alias_used,
+                "canonical_role": effective_embedding.canonical_role,
+                "model_tag": effective_embedding.model_tag,
+            },
+        },
+        "role_aliases": profile_payload["role_aliases"],
+        "config_error": profile_payload["config_error"],
     }

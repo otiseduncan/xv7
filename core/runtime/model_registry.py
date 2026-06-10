@@ -79,6 +79,16 @@ class RegistryConfig:
     registry: dict[str, Any]
 
 
+@dataclass
+class RuntimeRoleModelResolution:
+    profile: str | None
+    profile_source: str
+    alias_used: str
+    canonical_role: str
+    model_tag: str | None
+    error: str | None
+
+
 def _candidate_paths() -> list[Path]:
     env_override = os.getenv("XV7_MODELS_CONFIG_PATH")
     candidates: list[Path] = []
@@ -292,6 +302,37 @@ def resolve_active_models(
         roles=roles,
         role_aliases=role_aliases,
         error=None,
+    )
+
+
+def resolve_model_for_runtime_role(
+    role: str,
+    profile: str | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> RuntimeRoleModelResolution:
+    role_alias = _normalized(role)
+    if role_alias is None:
+        raise ValueError("Runtime role is required.")
+
+    resolution = resolve_active_models(profile_override=profile, environ=environ)
+    valid_roles = {"chat", "reasoning", "code", "embedding"}
+
+    canonical = resolution.role_aliases.get(role_alias, role_alias)
+    if canonical not in valid_roles:
+        known = sorted(set(valid_roles).union(resolution.role_aliases.keys()))
+        raise ValueError(
+            f"Unknown runtime role alias '{role_alias}'. Known aliases: {', '.join(known)}"
+        )
+
+    model_tag = resolution.roles.get(canonical)
+    return RuntimeRoleModelResolution(
+        profile=resolution.profile,
+        profile_source=resolution.profile_source,
+        alias_used=role_alias,
+        canonical_role=canonical,
+        model_tag=model_tag,
+        error=resolution.error,
     )
 
 

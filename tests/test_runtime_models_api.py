@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
 from core.main import app
-from core.runtime.models_api import build_runtime_model_profiles, fetch_runtime_models
+from core.runtime.models_api import (
+    build_effective_runtime_models,
+    build_runtime_model_profiles,
+    fetch_runtime_models,
+)
 
 
 def test_build_runtime_model_profiles_resolves_env_profile(
@@ -182,3 +186,42 @@ def test_fetch_runtime_models_with_mock_transport_reports_inventory() -> None:
     assert payload["ollama"]["reachable"] is True
     assert "qwen3:8b" in payload["ollama"]["models"]
     assert "availability" in payload
+
+
+def test_build_effective_runtime_models_reports_expected_tags() -> None:
+    payload = build_effective_runtime_models(profile_override="balanced")
+
+    assert payload["active_profile"] == "balanced"
+    assert payload["effective_models"]["chat"] == "qwen3:8b"
+    assert payload["effective_models"]["reasoning"] == "qwen3:14b"
+    assert payload["effective_models"]["code"] == "qwen3:14b"
+    assert payload["effective_models"]["embedding"] == "nomic-embed-text:latest"
+
+
+def test_runtime_models_effective_endpoint_is_public_and_returns_payload() -> None:
+    client = TestClient(app)
+
+    response = client.get("/runtime/models/effective")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "effective_models" in payload
+    assert "chat" in payload["effective_models"]
+    assert "reasoning" in payload["effective_models"]
+    assert "code" in payload["effective_models"]
+    assert "embedding" in payload["effective_models"]
+
+
+def test_runtime_models_effective_endpoint_does_not_return_secret_values(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XV7_API_KEY", "very-secret")
+    monkeypatch.setenv("CORE_API_KEY", "also-very-secret")
+
+    client = TestClient(app)
+    response = client.get("/runtime/models/effective")
+
+    assert response.status_code == 200
+    payload_text = str(response.json())
+    assert "very-secret" not in payload_text
+    assert "also-very-secret" not in payload_text

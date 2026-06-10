@@ -19,6 +19,7 @@ def test_diagnostics_routes_remain_public_when_api_key_is_set(
     assert client.get("/runtime/models").status_code == 200
     assert client.get("/runtime/models/profiles").status_code == 200
     assert client.get("/runtime/models/active").status_code == 200
+    assert client.get("/runtime/models/effective").status_code == 200
     assert client.get("/personas").status_code == 200
 
 
