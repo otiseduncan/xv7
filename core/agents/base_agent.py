@@ -148,19 +148,12 @@ class BaseAgent:
     def _to_ollama_message(message: ConversationMessage) -> dict[str, str]:
         """Convert internal message to Ollama chat message schema.
 
-        If reasoning content exists, it is re-injected as a `<|think|>` block so
-        downstream turns can preserve reasoning continuity.
+        Hidden reasoning is never replayed into future model context. Only
+        user-visible message content is sent to Ollama.
         """
-        if message.reasoning_content:
-            content = (
-                f"<|think|>{message.reasoning_content}</|think|>\n{message.content}"
-            )
-        else:
-            content = message.content
-
         return {
             "role": message.role,
-            "content": content,
+            "content": message.content,
         }
 
     @staticmethod
