@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:
-    import yaml
+    import yaml  # type: ignore[import-untyped]
 except ImportError:  # pragma: no cover - optional at runtime
     yaml = None
 
@@ -318,6 +318,9 @@ def configured_ollama_timeout_seconds() -> float:
 
     config = load_registry_config()
     value = config.ollama.get("timeout_seconds")
+    if value is None:
+        return float(DEFAULT_OLLAMA["timeout_seconds"])
+
     try:
         return max(0.1, float(value))
     except (TypeError, ValueError):
