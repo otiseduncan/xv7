@@ -25,6 +25,21 @@ class Xv7UI {
   /** @type {string} */
   apiBase = 'http://localhost:8000';
 
+  /** @type {string} */
+  modelApiKey = '';
+
+  /** @type {boolean} */
+  modelMutationBusy = false;
+
+  /** @type {string} */
+  modelPanelStatus = 'Loading model profile state...';
+
+  /** @type {{models:any|null,active:any|null,effective:any|null}} */
+  modelPayload = { models: null, active: null, effective: null };
+
+  /** @type {string} */
+  modelProfileSelection = '';
+
   constructor() {
     this.els = {
       personaSelect: document.getElementById('personaSelect'),
@@ -38,6 +53,22 @@ class Xv7UI {
       chatTimeline: document.getElementById('chatTimeline'),
       promptInput: document.getElementById('promptInput'),
       sendButton: document.getElementById('sendButton'),
+      modelActiveProfile: document.getElementById('modelActiveProfile'),
+      modelProfileSource: document.getElementById('modelProfileSource'),
+      modelOllamaReachable: document.getElementById('modelOllamaReachable'),
+      modelProfileSelect: document.getElementById('modelProfileSelect'),
+      modelApiKeyInput: document.getElementById('modelApiKeyInput'),
+      modelApplyButton: document.getElementById('modelApplyButton'),
+      modelClearButton: document.getElementById('modelClearButton'),
+      modelResolvedChat: document.getElementById('modelResolvedChat'),
+      modelResolvedReasoning: document.getElementById('modelResolvedReasoning'),
+      modelResolvedCode: document.getElementById('modelResolvedCode'),
+      modelResolvedEmbedding: document.getElementById('modelResolvedEmbedding'),
+      modelAvailabilityChat: document.getElementById('modelAvailabilityChat'),
+      modelAvailabilityReasoning: document.getElementById('modelAvailabilityReasoning'),
+      modelAvailabilityCode: document.getElementById('modelAvailabilityCode'),
+      modelAvailabilityEmbedding: document.getElementById('modelAvailabilityEmbedding'),
+      modelPanelStatus: document.getElementById('modelPanelStatus'),
     };
 
     this.bindEvents();
@@ -63,6 +94,24 @@ class Xv7UI {
       this.updateSessionTelemetry();
       this.showAlert(`Switched persona to "${this.activePersona}". New session will initialize on next send.`, false);
     });
+
+    this.els.modelProfileSelect.addEventListener('change', () => {
+      this.modelProfileSelection = this.els.modelProfileSelect.value;
+      this.renderModelProfileControl();
+    });
+
+    this.els.modelApiKeyInput.addEventListener('input', () => {
+      this.modelApiKey = this.els.modelApiKeyInput.value;
+      this.renderModelProfileControl();
+    });
+
+    this.els.modelApplyButton.addEventListener('click', () => {
+      void this.applyRuntimeProfileOverride();
+    });
+
+    this.els.modelClearButton.addEventListener('click', () => {
+      void this.clearRuntimeProfileOverride();
+    });
   }
 
   async initialize() {
@@ -75,6 +124,182 @@ class Xv7UI {
     } catch (error) {
       this.showAlert(this.humanizeError(error), true);
       this.setHardwareLoad('Degraded', 16);
+    }
+
+    await this.refreshModelProfileControl();
+  }
+
+  async refreshModelProfileControl() {
+    this.modelPanelStatus = 'Refreshing runtime model profile state...';
+    this.renderModelProfileControl();
+
+    try {
+      const [modelsPayload, activePayload, effectivePayload] = await Promise.all([
+        this.fetchJson('/runtime/models', { method: 'GET' }),
+        this.fetchJson('/runtime/models/active', { method: 'GET' }),
+        this.fetchJson('/runtime/models/effective', { method: 'GET' }),
+      ]);
+
+      this.modelPayload = {
+        models: modelsPayload,
+        active: activePayload,
+        effective: effectivePayload,
+      };
+
+      const availableProfiles = Array.isArray(modelsPayload?.available_profiles)
+        ? modelsPayload.available_profiles.filter((item) => typeof item === 'string' && item.trim())
+        : [];
+      const activeProfile = typeof activePayload?.active_profile === 'string' ? activePayload.active_profile : '';
+      if (!availableProfiles.includes(this.modelProfileSelection)) {
+        this.modelProfileSelection = activeProfile || availableProfiles[0] || '';
+      }
+
+      this.modelPanelStatus = 'Runtime profile data loaded.';
+    } catch (error) {
+      this.modelPayload = { models: null, active: null, effective: null };
+      this.modelPanelStatus = this.humanizeError(error);
+    }
+
+    this.renderModelProfileControl();
+  }
+
+  renderModelProfileControl() {
+    const modelsPayload = this.modelPayload.models;
+    const activePayload = this.modelPayload.active;
+
+    const activeProfile = typeof activePayload?.active_profile === 'string' ? activePayload.active_profile : 'unknown';
+    const profileSource = typeof activePayload?.profile_source === 'string' ? activePayload.profile_source : 'unknown';
+    const reachable = Boolean(activePayload?.ollama?.reachable);
+    const availableProfiles = Array.isArray(modelsPayload?.available_profiles)
+      ? modelsPayload.available_profiles.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+
+    this.els.modelActiveProfile.textContent = activeProfile;
+    this.els.modelProfileSource.textContent = profileSource;
+    this.els.modelOllamaReachable.textContent = reachable ? 'yes' : 'no';
+    this.els.modelOllamaReachable.classList.toggle('text-teal-200', reachable);
+    this.els.modelOllamaReachable.classList.toggle('text-red-300', !reachable);
+
+    this.els.modelProfileSelect.innerHTML = '';
+    if (!availableProfiles.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'no profiles available';
+      this.els.modelProfileSelect.append(option);
+    } else {
+      availableProfiles.forEach((profile) => {
+        const option = document.createElement('option');
+        option.value = profile;
+        option.textContent = profile;
+        this.els.modelProfileSelect.append(option);
+      });
+      this.els.modelProfileSelect.value = availableProfiles.includes(this.modelProfileSelection)
+        ? this.modelProfileSelection
+        : availableProfiles[0];
+      this.modelProfileSelection = this.els.modelProfileSelect.value;
+    }
+
+    const profiles = modelsPayload?.profiles && typeof modelsPayload.profiles === 'object' ? modelsPayload.profiles : {};
+    const selectedResolved = profiles[this.modelProfileSelection] && typeof profiles[this.modelProfileSelection] === 'object'
+      ? profiles[this.modelProfileSelection]
+      : activePayload?.resolved_models || {};
+
+    this.els.modelResolvedChat.textContent = selectedResolved?.chat || '-';
+    this.els.modelResolvedReasoning.textContent = selectedResolved?.reasoning || '-';
+    this.els.modelResolvedCode.textContent = selectedResolved?.code || '-';
+    this.els.modelResolvedEmbedding.textContent = selectedResolved?.embedding || '-';
+
+    const availability = activePayload?.availability || {};
+    this.els.modelAvailabilityChat.textContent = this.asBoolLabel(availability.chat);
+    this.els.modelAvailabilityReasoning.textContent = this.asBoolLabel(availability.reasoning);
+    this.els.modelAvailabilityCode.textContent = this.asBoolLabel(availability.code);
+    this.els.modelAvailabilityEmbedding.textContent = this.asBoolLabel(availability.embedding);
+
+    const apiKeyPresent = this.modelApiKey.trim().length > 0;
+    const canApply =
+      !this.modelMutationBusy &&
+      apiKeyPresent &&
+      !!this.modelProfileSelection &&
+      (this.modelProfileSelection !== activeProfile || profileSource !== 'runtime_override');
+
+    const canClear = !this.modelMutationBusy && apiKeyPresent && profileSource === 'runtime_override';
+
+    this.els.modelApplyButton.disabled = !canApply;
+    this.els.modelClearButton.disabled = !canClear;
+    this.els.modelPanelStatus.textContent = this.modelPanelStatus;
+  }
+
+  asBoolLabel(value) {
+    return value ? 'available' : 'unavailable';
+  }
+
+  async applyRuntimeProfileOverride() {
+    if (!this.modelApiKey.trim()) {
+      this.modelPanelStatus = 'API key is required before applying runtime override.';
+      this.renderModelProfileControl();
+      return;
+    }
+
+    if (!this.modelProfileSelection) {
+      this.modelPanelStatus = 'Select a profile before applying runtime override.';
+      this.renderModelProfileControl();
+      return;
+    }
+
+    this.modelMutationBusy = true;
+    this.modelPanelStatus = 'Applying runtime override...';
+    this.renderModelProfileControl();
+
+    try {
+      const payload = await this.fetchJson('/runtime/models/active', {
+        method: 'PUT',
+        headers: {
+          'X-XV7-API-Key': this.modelApiKey,
+        },
+        body: JSON.stringify({
+          profile: this.modelProfileSelection,
+          require_available: true,
+        }),
+      });
+
+      this.modelPanelStatus = `Runtime override applied: ${payload.active_profile} (${payload.profile_source}).`;
+      await this.refreshModelProfileControl();
+    } catch (error) {
+      this.modelPanelStatus = this.humanizeError(error);
+      this.renderModelProfileControl();
+    } finally {
+      this.modelMutationBusy = false;
+      this.renderModelProfileControl();
+    }
+  }
+
+  async clearRuntimeProfileOverride() {
+    if (!this.modelApiKey.trim()) {
+      this.modelPanelStatus = 'API key is required before clearing runtime override.';
+      this.renderModelProfileControl();
+      return;
+    }
+
+    this.modelMutationBusy = true;
+    this.modelPanelStatus = 'Clearing runtime override...';
+    this.renderModelProfileControl();
+
+    try {
+      const payload = await this.fetchJson('/runtime/models/active', {
+        method: 'DELETE',
+        headers: {
+          'X-XV7-API-Key': this.modelApiKey,
+        },
+      });
+
+      this.modelPanelStatus = `Runtime override cleared. Active profile fallback: ${payload.active_profile} (${payload.profile_source}).`;
+      await this.refreshModelProfileControl();
+    } catch (error) {
+      this.modelPanelStatus = this.humanizeError(error);
+      this.renderModelProfileControl();
+    } finally {
+      this.modelMutationBusy = false;
+      this.renderModelProfileControl();
     }
   }
 
@@ -390,5 +615,9 @@ class Xv7UI {
 
 window.addEventListener('DOMContentLoaded', () => {
   // Global entrypoint for future module extension (streaming, avatars, sockets).
-  new Xv7UI();
+  if (!window.__XV7_DISABLE_AUTO_INIT) {
+    new Xv7UI();
+  }
 });
+
+export { Xv7UI };
