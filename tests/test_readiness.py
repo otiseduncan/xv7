@@ -244,26 +244,31 @@ def test_report_ollama_url_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
     assert item.warning is not None
 
 
-def test_report_model_default_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MODEL_DEFAULT", "llama3.2")
+def test_report_model_profile_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XV7_MODEL_PROFILE", "local_test")
     report = build_readiness_report(repo_root=Path("."))
-    item = next(i for i in report.items if i.key == "MODEL_DEFAULT")
+    item = next(i for i in report.items if i.key == "XV7_MODEL_PROFILE")
     assert item.ok is True
-    assert item.value == "llama3.2"
+    assert item.value == "local_test"
 
 
-def test_report_model_default_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("MODEL_DEFAULT", raising=False)
+def test_report_model_profile_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("XV7_MODEL_PROFILE", raising=False)
     report = build_readiness_report(repo_root=Path("."))
-    item = next(i for i in report.items if i.key == "MODEL_DEFAULT")
+    item = next(i for i in report.items if i.key == "XV7_MODEL_PROFILE")
     assert item.ok is False
 
 
-def test_report_embedding_model_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
+def test_report_model_registry_file_present() -> None:
     report = build_readiness_report(repo_root=Path("."))
-    item = next(i for i in report.items if i.key == "EMBEDDING_MODEL")
+    item = next(i for i in report.items if i.key == "model_registry_file")
     assert item.ok is True
+
+
+def test_report_model_registry_file_missing(tmp_path: Path) -> None:
+    report = build_readiness_report(repo_root=tmp_path)
+    item = next(i for i in report.items if i.key == "model_registry_file")
+    assert item.ok is False
 
 
 def test_report_memory_db_path_configured(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,16 +1,14 @@
 #!/usr/bin/env python
 """XV7 Ollama model inventory and selection proof.
 
-Reports installed models, configured role models, and whether required selected
-models are installed. Does not pull models unless --pull-missing is explicitly
-provided.
+Checks installed models against active role tags resolved from
+config/models.yml + XV7_MODEL_PROFILE.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -19,11 +17,27 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+# Ensure `core` package is importable when running this script directly.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 
 STATUS_CONFIGURED = "configured"
 STATUS_INSTALLED = "installed"
 STATUS_MISSING = "missing"
 STATUS_NOT_CHECKED = "not checked"
+STATUS_FAILED = "failed"
+
+
+def _model_registry_api():
+    from core.runtime.model_registry import (
+        configured_ollama_base_url,
+        resolve_active_models,
+    )
+
+    return configured_ollama_base_url, resolve_active_models
 
 
 @dataclass
@@ -43,6 +57,18 @@ class RoleCheck:
         return self.inventory_status == STATUS_INSTALLED
 
 
+@dataclass
+class AliasCheck:
+    alias: str
+    canonical_role: str
+    resolved_model: str | None
+    status: str
+
+    @property
+    def passed(self) -> bool:
+        return self.status != STATUS_FAILED
+
+
 def _detect_repo_root(start: Path | None = None) -> Path | None:
     here = (start or Path.cwd()).resolve()
     for candidate in [here, *here.parents]:
@@ -56,107 +82,6 @@ def _normalized(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
-
-
-def _strip_inline_comment(raw: str) -> str:
-    # Keep hashes that are not comment separators (simple heuristic).
-    marker = " #"
-    idx = raw.find(marker)
-    if idx >= 0:
-        raw = raw[:idx]
-    return raw.strip()
-
-
-def load_dotenv(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = _strip_inline_comment(value).strip().strip('"').strip("'")
-        if key:
-            values[key] = value
-    return values
-
-
-def parse_models_yaml(path: Path) -> dict[str, str]:
-    """Extract configured role model names from config/models.yml.
-
-    This parser is intentionally lightweight and tailored to current schema.
-    """
-    found: dict[str, str] = {}
-    if not path.exists():
-        return found
-
-    section: str | None = None
-    subsection: str | None = None
-
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.rstrip()
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        if stripped == "models:":
-            section = "models"
-            subsection = None
-            continue
-        if stripped == "embeddings:":
-            section = "embeddings"
-            subsection = None
-            continue
-
-        if (
-            line.startswith("  ")
-            and stripped.endswith(":")
-            and not line.startswith("    ")
-        ):
-            subsection = stripped[:-1]
-            continue
-
-        if line.startswith("    ") and stripped.startswith("name:"):
-            if section == "models" and subsection in {"default", "reasoning", "code"}:
-                model_name = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-                if subsection == "default":
-                    found["MODEL_DEFAULT"] = model_name
-                elif subsection == "reasoning":
-                    found["MODEL_REASONING"] = model_name
-                elif subsection == "code":
-                    found["MODEL_CODE"] = model_name
-            if section == "embeddings" and subsection == "default":
-                model_name = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-                found["EMBEDDING_MODEL"] = model_name
-                found["MODEL_EMBED"] = model_name
-
-    return found
-
-
-def resolve_setting(
-    key: str,
-    *,
-    env: dict[str, str],
-    dotenv: dict[str, str],
-    defaults: dict[str, str],
-) -> str | None:
-    value = _normalized(env.get(key))
-    if value is not None:
-        return value
-
-    value = _normalized(dotenv.get(key))
-    if value is not None:
-        return value
-
-    value = _normalized(defaults.get(key))
-    if value is not None:
-        return value
-
-    return None
 
 
 def _model_name(raw_model: Any) -> str | None:
@@ -204,22 +129,13 @@ def has_model(requested: str, available_models: list[str]) -> bool:
 
 def build_role_checks(
     *,
-    active_chat_model: str | None,
-    embedding_model: str | None,
-    reasoning_model: str | None,
-    code_model: str | None,
+    roles: dict[str, str | None],
     installed_models: list[str],
 ) -> list[RoleCheck]:
     checks: list[RoleCheck] = []
 
-    role_specs = [
-        ("chat", active_chat_model, True),
-        ("embedding", embedding_model, True),
-        ("reasoning", reasoning_model, False),
-        ("code", code_model, False),
-    ]
-
-    for role, model, required in role_specs:
+    for role in ("chat", "embedding", "reasoning", "code"):
+        model = roles.get(role)
         if model is None:
             checks.append(
                 RoleCheck(
@@ -227,7 +143,7 @@ def build_role_checks(
                     model=None,
                     config_status=STATUS_NOT_CHECKED,
                     inventory_status=STATUS_NOT_CHECKED,
-                    required=required,
+                    required=False,
                 )
             )
             continue
@@ -242,19 +158,58 @@ def build_role_checks(
                     if has_model(model, installed_models)
                     else STATUS_MISSING
                 ),
-                required=required,
+                required=True,
             )
         )
 
     return checks
 
 
-def compute_exit_code(checks: list[RoleCheck]) -> int:
-    return 0 if all(check.passed for check in checks) else 1
+def build_alias_checks(
+    *,
+    role_aliases: dict[str, str],
+    roles: dict[str, str | None],
+) -> list[AliasCheck]:
+    checks: list[AliasCheck] = []
+    valid_roles = {"chat", "embedding", "reasoning", "code"}
+
+    for alias in sorted(role_aliases):
+        canonical = role_aliases[alias]
+        if canonical not in valid_roles:
+            checks.append(
+                AliasCheck(
+                    alias=alias,
+                    canonical_role=canonical,
+                    resolved_model=None,
+                    status=STATUS_FAILED,
+                )
+            )
+            continue
+
+        resolved = roles.get(canonical)
+        checks.append(
+            AliasCheck(
+                alias=alias,
+                canonical_role=canonical,
+                resolved_model=resolved,
+                status=STATUS_CONFIGURED
+                if resolved is not None
+                else STATUS_NOT_CHECKED,
+            )
+        )
+
+    return checks
+
+
+def compute_exit_code(checks: list[RoleCheck], alias_checks: list[AliasCheck]) -> int:
+    role_ok = all(check.passed for check in checks)
+    alias_ok = all(check.passed for check in alias_checks)
+    return 0 if role_ok and alias_ok else 1
 
 
 def fetch_installed_models(
-    ollama_base_url: str, timeout: float = 4.0
+    ollama_base_url: str,
+    timeout: float = 4.0,
 ) -> tuple[list[str], str | None]:
     url = f"{ollama_base_url.rstrip('/')}/api/tags"
     try:
@@ -277,15 +232,20 @@ def fetch_installed_models(
 def print_summary(
     *,
     repo_root: Path,
-    ollama_base_url: str,
-    active_chat_model: str | None,
+    endpoint: str,
+    profile_name: str | None,
+    profile_source: str,
     checks: list[RoleCheck],
+    alias_checks: list[AliasCheck],
     installed_models: list[str],
 ) -> None:
+    active_chat = next((c.model for c in checks if c.role == "chat"), None)
+
     print("XV7 Ollama Model Inventory & Selection Proof")
     print(f"Repo root: {repo_root}")
-    print(f"Ollama endpoint: {ollama_base_url}")
-    print(f"Active chat model: {active_chat_model or '<not_set>'}")
+    print(f"Ollama endpoint: {endpoint}")
+    print(f"Selected profile: {profile_name or '<not_set>'} ({profile_source})")
+    print(f"Active chat model: {active_chat or '<not_set>'}")
 
     print("\nInstalled models:")
     if installed_models:
@@ -294,10 +254,10 @@ def print_summary(
     else:
         print("- <none detected>")
 
-    headers = ["Role", "Model", "Config", "Inventory", "Required", "Result"]
-    rows: list[list[str]] = []
+    role_headers = ["Role", "Resolved tag", "Config", "Inventory", "Required", "Result"]
+    role_rows: list[list[str]] = []
     for check in checks:
-        rows.append(
+        role_rows.append(
             [
                 check.role,
                 check.model or "<not_set>",
@@ -308,19 +268,45 @@ def print_summary(
             ]
         )
 
-    widths = [len(h) for h in headers]
-    for row in rows:
+    role_widths = [len(h) for h in role_headers]
+    for row in role_rows:
         for i, cell in enumerate(row):
-            widths[i] = max(widths[i], len(cell))
+            role_widths[i] = max(role_widths[i], len(cell))
 
-    def row_line(items: list[str]) -> str:
-        return " | ".join(item.ljust(widths[i]) for i, item in enumerate(items))
+    def role_line(items: list[str]) -> str:
+        return " | ".join(item.ljust(role_widths[i]) for i, item in enumerate(items))
 
     print("\nRole status:")
-    print(row_line(headers))
-    print("-+-".join("-" * w for w in widths))
-    for row in rows:
-        print(row_line(row))
+    print(role_line(role_headers))
+    print("-+-".join("-" * w for w in role_widths))
+    for row in role_rows:
+        print(role_line(row))
+
+    alias_headers = ["Alias", "Canonical role", "Resolved tag", "Status"]
+    alias_rows: list[list[str]] = []
+    for check in alias_checks:
+        alias_rows.append(
+            [
+                check.alias,
+                check.canonical_role,
+                check.resolved_model or "<not_set>",
+                check.status,
+            ]
+        )
+
+    alias_widths = [len(h) for h in alias_headers]
+    for row in alias_rows:
+        for i, cell in enumerate(row):
+            alias_widths[i] = max(alias_widths[i], len(cell))
+
+    def alias_line(items: list[str]) -> str:
+        return " | ".join(item.ljust(alias_widths[i]) for i, item in enumerate(items))
+
+    print("\nRole aliases:")
+    print(alias_line(alias_headers))
+    print("-+-".join("-" * w for w in alias_widths))
+    for row in alias_rows:
+        print(alias_line(row))
 
 
 def pull_missing_models(missing_models: list[str]) -> int:
@@ -348,139 +334,89 @@ def pull_missing_models(missing_models: list[str]) -> int:
 
 def run_inventory(
     *,
+    profile_override: str | None,
     chat_model_override: str | None,
     pull_missing: bool,
     ollama_base_url_override: str | None,
 ) -> int:
+    configured_ollama_base_url, resolve_active_models = _model_registry_api()
+
     repo_root = _detect_repo_root()
     if repo_root is None:
         print("FAIL: repo root not detected (docker-compose.yml not found).")
         return 1
 
-    dotenv = load_dotenv(repo_root / ".env")
-    defaults = parse_models_yaml(repo_root / "config" / "models.yml")
-    env = os.environ
+    resolution = resolve_active_models(profile_override=profile_override)
+    roles = dict(resolution.roles)
 
-    core_port = (
-        _normalized(env.get("CORE_PORT"))
-        or _normalized(dotenv.get("CORE_PORT"))
-        or "8000"
-    )
-    ollama_port = (
-        _normalized(env.get("OLLAMA_PORT"))
-        or _normalized(dotenv.get("OLLAMA_PORT"))
-        or "11434"
-    )
+    if _normalized(chat_model_override) is not None:
+        roles["chat"] = _normalized(chat_model_override)
 
-    active_chat_model = _normalized(chat_model_override) or resolve_setting(
-        "MODEL_DEFAULT", env=env, dotenv=dotenv, defaults=defaults
-    )
-    embedding_model = resolve_setting(
-        "EMBEDDING_MODEL", env=env, dotenv=dotenv, defaults=defaults
-    ) or resolve_setting("MODEL_EMBED", env=env, dotenv=dotenv, defaults=defaults)
-    reasoning_model = resolve_setting(
-        "MODEL_REASONING", env=env, dotenv=dotenv, defaults=defaults
-    )
-    code_model = resolve_setting(
-        "MODEL_CODE", env=env, dotenv=dotenv, defaults=defaults
-    )
+    endpoint = _normalized(ollama_base_url_override) or configured_ollama_base_url()
 
-    ollama_base_url = (
-        _normalized(ollama_base_url_override)
-        or _normalized(env.get("OLLAMA_BASE_URL"))
-        or f"http://localhost:{ollama_port}"
-    )
-
-    installed_models, error = fetch_installed_models(ollama_base_url)
+    installed_models, error = fetch_installed_models(endpoint)
     if error is not None:
         print(f"FAIL: {error}")
-        print(
-            f"Hint: verify Ollama is reachable and port mapping is correct (OLLAMA_PORT={ollama_port})."
-        )
+        print("Hint: verify Ollama is reachable and the endpoint is correct.")
         return 1
 
-    checks = build_role_checks(
-        active_chat_model=active_chat_model,
-        embedding_model=embedding_model,
-        reasoning_model=reasoning_model,
-        code_model=code_model,
-        installed_models=installed_models,
+    role_checks = build_role_checks(roles=roles, installed_models=installed_models)
+    alias_checks = build_alias_checks(
+        role_aliases=resolution.role_aliases,
+        roles=roles,
     )
 
     print_summary(
         repo_root=repo_root,
-        ollama_base_url=ollama_base_url,
-        active_chat_model=active_chat_model,
-        checks=checks,
+        endpoint=endpoint,
+        profile_name=resolution.profile,
+        profile_source=resolution.profile_source,
+        checks=role_checks,
+        alias_checks=alias_checks,
         installed_models=installed_models,
     )
 
-    missing_required = [
-        check.model
-        for check in checks
-        if check.required
-        and check.inventory_status == STATUS_MISSING
-        and check.model is not None
-    ]
+    if resolution.error is not None:
+        print(f"\nProfile resolution warning: {resolution.error}")
+
+    missing_required = sorted(
+        {
+            check.model
+            for check in role_checks
+            if check.required
+            and check.inventory_status == STATUS_MISSING
+            and check.model
+        }
+    )
 
     if pull_missing and missing_required:
-        pull_code = pull_missing_models(sorted(set(missing_required)))
+        pull_code = pull_missing_models(missing_required)
         if pull_code != 0:
             return 1
 
-        # Re-check after explicit pull attempt.
-        installed_models, error = fetch_installed_models(ollama_base_url)
+        installed_models, error = fetch_installed_models(endpoint)
         if error is not None:
             print(f"FAIL: could not re-check models after pull: {error}")
             return 1
 
-        checks = build_role_checks(
-            active_chat_model=active_chat_model,
-            embedding_model=embedding_model,
-            reasoning_model=reasoning_model,
-            code_model=code_model,
-            installed_models=installed_models,
+        role_checks = build_role_checks(roles=roles, installed_models=installed_models)
+        alias_checks = build_alias_checks(
+            role_aliases=resolution.role_aliases,
+            roles=roles,
         )
 
         print("\nRe-check after pull:")
         print_summary(
             repo_root=repo_root,
-            ollama_base_url=ollama_base_url,
-            active_chat_model=active_chat_model,
-            checks=checks,
+            endpoint=endpoint,
+            profile_name=resolution.profile,
+            profile_source=resolution.profile_source,
+            checks=role_checks,
+            alias_checks=alias_checks,
             installed_models=installed_models,
         )
 
-    # Show current core/runtime status view for operator context.
-    core_ollama_url = f"http://localhost:{core_port}/runtime/ollama"
-    try:
-        with urlopen(core_ollama_url, timeout=4.0) as resp:
-            if int(resp.status) == 200:
-                payload = json.loads(resp.read().decode("utf-8", errors="replace"))
-                if isinstance(payload, dict):
-                    print("\n/runtime/ollama snapshot:")
-                    print(
-                        json.dumps(
-                            {
-                                "reachable": payload.get("reachable"),
-                                "chat_model": payload.get("chat_model"),
-                                "chat_model_available": payload.get(
-                                    "chat_model_available"
-                                ),
-                                "embedding_model": payload.get("embedding_model"),
-                                "embedding_model_available": payload.get(
-                                    "embedding_model_available"
-                                ),
-                            },
-                            indent=2,
-                        )
-                    )
-    except Exception:
-        print(
-            f"\n/runtime/ollama snapshot: not checked ({core_ollama_url} not reachable)"
-        )
-
-    exit_code = compute_exit_code(checks)
+    exit_code = compute_exit_code(role_checks, alias_checks)
     if exit_code == 0:
         print("\nModel inventory proof result: PASS")
     else:
@@ -491,17 +427,22 @@ def run_inventory(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Check configured XV7 model roles against installed Ollama models."
+        description="Check configured XV7 model profiles against installed Ollama models."
+    )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Select model profile for this check (overrides XV7_MODEL_PROFILE).",
     )
     parser.add_argument(
         "--chat-model",
         default=None,
-        help="Override active chat model for this check (no code edits required).",
+        help="Override active chat model for this check only.",
     )
     parser.add_argument(
         "--ollama-base-url",
         default=None,
-        help="Override Ollama base URL (default: OLLAMA_BASE_URL or http://localhost:$OLLAMA_PORT).",
+        help="Override Ollama base URL (default: configured OLLAMA_BASE_URL or models.yml).",
     )
     parser.add_argument(
         "--pull-missing",
@@ -511,6 +452,7 @@ def main() -> None:
     args = parser.parse_args()
 
     code = run_inventory(
+        profile_override=args.profile,
         chat_model_override=args.chat_model,
         pull_missing=args.pull_missing,
         ollama_base_url_override=args.ollama_base_url,
