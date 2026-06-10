@@ -21,11 +21,22 @@ All commands are run from the **repo root** unless stated otherwise.
 Docker Compose will **refuse to start** if `WEBUI_SECRET_KEY` or `CORE_API_KEY` are missing.
 
 ```powershell
-# Copy the template
-Copy-Item .env.example .env
+# Bootstrap .env and required secrets safely
+.\scripts\init_xv7_env.ps1
+```
 
-# Generate secret values (run each; paste the output into .env)
-python -c "import secrets; print(secrets.token_hex(32))"
+This command:
+
+- Detects repo root automatically.
+- Creates `.env` from `.env.example` when `.env` is missing.
+- Ensures `WEBUI_SECRET_KEY` and `CORE_API_KEY` are valid.
+- Generates missing/placeholder values without printing secret values.
+- Does not overwrite valid existing values unless forced.
+
+To intentionally rotate both required Docker secrets:
+
+```powershell
+.\scripts\init_xv7_env.ps1 -ForceRotate
 ```
 
 Open `.env` and replace every `CHANGE_ME_…` placeholder:
@@ -109,6 +120,14 @@ The launcher:
 5. Polls `http://localhost:8000/health` until the Core API responds (default timeout: 60 s).
 6. Prints reachable endpoints.
 7. Exits **1** on any failure.
+
+Before `docker compose up -d`, the launcher validates `.env` and fails fast if
+`WEBUI_SECRET_KEY` or `CORE_API_KEY` are missing/blank/placeholders. When this
+preflight fails, it prints the exact variable names and tells you to run:
+
+```powershell
+.\scripts\init_xv7_env.ps1
+```
 
 ### Start options
 

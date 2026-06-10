@@ -72,6 +72,69 @@ function Exit-WithFailure([string]$Message) {
     exit 1
 }
 
+function Normalize-EnvValue([string]$Raw) {
+    if ($null -eq $Raw) {
+        return $null
+    }
+
+    $value = $Raw.Trim()
+    if ($value.StartsWith('"') -and $value.EndsWith('"') -and $value.Length -ge 2) {
+        $value = $value.Substring(1, $value.Length - 2)
+    }
+    if ($value.StartsWith("'") -and $value.EndsWith("'") -and $value.Length -ge 2) {
+        $value = $value.Substring(1, $value.Length - 2)
+    }
+
+    return $value.Trim()
+}
+
+function Test-InvalidSecretValue([string]$Value) {
+    $normalized = Normalize-EnvValue $Value
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return $true
+    }
+
+    $lower = $normalized.ToLowerInvariant()
+    if ($lower -eq 'change_me' -or $lower -eq 'changeme' -or $lower -eq 'placeholder') {
+        return $true
+    }
+
+    if ($lower.Contains('change_me') -or $lower.Contains('changeme') -or $lower.Contains('placeholder')) {
+        return $true
+    }
+
+    if ($normalized -eq '""' -or $normalized -eq "''") {
+        return $true
+    }
+
+    return $false
+}
+
+function Read-EnvEntries([string]$Path) {
+    $lines = Get-Content -Path $Path -ErrorAction Stop
+    $entries = New-Object 'System.Collections.Generic.Dictionary[string,string]'
+
+    foreach ($line in $lines) {
+        $trim = $line.Trim()
+        if ($trim.Length -eq 0 -or $trim.StartsWith('#')) {
+            continue
+        }
+
+        $idx = $line.IndexOf('=')
+        if ($idx -lt 1) {
+            continue
+        }
+
+        $key = $line.Substring(0, $idx).Trim()
+        $value = $line.Substring($idx + 1)
+        if (-not $entries.ContainsKey($key)) {
+            $entries[$key] = $value
+        }
+    }
+
+    return $entries
+}
+
 # ---------------------------------------------------------------------------
 # 1. Detect repo root
 # ---------------------------------------------------------------------------
@@ -115,15 +178,40 @@ Write-Step 'Checking for .env configuration file'
 
 $envFile = Join-Path $repoRoot '.env'
 if (-not (Test-Path $envFile)) {
-    Write-Warn ".env not found at $envFile"
-    Write-Warn 'Docker Compose requires WEBUI_SECRET_KEY and CORE_API_KEY.'
-    Write-Warn 'Copy .env.example to .env and fill in the required values, then re-run.'
-    Write-Warn 'To generate a secret key:  python -c "import secrets; print(secrets.token_hex(32))"'
-    # docker compose will fail with a hard error if required vars are absent,
-    # so we do not exit here — the compose step will surface the real error.
+    Write-Fail ".env not found at $envFile"
+    Write-Host '  Required before launch: WEBUI_SECRET_KEY, CORE_API_KEY'
+    Write-Host '  Run: .\scripts\init_xv7_env.ps1'
+    exit 1
 } else {
     Write-Ok ".env found: $envFile"
 }
+
+Write-Step 'Running Docker env preflight'
+$entries = Read-EnvEntries $envFile
+$requiredSecrets = @('WEBUI_SECRET_KEY', 'CORE_API_KEY')
+$invalidNames = @()
+
+foreach ($name in $requiredSecrets) {
+    if (-not $entries.ContainsKey($name)) {
+        $invalidNames += $name
+        continue
+    }
+
+    if (Test-InvalidSecretValue $entries[$name]) {
+        $invalidNames += $name
+    }
+}
+
+if ($invalidNames.Count -gt 0) {
+    Write-Fail 'Required Docker secret variables are invalid in .env:'
+    foreach ($name in $invalidNames) {
+        Write-Host "  - $name"
+    }
+    Write-Host '  Run: .\scripts\init_xv7_env.ps1'
+    exit 1
+}
+
+Write-Ok 'Required Docker secret variables are valid.'
 
 # ---------------------------------------------------------------------------
 # 4. Pre-launch readiness check
