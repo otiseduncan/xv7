@@ -33,6 +33,7 @@ data/
 # Logs
 *.log
 logs/
+runtime/logs/
 
 # Vector store persisted files
 vectors/
