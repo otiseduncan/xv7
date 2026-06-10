@@ -1,0 +1,44 @@
+# =============================================================================
+# xv7 — .gitignore
+# =============================================================================
+
+# Secrets — NEVER commit
+.env
+*.key
+*.pem
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Docker build context
+docker/core/.dockerignore
+
+# Data / databases (generated at runtime)
+core/data/
+*.db
+*.sqlite3
+data/
+
+# Logs
+*.log
+logs/
+
+# Vector store persisted files
+vectors/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/

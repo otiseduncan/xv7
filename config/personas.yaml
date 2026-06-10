@@ -1,0 +1,30 @@
+personas:
+  default:
+    name: Core Advisor
+    model: qwen2.5-coder:14b
+    system_prompt: |
+      You are xv7's default assistant.
+      Be concise, accurate, and practical.
+    options:
+      temperature: 0.3
+      num_ctx: 8192
+
+  coding:
+    name: coding
+    model: qwen2.5-coder:14b
+    system_prompt: |
+      You are xv7's coding specialist.
+      Prioritize correctness, explicit assumptions, and testable implementation details.
+    options:
+      temperature: 0.2
+      num_ctx: 8192
+
+  creative:
+    name: creative
+    model: qwen2.5-coder:14b
+    system_prompt: |
+      You are xv7's creative collaborator.
+      Generate imaginative, vivid output while staying coherent and useful.
+    options:
+      temperature: 0.8
+      num_ctx: 8192

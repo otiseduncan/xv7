@@ -1,0 +1,44 @@
+# =============================================================================
+# xv7 — System Configuration
+# =============================================================================
+# Loaded by the Core service at startup via pydantic-settings.
+# Values here are defaults; override via environment variables or .env.
+# =============================================================================
+
+app:
+  name: xv7
+  version: "0.1.0"
+  env: development             # development | staging | production
+  debug: true
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1                   # Increase for production (gunicorn)
+  reload: true                 # Disable in production
+
+logging:
+  level: INFO                  # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  format: json                 # json | text
+  output: stdout               # stdout | file
+  file_path: /app/data/logs/xv7.log
+
+database:
+  url: "sqlite+aiosqlite:////app/data/xv7.db"
+  pool_size: 5
+  echo: false                  # Set true to log all SQL queries (debug only)
+
+vector_store:
+  provider: chroma             # chroma | faiss | qdrant
+  persist_directory: /app/data/vectors
+  collection_name: xv7_memory
+
+cache:
+  provider: disk               # disk | redis | memory
+  disk_directory: /app/data/cache
+  redis_url: ""                # e.g. redis://localhost:6379/0
+  default_ttl_seconds: 3600
+
+security:
+  token_algorithm: HS256
+  access_token_expire_minutes: 1440  # 24 hours

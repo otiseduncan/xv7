@@ -1,0 +1,80 @@
+# =============================================================================
+# xv7 Core — Python Orchestration & Memory Runtime
+# =============================================================================
+# Install (inside virtualenv):
+#   pip install -r requirements.txt
+#
+# Pin versions are tested against Python 3.12.
+# Upgrade with: pip install -U -r requirements.txt && pip freeze > requirements.txt
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Web / API framework
+# FastAPI serves the Core REST API; uvicorn is the ASGI server.
+# ---------------------------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.32.1        # [standard] pulls websockets + httptools
+
+# ---------------------------------------------------------------------------
+# HTTP client
+# httpx is used for all outbound calls to Ollama's REST API and Open WebUI.
+# The [http2] extra enables HTTP/2 support for streaming responses.
+# ---------------------------------------------------------------------------
+httpx[http2]==0.27.2
+
+# ---------------------------------------------------------------------------
+# Data validation & settings management
+# pydantic powers all request/response models and config schemas.
+# pydantic-settings loads .env files and environment variables automatically.
+# ---------------------------------------------------------------------------
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# ---------------------------------------------------------------------------
+# Environment variable loading
+# python-dotenv reads the .env file at process startup (local dev / testing).
+# In production the container runtime injects variables directly.
+# ---------------------------------------------------------------------------
+python-dotenv==1.0.1
+
+# ---------------------------------------------------------------------------
+# Ollama native client
+# Thin async wrapper around the Ollama REST API with streaming support.
+# ---------------------------------------------------------------------------
+ollama==0.4.5
+
+# ---------------------------------------------------------------------------
+# LangChain orchestration layer
+# Used for chain construction, prompt templates, and tool routing.
+# ---------------------------------------------------------------------------
+langchain==0.3.14
+langchain-core==0.3.29
+langchain-community==0.3.14
+langchain-ollama==0.2.2
+
+# ---------------------------------------------------------------------------
+# Vector store / semantic memory
+# ChromaDB persists embedding collections locally (no external service needed).
+# ---------------------------------------------------------------------------
+chromadb==0.6.3
+
+# ---------------------------------------------------------------------------
+# Structured / relational storage
+# SQLAlchemy + aiosqlite provide async SQLite access for agent state & logs.
+# ---------------------------------------------------------------------------
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+
+# ---------------------------------------------------------------------------
+# Logging & developer experience
+# structlog emits structured JSON logs; rich adds pretty output in dev mode.
+# ---------------------------------------------------------------------------
+structlog==24.4.0
+rich==13.9.4
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-httpx==0.35.0

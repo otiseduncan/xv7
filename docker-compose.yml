@@ -1,0 +1,180 @@
+# =============================================================================
+# xv7 — Multi-container AI Orchestration Platform
+# =============================================================================
+# Services  : ollama | open-webui | xv7-core | xv7-frontend
+# Network   : xv7-network  (private bridge — services talk by name)
+# Volumes   : ollama_data | open_webui_data | core_data | xv7_shared
+#
+# Prerequisites for GPU acceleration:
+#   - NVIDIA driver installed on the host
+#   - nvidia-container-toolkit installed and daemon restarted
+#   - Verify with: docker run --rm --gpus all nvidia/cuda:12-base nvidia-smi
+#
+# Usage:
+#   cp .env.example .env        # then fill in secrets
+#   docker compose up -d
+# =============================================================================
+
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Named volumes — all state persisted outside container lifecycles
+# ---------------------------------------------------------------------------
+volumes:
+
+  # Ollama model cache (~GB-scale; survives container upgrades)
+  ollama_data:
+    driver: local
+
+  # Open WebUI settings, user accounts, chat history
+  open_webui_data:
+    driver: local
+
+  # xv7-core structured DB, vector store, memory journals
+  core_data:
+    driver: local
+
+  # Shared read/write volume: 3D avatar assets & runtime state
+  # Mounted into BOTH xv7-core (write) and open-webui (read)
+  xv7_shared:
+    driver: local
+
+# ---------------------------------------------------------------------------
+# Private bridge network — no external access except mapped ports
+# ---------------------------------------------------------------------------
+networks:
+  xv7-network:
+    driver: bridge
+    name: xv7-network
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+
+  # -------------------------------------------------------------------------
+  # ollama — local LLM inference engine
+  # -------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    container_name: xv7-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"   # REST API reachable from host
+    volumes:
+      - C:\Users\otisd\.ollama:/root/.ollama  # Host Ollama library bind mount
+    networks:
+      - xv7-network
+    environment:
+      - OLLAMA_HOST=0.0.0.0             # Listen on all interfaces inside container
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
+    # -----------------------------------------------------------------------
+    # GPU acceleration block — NVIDIA only.
+    # Remove or comment out this entire `deploy` section to run CPU-only.
+    # -----------------------------------------------------------------------
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all               # Pass through all available GPUs
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # open-webui — browser-based chat and model management interface
+  # Shared volume gives the UI read access to 3D assets produced by core.
+  # -------------------------------------------------------------------------
+  open-webui:
+    build:
+      context: ./docker/open-webui
+      dockerfile: Dockerfile
+    container_name: xv7-open-webui
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"       # Browse to http://localhost:8080
+    volumes:
+      - open_webui_data:/app/backend/data
+      - xv7_shared:/app/shared:ro        # Read-only access to shared assets
+    networks:
+      - xv7-network
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY must be set}
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - DEFAULT_MODELS=${DEFAULT_MODELS:-llama3}
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH:-false}
+      - RAG_WEB_SEARCH_ENGINE=${RAG_WEB_SEARCH_ENGINE:-}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # xv7-frontend — lightweight static host for the custom Vanilla JS SPA
+  # -------------------------------------------------------------------------
+  xv7-frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    container_name: xv7-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"                      # Browse to http://localhost:3000
+    volumes:
+      - ./public:/usr/share/nginx/html # Live-reload for index.html and app.js
+    networks:
+      - xv7-network
+
+  # -------------------------------------------------------------------------
+  # xv7-core — Python orchestration, agent runtime, and memory engine
+  # Shared volume gives core write access; open-webui reads from the same.
+  # -------------------------------------------------------------------------
+  xv7-core:
+    build:
+      context: .
+      dockerfile: docker/core/Dockerfile
+    container_name: xv7-core
+    restart: unless-stopped
+    ports:
+      - "${CORE_PORT:-8000}:8000"        # FastAPI available at http://localhost:8000
+    volumes:
+      - ./core:/app/core                 # Live-reload: source changes apply instantly
+      - ./config:/app/config             # Persona and system configuration files
+      - core_data:/app/data:rw           # Persistent DB, vectors, memory logs
+      - xv7_shared:/app/shared           # Write 3D assets & state for open-webui
+    networks:
+      - xv7-network
+    environment:
+      - ENV=${ENV:-development}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_BASE_URL=http://open-webui:8080
+      - CORE_API_KEY=${CORE_API_KEY:?CORE_API_KEY must be set}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DB_PATH=${DB_PATH:-/app/data/xv7.db}
+      - VECTOR_DB_PATH=${VECTOR_DB_PATH:-/app/data/vectors}
+      - MEMORY_DB_PATH=${MEMORY_DB_PATH:-/app/data/memory}
+      - ASSETS_PATH=${ASSETS_PATH:-/app/shared/assets}
+      - MODEL_DEFAULT=${MODEL_DEFAULT:-llama3}
+      - MODEL_REASONING=${MODEL_REASONING:-deepseek-r1:8b}
+      - MODEL_CODE=${MODEL_CODE:-qwen2.5-coder:7b}
+      - MODEL_EMBED=${MODEL_EMBED:-nomic-embed-text}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
