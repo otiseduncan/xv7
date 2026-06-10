@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import aiosqlite
 import httpx
@@ -19,6 +19,7 @@ from core.runtime.ollama_status import fetch_ollama_status
 from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
 from core.runtime.vector_store import VectorMemoryEngine
+from core.runtime.vector_memory_receipts import persist_vector_memory_round_trip
 
 
 class CreateSessionRequest(BaseModel):
@@ -297,21 +298,15 @@ async def add_session_message(
 
     assistant_message = updated_state.messages[-1]
 
-    try:
-        await vector_store.store_memory(
-            session_id=str(session_id),
-            message_id=str(uuid4()),
-            role=user_role,
-            content=user_visible_content,
-        )
-        await vector_store.store_memory(
-            session_id=str(session_id),
-            message_id=str(uuid4()),
-            role=assistant_message.role,
-            content=assistant_message.content,
-        )
-    except Exception:
-        # Vector persistence is best-effort; short-term memory and inference succeed regardless.
-        pass
+    vector_memory_receipt = await persist_vector_memory_round_trip(
+        vector_store,
+        session_id=str(session_id),
+        user_role=user_role,
+        user_content=user_visible_content,
+        assistant_role=assistant_message.role,
+        assistant_content=assistant_message.content,
+    )
+    updated_state.metadata["vector_memory"] = vector_memory_receipt
+    await memory_manager.update_session(updated_state)
 
     return updated_state
