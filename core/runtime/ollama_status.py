@@ -64,19 +64,35 @@ def _has_model(requested: str | None, available_models: list[str]) -> bool:
     return any(_model_matches(requested, model) for model in available_models)
 
 
+def _role_model_availability(
+    roles: dict[str, str | None],
+    available_models: list[str],
+) -> dict[str, bool]:
+    return {
+        "chat": _has_model(roles.get("chat"), available_models),
+        "reasoning": _has_model(roles.get("reasoning"), available_models),
+        "code": _has_model(roles.get("code"), available_models),
+        "embedding": _has_model(roles.get("embedding"), available_models),
+    }
+
+
 async def fetch_ollama_status(
     *,
     client: httpx.AsyncClient | None = None,
     base_url: str | None = None,
     chat_model: str | None = None,
     embedding_model: str | None = None,
+    profile_override: str | None = None,
 ) -> dict[str, Any]:
     """Verify Ollama reachability and configured model visibility."""
 
-    resolution = resolve_active_models()
+    resolution = resolve_active_models(profile_override=profile_override)
     resolved_base_url = (base_url or _configured_base_url()).rstrip("/")
     resolved_chat_model = chat_model or _configured_chat_model()
     resolved_embedding_model = embedding_model or _configured_embedding_model()
+    resolved_roles = dict(resolution.roles)
+    resolved_roles["chat"] = resolved_chat_model
+    resolved_roles["embedding"] = resolved_embedding_model
     should_close_client = client is None
 
     if client is None:
@@ -95,6 +111,7 @@ async def fetch_ollama_status(
             for model_name in (_model_name(model) for model in raw_models)
             if model_name is not None
         )
+        role_availability = _role_model_availability(resolved_roles, available_models)
 
         return {
             "reachable": True,
@@ -102,7 +119,7 @@ async def fetch_ollama_status(
             "profile": resolution.profile,
             "profile_source": resolution.profile_source,
             "role_aliases": resolution.role_aliases,
-            "resolved_models": resolution.roles,
+            "resolved_models": resolved_roles,
             "chat_model": resolved_chat_model,
             "embedding_model": resolved_embedding_model,
             "models": available_models,
@@ -114,6 +131,7 @@ async def fetch_ollama_status(
                 resolved_embedding_model,
                 available_models,
             ),
+            "role_model_availability": role_availability,
             "error": None,
             "config_error": resolution.error,
         }
@@ -124,12 +142,18 @@ async def fetch_ollama_status(
             "profile": resolution.profile,
             "profile_source": resolution.profile_source,
             "role_aliases": resolution.role_aliases,
-            "resolved_models": resolution.roles,
+            "resolved_models": resolved_roles,
             "chat_model": resolved_chat_model,
             "embedding_model": resolved_embedding_model,
             "models": [],
             "chat_model_available": False,
             "embedding_model_available": False,
+            "role_model_availability": {
+                "chat": False,
+                "reasoning": False,
+                "code": False,
+                "embedding": False,
+            },
             "error": {
                 "type": type(exc).__name__,
                 "message": str(exc),

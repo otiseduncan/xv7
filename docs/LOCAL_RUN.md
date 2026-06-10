@@ -149,6 +149,9 @@ preflight fails, it prints the exact variable names and tells you to run:
 |---|---|---|
 | Health | `http://localhost:8000/health` | No |
 | Runtime status | `http://localhost:8000/runtime/status` | No |
+| Runtime models | `http://localhost:8000/runtime/models` | No |
+| Runtime model profiles | `http://localhost:8000/runtime/models/profiles` | No |
+| Runtime active model | `http://localhost:8000/runtime/models/active` | No |
 | Personas | `http://localhost:8000/personas` | No |
 | Ollama check | `http://localhost:8000/runtime/ollama` | No |
 | Open WebUI | `http://localhost:8080` | No (login required inside UI) |
@@ -278,6 +281,28 @@ python scripts/check_ollama_models.py --pull-missing
 ```
 
 When used, the script prints exact model names before pulling.
+
+### Model profile API (read-only)
+
+XV7 now exposes read-only runtime profile discovery endpoints:
+
+- `GET /runtime/models`
+- `GET /runtime/models/profiles`
+- `GET /runtime/models/active`
+
+These endpoints report:
+
+- available profile names and role tags from `config/models.yml`
+- active profile and profile source (`env`, `default`, or `override` when query override is used)
+- role aliases and resolved role tags
+- installed Ollama model inventory when reachable
+- per-role availability for `chat`, `reasoning`, `code`, and `embedding`
+
+Current selection source:
+
+- Profile selection currently comes from `XV7_MODEL_PROFILE`.
+- UI-driven profile selection is planned for a later slice.
+- This API does not mutate profiles, write `.env`, or pull/delete models.
 
 ## 6. Pull Ollama models
 

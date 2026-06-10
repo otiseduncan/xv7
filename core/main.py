@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.agents.base_agent import BaseAgent
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
+from core.runtime.models_api import build_runtime_model_profiles, fetch_runtime_models
 from core.runtime.ollama_status import fetch_ollama_status
 from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
@@ -201,6 +202,30 @@ async def runtime_status() -> dict:
 @app.get("/runtime/ollama")
 async def runtime_ollama() -> dict:
     return await fetch_ollama_status()
+
+
+@app.get("/runtime/models")
+async def runtime_models(profile: str | None = None) -> dict[str, Any]:
+    return await fetch_runtime_models(profile_override=profile)
+
+
+@app.get("/runtime/models/profiles")
+async def runtime_model_profiles() -> dict[str, Any]:
+    return build_runtime_model_profiles()
+
+
+@app.get("/runtime/models/active")
+async def runtime_active_model_profile(profile: str | None = None) -> dict[str, Any]:
+    payload = await fetch_runtime_models(profile_override=profile)
+    return {
+        "active_profile": payload["active_profile"],
+        "profile_source": payload["profile_source"],
+        "resolved_models": payload["resolved_models"],
+        "role_aliases": payload["role_aliases"],
+        "availability": payload["availability"],
+        "ollama": payload["ollama"],
+        "config_error": payload["config_error"],
+    }
 
 
 @app.get("/personas")
