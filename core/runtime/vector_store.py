@@ -221,4 +221,3 @@ class VectorMemoryEngine:
             return 0.0
 
         return dot / (left_norm * right_norm)
-

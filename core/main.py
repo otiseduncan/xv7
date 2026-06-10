@@ -303,4 +303,3 @@ async def add_session_message(
         pass
 
     return updated_state
-
