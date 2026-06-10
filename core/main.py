@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.agents.base_agent import BaseAgent
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
+from core.runtime.ollama_status import fetch_ollama_status
 from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
 from core.runtime.vector_store import VectorMemoryEngine
@@ -193,6 +194,11 @@ async def health() -> dict[str, str]:
 @app.get("/runtime/status")
 async def runtime_status() -> dict:
     return build_runtime_status()
+
+
+@app.get("/runtime/ollama")
+async def runtime_ollama() -> dict:
+    return await fetch_ollama_status()
 
 
 @app.get("/personas")
