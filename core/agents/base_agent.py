@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 try:
-    import yaml
+    import yaml  # type: ignore[import-untyped]
 except ImportError:  # pragma: no cover - handled at runtime if unavailable
     yaml = None
 
