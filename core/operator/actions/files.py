@@ -33,7 +33,9 @@ def list_project_files(*, action_id: str, repo_root: Path) -> OperatorActionResu
     )
 
 
-def read_project_file(*, action_id: str, repo_root: Path, path: str) -> OperatorActionResult:
+def read_project_file(
+    *, action_id: str, repo_root: Path, path: str
+) -> OperatorActionResult:
     started = datetime.now(UTC)
     target = (repo_root / path).resolve()
 
@@ -87,7 +89,10 @@ def read_project_file(*, action_id: str, repo_root: Path, path: str) -> Operator
         stdout_summary=f"chars={len(content)} returned={len(snippet)}",
         stderr_summary="",
         exit_code=None,
-        data={"path": str(target.relative_to(repo_root)).replace("\\", "/"), "content": snippet},
+        data={
+            "path": str(target.relative_to(repo_root)).replace("\\", "/"),
+            "content": snippet,
+        },
         safety=OperatorSafety(allowed=True),
         receipt_label=f"read_project_file {action_id}",
     )

@@ -30,6 +30,13 @@ class PersistentMemoryManager:
         return " ".join(text.lower().strip().split())
 
     @staticmethod
+    def _metadata_string_list(metadata: dict[str, object], key: str) -> list[str]:
+        raw = metadata.get(key)
+        if not isinstance(raw, list):
+            return []
+        return [item for item in raw if isinstance(item, str)]
+
+    @staticmethod
     def _simple_tags(text: str) -> list[str]:
         tags = []
         lower = text.lower()
@@ -241,7 +248,9 @@ class PersistentMemoryManager:
     ) -> list[MemoryRecord]:
         tag_set = {tag.lower() for tag in (tags or []) if tag.strip()}
         needle = query.lower().strip()
-        tokens = [token for token in re.findall(r"[a-z0-9_.-]+", needle) if len(token) > 1]
+        tokens = [
+            token for token in re.findall(r"[a-z0-9_.-]+", needle) if len(token) > 1
+        ]
         matches: list[MemoryRecord] = []
         for record in self.store.list_records():
             is_active = record.status == "active" and not record.pending_approval
@@ -312,12 +321,15 @@ class PersistentMemoryManager:
             lines.append(f"- {record.id}: {record.content}")
         if pending_only:
             lines.append(
-                "Pending (not active): " + ", ".join(record.id for record in pending_only)
+                "Pending (not active): "
+                + ", ".join(record.id for record in pending_only)
             )
         return MemoryActionResult(
             answer="\n".join(lines),
             receipt=self.compact_receipt(active, pending_count=len(pending_only)),
-            metadata_updates={"last_memory_match_ids": [record.id for record in active]},
+            metadata_updates={
+                "last_memory_match_ids": [record.id for record in active]
+            },
         )
 
     def try_handle_chat(
@@ -419,7 +431,9 @@ class PersistentMemoryManager:
             return MemoryActionResult(
                 answer="\n".join(lines),
                 receipt=self.compact_receipt([], pending_count=len(pending)),
-                metadata_updates={"last_memory_match_ids": [record.id for record in pending]},
+                metadata_updates={
+                    "last_memory_match_ids": [record.id for record in pending]
+                },
             )
 
         if normalized_core in {
@@ -437,7 +451,9 @@ class PersistentMemoryManager:
             return MemoryActionResult(
                 answer="\n".join(lines),
                 receipt=self.compact_receipt(active),
-                metadata_updates={"last_memory_match_ids": [record.id for record in active]},
+                metadata_updates={
+                    "last_memory_match_ids": [record.id for record in active]
+                },
             )
 
         if normalized_core.startswith("approve the pending "):
@@ -464,8 +480,13 @@ class PersistentMemoryManager:
                 metadata_updates={"last_memory_match_ids": [activated.id]},
             )
 
-        if normalized_core in {"is that memory active yet", "is that memory active yet?"}:
-            candidate_ids = list(metadata.get("last_memory_match_ids", []))
+        if normalized_core in {
+            "is that memory active yet",
+            "is that memory active yet?",
+        }:
+            candidate_ids = self._metadata_string_list(
+                metadata, "last_memory_match_ids"
+            )
             if not candidate_ids:
                 return MemoryActionResult(
                     answer="I do not have a specific memory target to check.",
@@ -480,7 +501,9 @@ class PersistentMemoryManager:
             return MemoryActionResult(
                 answer=f"{record.id} is currently {record.status} (pending_approval={record.pending_approval}).",
                 receipt=self.compact_receipt(
-                    [record] if record.status == "active" and not record.pending_approval else [],
+                    [record]
+                    if record.status == "active" and not record.pending_approval
+                    else [],
                     pending_count=1 if record.pending_approval else 0,
                 ),
             )
@@ -518,14 +541,23 @@ class PersistentMemoryManager:
             return MemoryActionResult(
                 answer="\n".join(lines),
                 receipt=self.compact_receipt(matches),
-                metadata_updates={"last_memory_match_ids": [record.id for record in matches]},
+                metadata_updates={
+                    "last_memory_match_ids": [record.id for record in matches]
+                },
             )
 
         if normalized_core.startswith("what do you remember about "):
             return self._recall_answer(self._subject_query(normalized_core))
 
-        if normalized_core.startswith("is the ") and " memory still active" in normalized_core:
-            subject = normalized_core.replace("is the", "", 1).replace("memory still active", "").strip(" .?")
+        if (
+            normalized_core.startswith("is the ")
+            and " memory still active" in normalized_core
+        ):
+            subject = (
+                normalized_core.replace("is the", "", 1)
+                .replace("memory still active", "")
+                .strip(" .?")
+            )
             candidates = self.search_memories(query=subject)
             if not candidates:
                 return MemoryActionResult(
@@ -548,7 +580,11 @@ class PersistentMemoryManager:
             )
 
         if normalized_core.startswith("search memory for"):
-            query = question.split("for", 1)[1].strip().strip(".\"") if "for" in question.lower() else ""
+            query = (
+                question.split("for", 1)[1].strip().strip('."')
+                if "for" in question.lower()
+                else ""
+            )
             matches = self.search_memories(query=query)
             if not matches:
                 return MemoryActionResult(
@@ -560,7 +596,9 @@ class PersistentMemoryManager:
             return MemoryActionResult(
                 answer="\n".join(lines),
                 receipt=self.compact_receipt(matches),
-                metadata_updates={"last_memory_match_ids": [record.id for record in matches]},
+                metadata_updates={
+                    "last_memory_match_ids": [record.id for record in matches]
+                },
             )
 
         if normalized_core in {
@@ -569,21 +607,28 @@ class PersistentMemoryManager:
             "what context receipt did you use?",
             "what context receipt did you use",
         }:
-            candidate_ids = list(metadata.get("last_memory_match_ids", []))
+            candidate_ids = self._metadata_string_list(
+                metadata, "last_memory_match_ids"
+            )
             if not candidate_ids:
                 return MemoryActionResult(
                     answer="No recent memory-record selection is available in this session metadata.",
                     receipt=self.compact_receipt([]),
                 )
             records = [self.store.get_record(mid) for mid in candidate_ids]
-            active = [record for record in records if record is not None and record.status == "active"]
+            active = [
+                record
+                for record in records
+                if record is not None and record.status == "active"
+            ]
             if not active:
                 return MemoryActionResult(
                     answer="No active memory records are currently shaping this answer.",
                     receipt=self.compact_receipt([]),
                 )
             return MemoryActionResult(
-                answer="Memory records shaping answer: " + ", ".join(record.id for record in active),
+                answer="Memory records shaping answer: "
+                + ", ".join(record.id for record in active),
                 receipt=self.compact_receipt(active),
             )
 
@@ -597,7 +642,9 @@ class PersistentMemoryManager:
             target_text = target_text.replace("forget the", "", 1)
             target_text = target_text.replace("forget my preference", "", 1)
             target_text = target_text.strip(" .")
-            target_text = re.sub(r"\b(memory|preference|about|my|the|that)\b", " ", target_text)
+            target_text = re.sub(
+                r"\b(memory|preference|about|my|the|that)\b", " ", target_text
+            )
             target_text = " ".join(target_text.split())
             if target_text:
                 candidates = self.search_memories(query=target_text)
@@ -605,10 +652,14 @@ class PersistentMemoryManager:
                     candidates = self.search_memories(query="receipt")
                 candidate_ids = [record.id for record in candidates]
             else:
-                candidate_ids = list(metadata.get("last_memory_match_ids", []))
+                candidate_ids = self._metadata_string_list(
+                    metadata, "last_memory_match_ids"
+                )
 
             if not candidate_ids:
-                candidate_ids = list(metadata.get("last_memory_match_ids", []))
+                candidate_ids = self._metadata_string_list(
+                    metadata, "last_memory_match_ids"
+                )
 
             if not candidate_ids:
                 return MemoryActionResult(
@@ -622,8 +673,7 @@ class PersistentMemoryManager:
                 return MemoryActionResult(
                     answer=(
                         "That matches multiple memories, so I will not delete yet. "
-                        "Please specify one memory ID: "
-                        + ", ".join(candidate_ids)
+                        "Please specify one memory ID: " + ", ".join(candidate_ids)
                     ),
                     receipt=self.compact_receipt([]),
                     metadata_updates={"last_memory_match_ids": candidate_ids},
@@ -636,7 +686,9 @@ class PersistentMemoryManager:
                 metadata_updates={"last_memory_match_ids": []},
             )
 
-        if normalized_core.startswith("update that memory") or normalized_core.startswith("update the "):
+        if normalized_core.startswith(
+            "update that memory"
+        ) or normalized_core.startswith("update the "):
             new_text = question.split(":", 1)[1].strip() if ":" in question else ""
             if not new_text:
                 return MemoryActionResult(
@@ -649,14 +701,24 @@ class PersistentMemoryManager:
 
             query_target = ""
             if normalized_core.startswith("update the "):
-                query_target = normalized_core.replace("update the", "", 1).split(":", 1)[0].strip()
-                query_target = re.sub(r"\b(memory|preference|about|my|the|that)\b", " ", query_target)
+                query_target = (
+                    normalized_core.replace("update the", "", 1)
+                    .split(":", 1)[0]
+                    .strip()
+                )
+                query_target = re.sub(
+                    r"\b(memory|preference|about|my|the|that)\b", " ", query_target
+                )
                 query_target = " ".join(query_target.split())
 
             if query_target:
-                candidate_ids = [record.id for record in self.search_memories(query=query_target)]
+                candidate_ids = [
+                    record.id for record in self.search_memories(query=query_target)
+                ]
             else:
-                candidate_ids = list(metadata.get("last_memory_match_ids", []))
+                candidate_ids = self._metadata_string_list(
+                    metadata, "last_memory_match_ids"
+                )
 
             if not candidate_ids:
                 return MemoryActionResult(
@@ -689,13 +751,24 @@ class PersistentMemoryManager:
             "did you delete the old receipt memory or supersede it?",
             "did you delete the old receipt memory or supersede it",
         }:
-            receipt_related = [record for record in self.store.list_records() if "receipt" in record.content.lower() or "receipt" in " ".join(record.tags).lower()]
-            superseded = [record.id for record in receipt_related if record.status == "superseded"]
-            deleted = [record.id for record in receipt_related if record.status == "deleted"]
-            active = [record.id for record in receipt_related if record.status == "active"]
+            receipt_related = [
+                record
+                for record in self.store.list_records()
+                if "receipt" in record.content.lower()
+                or "receipt" in " ".join(record.tags).lower()
+            ]
+            superseded_ids = [
+                record.id for record in receipt_related if record.status == "superseded"
+            ]
+            deleted_ids = [
+                record.id for record in receipt_related if record.status == "deleted"
+            ]
+            active_ids = [
+                record.id for record in receipt_related if record.status == "active"
+            ]
             answer = (
-                f"Receipt-memory lifecycle: active={active or ['none']}, "
-                f"superseded={superseded or ['none']}, deleted={deleted or ['none']}."
+                f"Receipt-memory lifecycle: active={active_ids or ['none']}, "
+                f"superseded={superseded_ids or ['none']}, deleted={deleted_ids or ['none']}."
             )
             return MemoryActionResult(
                 answer=answer,
@@ -704,10 +777,17 @@ class PersistentMemoryManager:
                 ),
             )
 
-        if normalized_core in {"show the receipt memory status", "show the receipt memory status."}:
+        if normalized_core in {
+            "show the receipt memory status",
+            "show the receipt memory status.",
+        }:
             matches = self.search_memories(query="receipt", include_pending=True)
             if not matches:
-                all_receipt = [record for record in self.store.list_records() if "receipt" in record.content.lower()]
+                all_receipt = [
+                    record
+                    for record in self.store.list_records()
+                    if "receipt" in record.content.lower()
+                ]
                 if not all_receipt:
                     return MemoryActionResult(
                         answer="No receipt-related memory records found.",
@@ -728,9 +808,13 @@ class PersistentMemoryManager:
                 answer="\n".join(lines),
                 receipt=self.compact_receipt(
                     [record for record in matches if record.status == "active"],
-                    pending_count=len([record for record in matches if record.pending_approval]),
+                    pending_count=len(
+                        [record for record in matches if record.pending_approval]
+                    ),
                 ),
-                metadata_updates={"last_memory_match_ids": [record.id for record in matches]},
+                metadata_updates={
+                    "last_memory_match_ids": [record.id for record in matches]
+                },
             )
 
         if normalized_core in {
@@ -743,7 +827,9 @@ class PersistentMemoryManager:
             "is that verified or just remembered",
             "is that verified or remembered",
         }:
-            candidate_ids = list(metadata.get("last_memory_match_ids", []))
+            candidate_ids = self._metadata_string_list(
+                metadata, "last_memory_match_ids"
+            )
             if not candidate_ids:
                 return MemoryActionResult(
                     answer=(

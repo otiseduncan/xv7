@@ -13,7 +13,9 @@ class AnswerContract:
         r"\b(remind me|set (?:me )?(?:a )?reminder|create (?:a )?reminder|add (?:it )?to (?:my )?calendar|schedule (?:it|this|that))\b"
     )
     CALENDAR_PATTERN = re.compile(r"\b(calendar|schedule|meeting|appointment|event)\b")
-    APPOINTMENT_PATTERN = re.compile(r"\b(appointment|meeting|event|doctor visit|doctor appointment)\b")
+    APPOINTMENT_PATTERN = re.compile(
+        r"\b(appointment|meeting|event|doctor visit|doctor appointment)\b"
+    )
     WEATHER_PATTERN = re.compile(
         r"\b(weather|forecast|outside temp|outside temperature|local forecast|climate|weather conditions)\b"
     )
@@ -21,12 +23,24 @@ class AnswerContract:
         r"\b(cpu|gpu|processor|graphics|vram|disk|disks|disc|discs|drive|drives|ports?|processes|services|docker|container|vscode|vs code|hardware|system scan|host scan|system info|temperature sensor)\b"
     )
     EMAIL_PATTERN = re.compile(r"\b(email|gmail|imap|inbox|mailbox|outlook|mail)\b")
-    EMAIL_SEND_PATTERN = re.compile(r"\b(send|draft|write|compose)\b.*\b(email|gmail|mail)\b|\b(email|gmail|mail)\b.*\b(send|draft|write|compose)\b")
-    SMS_PATTERN = re.compile(r"\b(text someone|send (?:a )?text|text message|sms|message someone|send (?:them|someone) a message)\b")
-    WEB_LOOKUP_PATTERN = re.compile(r"\b(web|website|browse|browser|internet|search online|look up|lookup|google)\b")
-    CONTACT_PATTERN = re.compile(r"\b(contact|contacts|address book|phone number|call|text message|sms)\b")
-    FAMILY_PATTERN = re.compile(r"\b(family|wife|husband|kids|children|parents|mom|mother|dad|father|siblings)\b")
-    MEDICAL_PATTERN = re.compile(r"\b(medical|health|history|doctor|medication|diagnosis)\b")
+    EMAIL_SEND_PATTERN = re.compile(
+        r"\b(send|draft|write|compose)\b.*\b(email|gmail|mail)\b|\b(email|gmail|mail)\b.*\b(send|draft|write|compose)\b"
+    )
+    SMS_PATTERN = re.compile(
+        r"\b(text someone|send (?:a )?text|text message|sms|message someone|send (?:them|someone) a message)\b"
+    )
+    WEB_LOOKUP_PATTERN = re.compile(
+        r"\b(web|website|browse|browser|internet|search online|look up|lookup|google)\b"
+    )
+    CONTACT_PATTERN = re.compile(
+        r"\b(contact|contacts|address book|phone number|call|text message|sms)\b"
+    )
+    FAMILY_PATTERN = re.compile(
+        r"\b(family|wife|husband|kids|children|parents|mom|mother|dad|father|siblings)\b"
+    )
+    MEDICAL_PATTERN = re.compile(
+        r"\b(medical|health|history|doctor|medication|diagnosis)\b"
+    )
     BIRTHDAY_PATTERN = re.compile(r"\b(birthday|anniversary|important date)\b")
 
     ROADMAP_NOT_WIRED = "That belongs in my roadmap, but the tool is not wired yet."
@@ -60,7 +74,10 @@ class AnswerContract:
 
         for fact in verified.facts:
             lowered = fact.statement.lower()
-            if "operator readiness" not in lowered and "operator_readiness_report" not in lowered:
+            if (
+                "operator readiness" not in lowered
+                and "operator_readiness_report" not in lowered
+            ):
                 continue
 
             match = re.search(r"\b([a-z0-9_.-]+:[a-z0-9_.-]+)\b", fact.statement)
@@ -77,7 +94,10 @@ class AnswerContract:
         checks = session_metadata.get("tool_results")
         if isinstance(checks, list):
             for item in checks:
-                if isinstance(item, dict) and str(item.get("type", "")).lower() == "repo_check":
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("type", "")).lower() == "repo_check"
+                ):
                     return True
         return False
 
@@ -124,14 +144,26 @@ class AnswerContract:
     @staticmethod
     def _normalize_reminder_request(question: str) -> str:
         text = re.sub(r"\s+", " ", question.strip())
-        text = re.sub(r"^(please\s+)?(set|create|add)\s+(me\s+)?(a\s+)?reminder\s+(for|to)\s+", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"^(please\s+)?remind me\s+(to\s+)?", "", text, flags=re.IGNORECASE)
+        text = re.sub(
+            r"^(please\s+)?(set|create|add)\s+(me\s+)?(a\s+)?reminder\s+(for|to)\s+",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"^(please\s+)?remind me\s+(to\s+)?", "", text, flags=re.IGNORECASE
+        )
         text = text.strip(" .")
         if not text:
             return "your requested reminder details"
         text = re.sub(r"(?i)\ba\.m\.", "AM", text)
         text = re.sub(r"(?i)\bp\.m\.", "PM", text)
-        text = re.sub(r"\bat\s+(\d{1,2}:\d{2})\s*(AM|PM)\s+to\s+", r"at \1 \2 — ", text, flags=re.IGNORECASE)
+        text = re.sub(
+            r"\bat\s+(\d{1,2}:\d{2})\s*(AM|PM)\s+to\s+",
+            r"at \1 \2 — ",
+            text,
+            flags=re.IGNORECASE,
+        )
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
         return text
@@ -313,8 +345,6 @@ class AnswerContract:
         session_metadata: dict[str, Any],
     ) -> str | None:
         normalized = self._normalize(question)
-
-        system = self._find_layer_record(records_by_layer, BrainLayer.SYSTEM_PROMPT)
         focus = self._find_layer_record(records_by_layer, BrainLayer.ACTIVE_FOCUS)
         knowledge = self._find_layer_record(records_by_layer, BrainLayer.KNOWLEDGE)
         memory = self._find_layer_record(records_by_layer, BrainLayer.MEMORY)
@@ -567,7 +597,9 @@ class AnswerContract:
                 return "Verified: XV7 has explicit beta-ready proof in loaded verified records."
 
             focus_text = self._session_active_focus_summary(session_metadata) or (
-                focus.summary if focus is not None else "active focus record is not loaded"
+                focus.summary
+                if focus is not None
+                else "active focus record is not loaded"
             )
             return (
                 "I do not have proof that XV7 is beta-ready yet. "
@@ -594,7 +626,9 @@ class AnswerContract:
                     failure_facts.append(fact)
             if not failure_facts:
                 return "No current failure record is loaded in Verified Status."
-            return "Recorded failures: " + " ".join(f"- {item}" for item in failure_facts)
+            return "Recorded failures: " + " ".join(
+                f"- {item}" for item in failure_facts
+            )
 
         if normalized in {"what do you remember?", "what do you remember"}:
             if memory is None:
@@ -622,14 +656,12 @@ class AnswerContract:
 
         if normalized in {
             "is “otis wants fresh xv7 knowledge” verified or remembered?",
-            "is \"otis wants fresh xv7 knowledge\" verified or remembered?",
-            "is \"otis wants fresh xv7 knowledge\" verified or remembered",
+            'is "otis wants fresh xv7 knowledge" verified or remembered?',
+            'is "otis wants fresh xv7 knowledge" verified or remembered',
             "is otis wants fresh xv7 knowledge verified or remembered?",
             "is otis wants fresh xv7 knowledge verified or remembered",
         }:
-            return (
-                "That is remembered user/project preference unless separately proven in Verified Status."
-            )
+            return "That is remembered user/project preference unless separately proven in Verified Status."
 
         if normalized in {
             "what do you know about xv7 architecture?",
@@ -673,15 +705,15 @@ class AnswerContract:
             "do you have a microphone button?",
             "do you have a microphone button",
         }:
-            return (
-                "Yes. The current UI includes a microphone button in the prompt row for browser voice input."
-            )
+            return "Yes. The current UI includes a microphone button in the prompt row for browser voice input."
 
         if normalized in {
             "does the mic auto-send?",
             "does the mic auto-send",
         }:
-            return "No. Mic input fills the prompt box for review and does not auto-send."
+            return (
+                "No. Mic input fills the prompt box for review and does not auto-send."
+            )
 
         if normalized in {
             "what color theme are we using?",
@@ -722,7 +754,9 @@ class AnswerContract:
             return "Verified facts: " + " ".join(f"- {item}" for item in facts)
 
         if "guess" in normalized:
-            focus_hint = focus.summary if focus is not None else "current focus is missing"
+            focus_hint = (
+                focus.summary if focus is not None else "current focus is missing"
+            )
             return (
                 "Guess (unverified): a reasonable next step is to continue from the current focus "
                 f"and harden what remains. Context hint: {focus_hint}."

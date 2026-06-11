@@ -35,7 +35,9 @@ def latest_action(session_metadata: dict[str, Any]) -> dict[str, Any] | None:
     return history[-1]
 
 
-def latest_action_by_name(session_metadata: dict[str, Any], action_name: str) -> dict[str, Any] | None:
+def latest_action_by_name(
+    session_metadata: dict[str, Any], action_name: str
+) -> dict[str, Any] | None:
     history = get_history(session_metadata)
     for item in reversed(history):
         if str(item.get("action_name", "")) == action_name:

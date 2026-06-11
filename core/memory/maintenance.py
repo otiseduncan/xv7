@@ -56,7 +56,9 @@ class MemoryMaintenanceService:
         ]
 
     def list_deleted(self) -> list[MemoryRecord]:
-        return [record for record in self.store.list_records() if record.status == "deleted"]
+        return [
+            record for record in self.store.list_records() if record.status == "deleted"
+        ]
 
     def find_duplicate_candidates(self) -> list[DuplicateCandidate]:
         active = self.list_active()

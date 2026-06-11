@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from core.brain.schema import BrainLayer, BrainRecord
 
@@ -59,7 +59,9 @@ class BrainContextAssembler:
         missing_layers: list[str] = []
 
         for layer in layers:
-            layer_records = sorted(by_layer.get(layer, []), key=lambda r: (-r.priority, r.record_id))
+            layer_records = sorted(
+                by_layer.get(layer, []), key=lambda r: (-r.priority, r.record_id)
+            )
             if not layer_records:
                 missing_layers.append(layer.value)
                 sections.append(f"[{layer.value}] MISSING")
@@ -73,9 +75,7 @@ class BrainContextAssembler:
             for record in layer_records:
                 sections.append(f"- {record.record_id}: {record.summary}")
                 for fact in record.facts:
-                    sections.append(
-                        f"  * {fact.statement} (source={fact.source_type})"
-                    )
+                    sections.append(f"  * {fact.statement} (source={fact.source_type})")
 
         sections.append("--- END XV7 ACTIVE CONTEXT ---")
 

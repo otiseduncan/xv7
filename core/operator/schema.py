@@ -6,6 +6,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+OperatorMode = Literal["read_only", "operator", "high_risk"]
+OperatorStatus = Literal[
+    "success",
+    "failed",
+    "denied",
+    "pending",
+    "cancelled",
+    "not_implemented",
+]
+
+
 class OperatorSafety(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -23,8 +34,8 @@ class OperatorActionResult(BaseModel):
 
     action_id: str = Field(min_length=1)
     action_name: str = Field(min_length=1)
-    mode: Literal["read_only", "operator", "high_risk"] = "read_only"
-    status: Literal["success", "failed", "denied", "pending", "cancelled", "not_implemented"]
+    mode: OperatorMode = "read_only"
+    status: OperatorStatus
     started_at: datetime
     completed_at: datetime
     command_or_operation: str = Field(min_length=1)
@@ -47,11 +58,17 @@ class OperatorActionResult(BaseModel):
         limitation = ""
         if self.stderr_summary:
             lowered = self.stderr_summary.lower()
-            if "limitation" in lowered or "cannot be proven" in lowered or "unavailable" in lowered:
+            if (
+                "limitation" in lowered
+                or "cannot be proven" in lowered
+                or "unavailable" in lowered
+            ):
                 limitation = self.stderr_summary
 
         data_preview = dict(self.data)
-        if "status_lines" in data_preview and isinstance(data_preview["status_lines"], list):
+        if "status_lines" in data_preview and isinstance(
+            data_preview["status_lines"], list
+        ):
             data_preview["status_lines"] = data_preview["status_lines"][:10]
 
         return {

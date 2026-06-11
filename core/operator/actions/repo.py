@@ -45,20 +45,36 @@ def repo_status(*, action_id: str, repo_root: Path) -> OperatorActionResult:
     branch_proc = _run_git(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"])
     status_proc = _run_git(repo_root, ["status", "--porcelain"])
     branch_meta_proc = _run_git(repo_root, ["status", "--porcelain", "--branch"])
-    upstream_proc = _run_git(repo_root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+    upstream_proc = _run_git(
+        repo_root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+    )
     completed = datetime.now(UTC)
 
     combined_stderr = "\n".join(
         chunk.strip()
-        for chunk in (branch_proc.stderr, status_proc.stderr, branch_meta_proc.stderr, upstream_proc.stderr)
+        for chunk in (
+            branch_proc.stderr,
+            status_proc.stderr,
+            branch_meta_proc.stderr,
+            upstream_proc.stderr,
+        )
         if chunk.strip()
     )
     combined_stdout = "\n".join(
         chunk.strip()
-        for chunk in (branch_proc.stdout, status_proc.stdout, branch_meta_proc.stdout, upstream_proc.stdout)
+        for chunk in (
+            branch_proc.stdout,
+            status_proc.stdout,
+            branch_meta_proc.stdout,
+            upstream_proc.stdout,
+        )
         if chunk.strip()
     )
-    ok = branch_proc.returncode == 0 and status_proc.returncode == 0 and branch_meta_proc.returncode == 0
+    ok = (
+        branch_proc.returncode == 0
+        and status_proc.returncode == 0
+        and branch_meta_proc.returncode == 0
+    )
     branch = branch_proc.stdout.strip() or "unknown"
     status_lines = [line for line in status_proc.stdout.splitlines() if line.strip()]
     short_status_lines = status_lines[:20]
@@ -107,7 +123,13 @@ def repo_status(*, action_id: str, repo_root: Path) -> OperatorActionResult:
             else combined_stdout[:500]
         ),
         stderr_summary=combined_stderr[:500],
-        exit_code=0 if ok else (status_proc.returncode or branch_proc.returncode or branch_meta_proc.returncode),
+        exit_code=0
+        if ok
+        else (
+            status_proc.returncode
+            or branch_proc.returncode
+            or branch_meta_proc.returncode
+        ),
         data={
             "branch": branch,
             "clean": clean,

@@ -126,7 +126,9 @@ def runtime_health(*, action_id: str, repo_root: Path) -> OperatorActionResult:
             service_name="xv7-frontend",
             url_used=frontend_url,
             reachable=ok_frontend,
-            limitation=None if ok_frontend else f"Frontend probe failed: {frontend_error}",
+            limitation=None
+            if ok_frontend
+            else f"Frontend probe failed: {frontend_error}",
         ),
     ]
 

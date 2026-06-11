@@ -7,11 +7,13 @@ from typing import Any
 
 import httpx
 
-from core.operator.schema import OperatorActionResult, OperatorSafety
+from core.operator.schema import OperatorActionResult, OperatorSafety, OperatorStatus
 
 
 def _bridge_base_url() -> str:
-    return os.getenv("XV7_LOCAL_BRIDGE_URL", "http://host.docker.internal:8765").rstrip("/")
+    return os.getenv("XV7_LOCAL_BRIDGE_URL", "http://host.docker.internal:8765").rstrip(
+        "/"
+    )
 
 
 def _bridge_token() -> str:
@@ -30,7 +32,9 @@ def _bridge_timeout_seconds() -> float:
 def _safe_preview(data: Any) -> str:
     if isinstance(data, dict):
         keys = ", ".join(sorted(str(k) for k in data.keys())[:8])
-        return f"Bridge data keys: {keys}" if keys else "Bridge returned an empty object."
+        return (
+            f"Bridge data keys: {keys}" if keys else "Bridge returned an empty object."
+        )
     if isinstance(data, list):
         return f"Bridge returned {len(data)} items."
     if data is None:
@@ -42,7 +46,7 @@ def _build_result(
     *,
     action_id: str,
     action_name: str,
-    status: str,
+    status: OperatorStatus,
     command: str,
     stdout: str,
     stderr: str,
@@ -165,7 +169,11 @@ def _run_bridge_scan(
 
     exit_code_raw = payload.get("exit_code")
     try:
-        exit_code = int(exit_code_raw) if exit_code_raw is not None else (0 if status == "success" else 1)
+        exit_code = (
+            int(exit_code_raw)
+            if exit_code_raw is not None
+            else (0 if status == "success" else 1)
+        )
     except (TypeError, ValueError):
         exit_code = 0 if status == "success" else 1
 
@@ -190,7 +198,11 @@ def _run_bridge_scan(
             data=merged_data,
         )
 
-    final_stderr = stderr[:1200] if stderr else (summary or "Local host scan bridge failed to complete the request.")
+    final_stderr = (
+        stderr[:1200]
+        if stderr
+        else (summary or "Local host scan bridge failed to complete the request.")
+    )
     return _build_result(
         action_id=action_id,
         action_name=action_name,
@@ -204,40 +216,90 @@ def _run_bridge_scan(
 
 
 def scan_system(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_system", repo_root=repo_root, scan_name="system")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_system",
+        repo_root=repo_root,
+        scan_name="system",
+    )
 
 
 def scan_cpu(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_cpu", repo_root=repo_root, scan_name="cpu")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_cpu",
+        repo_root=repo_root,
+        scan_name="cpu",
+    )
 
 
 def scan_gpu(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_gpu", repo_root=repo_root, scan_name="gpu")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_gpu",
+        repo_root=repo_root,
+        scan_name="gpu",
+    )
 
 
 def scan_disk(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_disk", repo_root=repo_root, scan_name="disk")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_disk",
+        repo_root=repo_root,
+        scan_name="disk",
+    )
 
 
 def scan_network(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_network", repo_root=repo_root, scan_name="network")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_network",
+        repo_root=repo_root,
+        scan_name="network",
+    )
 
 
 def scan_ports(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_ports", repo_root=repo_root, scan_name="ports")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_ports",
+        repo_root=repo_root,
+        scan_name="ports",
+    )
 
 
 def scan_processes(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_processes", repo_root=repo_root, scan_name="processes")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_processes",
+        repo_root=repo_root,
+        scan_name="processes",
+    )
 
 
 def scan_services(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_services", repo_root=repo_root, scan_name="services")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_services",
+        repo_root=repo_root,
+        scan_name="services",
+    )
 
 
 def scan_docker(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_docker", repo_root=repo_root, scan_name="docker")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_docker",
+        repo_root=repo_root,
+        scan_name="docker",
+    )
 
 
 def scan_vscode(*, action_id: str, repo_root: Path) -> OperatorActionResult:
-    return _run_bridge_scan(action_id=action_id, action_name="scan_vscode", repo_root=repo_root, scan_name="vscode")
+    return _run_bridge_scan(
+        action_id=action_id,
+        action_name="scan_vscode",
+        repo_root=repo_root,
+        scan_name="vscode",
+    )

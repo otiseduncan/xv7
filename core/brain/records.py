@@ -30,7 +30,9 @@ class BrainRecordLoader:
 
         return records
 
-    def load_active_records(self, *, layer: BrainLayer | None = None) -> list[BrainRecord]:
+    def load_active_records(
+        self, *, layer: BrainLayer | None = None
+    ) -> list[BrainRecord]:
         records = [r for r in self.load_records() if r.status == "active"]
         if layer is not None:
             records = [r for r in records if r.layer == layer]

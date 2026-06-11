@@ -27,7 +27,9 @@ class BrainContextManager:
         return " ".join(question.lower().strip().split())
 
     @staticmethod
-    def _highest_priority_by_layer(records: list[BrainRecord]) -> dict[BrainLayer, BrainRecord]:
+    def _highest_priority_by_layer(
+        records: list[BrainRecord],
+    ) -> dict[BrainLayer, BrainRecord]:
         result: dict[BrainLayer, BrainRecord] = {}
         for record in records:
             current = result.get(record.layer)
@@ -236,9 +238,13 @@ class BrainContextManager:
         layers: list[BrainLayer] = [BrainLayer.SYSTEM_PROMPT]
         if re.search(r"\b(work|working|focus|task|priority)\b", normalized):
             layers.append(BrainLayer.ACTIVE_FOCUS)
-        if re.search(r"\b(verified|prove|proof|repo|branch|status|sync|synced)\b", normalized):
+        if re.search(
+            r"\b(verified|prove|proof|repo|branch|status|sync|synced)\b", normalized
+        ):
             layers.append(BrainLayer.VERIFIED_STATUS)
-        if re.search(r"\b(remember|memory|prefer|preference|asked|request)\b", normalized):
+        if re.search(
+            r"\b(remember|memory|prefer|preference|asked|request)\b", normalized
+        ):
             layers.append(BrainLayer.MEMORY)
         if re.search(r"\b(architecture|component|service|system|how)\b", normalized):
             layers.append(BrainLayer.KNOWLEDGE)

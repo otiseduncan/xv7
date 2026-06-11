@@ -257,6 +257,7 @@ def _normalize_intent_text(text: str) -> str:
     lowered = re.sub(r"[\s,]+", " ", lowered)
     return lowered
 
+
 ACTIVE_FOCUS_PROTECTED_PATTERN = re.compile(
     r"\b("
     r"delete|remove|destroy|format|wipe|erase|"
@@ -341,7 +342,9 @@ def _extract_workflow_habit_text(question: str) -> str:
     return normalized.strip(" .!?")
 
 
-def _append_learning_signal(session_metadata: dict[str, Any], signal: dict[str, Any]) -> None:
+def _append_learning_signal(
+    session_metadata: dict[str, Any], signal: dict[str, Any]
+) -> None:
     current = session_metadata.get("learning_signals")
     if not isinstance(current, list):
         current = []
@@ -436,15 +439,22 @@ def _is_focus_status_question(question: str) -> bool:
     }
 
 
-def _session_focus_context_receipt(session_metadata: dict[str, Any]) -> dict[str, Any] | None:
+def _session_focus_context_receipt(
+    session_metadata: dict[str, Any],
+) -> dict[str, Any] | None:
     focus = session_metadata.get("active_focus")
     if not isinstance(focus, dict):
         return None
 
     focus_id = str(focus.get("id", "")).strip()
     focus_summary = str(focus.get("summary", "")).strip()
-    source = str(focus.get("source", "direct_user_instruction")).strip() or "direct_user_instruction"
-    persistence = str(focus.get("persistence", "session-only")).strip() or "session-only"
+    source = (
+        str(focus.get("source", "direct_user_instruction")).strip()
+        or "direct_user_instruction"
+    )
+    persistence = (
+        str(focus.get("persistence", "session-only")).strip() or "session-only"
+    )
     if not focus_id or not focus_summary:
         return None
 
@@ -545,6 +555,7 @@ brain_context_manager = BrainContextManager()
 persistent_memory_manager = PersistentMemoryManager()
 _operator_repo_root = Path(os.getenv("XV7_OPERATOR_REPO_ROOT", str(Path.cwd())))
 operator_manager = OperatorManager(repo_root=_operator_repo_root)
+
 
 @app.exception_handler(SessionNotFoundError)
 async def session_not_found_handler(
@@ -735,7 +746,9 @@ async def stage_operator_action(payload: OperatorStageRequest) -> dict[str, Any]
 
     structured_receipt = stage_result["result"].structured_receipt()
     history = append_history(session_state.metadata, structured_receipt)
-    session_state.metadata["operator_last_action"] = stage_result["result"].model_dump(mode="json")
+    session_state.metadata["operator_last_action"] = stage_result["result"].model_dump(
+        mode="json"
+    )
     session_state.metadata["operator_action_history"] = history
     await memory_manager.update_session(session_state)
 
@@ -769,7 +782,7 @@ async def confirm_operator_action(payload: OperatorConfirmRequest) -> dict[str, 
     should_clear = result.status in {"success", "cancelled", "not_implemented"}
     if result.status == "failed":
         err = str(result.stderr_summary or "").lower()
-        should_clear = not ("typed confirmation did not match" in err)
+        should_clear = "typed confirmation did not match" not in err
 
     if should_clear:
         operator_manager.clear_pending_action(session_state.metadata)
@@ -796,14 +809,18 @@ async def cancel_operator_action(payload: OperatorCancelRequest) -> dict[str, An
     pending = operator_manager.get_pending_action(session_state.metadata)
 
     if pending is None or str(pending.get("action_id", "")) != payload.action_id:
-        raise ValueError("No matching pending operator action found for cancel request.")
+        raise ValueError(
+            "No matching pending operator action found for cancel request."
+        )
 
     cancellation = operator_manager.cancel_pending_action(pending)
     operator_manager.clear_pending_action(session_state.metadata)
 
     structured_receipt = cancellation["result"].structured_receipt()
     history = append_history(session_state.metadata, structured_receipt)
-    session_state.metadata["operator_last_action"] = cancellation["result"].model_dump(mode="json")
+    session_state.metadata["operator_last_action"] = cancellation["result"].model_dump(
+        mode="json"
+    )
     session_state.metadata["operator_action_history"] = history
     await memory_manager.update_session(session_state)
 
@@ -949,7 +966,9 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
         updated_state.metadata["last_assistant_payload"] = assistant_payload
@@ -982,9 +1001,7 @@ async def add_session_message(
         )
 
         persistence_label = "saved" if persisted else "session-only"
-        visible_text = (
-            "Understood. I recorded that as a communication preference and will use it as working behavior going forward."
-        )
+        visible_text = "Understood. I recorded that as a communication preference and will use it as working behavior going forward."
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=_intent_context_receipt(
@@ -1024,7 +1041,9 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
         updated_state.metadata["last_assistant_payload"] = assistant_payload
@@ -1057,9 +1076,7 @@ async def add_session_message(
         )
 
         persistence_label = "saved" if persisted else "session-only"
-        visible_text = (
-            "Understood. I recorded that as workflow/habit learning and will adapt to it as current working behavior."
-        )
+        visible_text = "Understood. I recorded that as workflow/habit learning and will adapt to it as current working behavior."
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=_intent_context_receipt(
@@ -1099,7 +1116,9 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
         updated_state.metadata["last_assistant_payload"] = assistant_payload
@@ -1159,9 +1178,13 @@ async def add_session_message(
                 assistant_role=assistant_message.role,
                 assistant_content=assistant_message.content,
             )
-            updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
             updated_state.metadata["vector_memory"] = vector_memory_receipt
-            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
             updated_state.metadata["last_assistant_payload"] = assistant_payload
             await memory_manager.update_session(updated_state)
             return updated_state
@@ -1238,7 +1261,9 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
         updated_state.metadata["last_assistant_payload"] = assistant_payload
@@ -1320,7 +1345,9 @@ async def add_session_message(
             assistant_content=assistant_message.content,
         )
         updated_state.metadata["answer_provenance"] = policy_provenance
-        updated_state.metadata["operator_last_action"] = operator_action.result.model_dump(mode="json")
+        updated_state.metadata["operator_last_action"] = (
+            operator_action.result.model_dump(mode="json")
+        )
         updated_state.metadata["operator_action_history"] = current_history
         updated_state.metadata["last_assistant_payload"] = assistant_payload
         if (
@@ -1405,8 +1432,6 @@ async def add_session_message(
         0,
         ConversationMessage(role="system", content=brain_context.prompt),
     )
-
-    compact_receipt = str(brain_context.receipt.get("compact", "")).strip()
     brain_answer = brain_context_manager.answer_from_records(
         payload.raw_text,
         session_metadata=session_state.metadata,
@@ -1551,7 +1576,9 @@ async def add_session_message(
     }
     updated_state.metadata["vector_memory"] = vector_memory_receipt
     updated_state.metadata["context_receipt"] = brain_context.receipt
-    updated_state.metadata["last_assistant_payload"] = updated_state.messages[-1].metadata
+    updated_state.metadata["last_assistant_payload"] = updated_state.messages[
+        -1
+    ].metadata
     await memory_manager.update_session(updated_state)
 
     return updated_state
