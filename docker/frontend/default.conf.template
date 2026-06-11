@@ -20,6 +20,10 @@ server {
         rewrite ^/api/(.*)$ /$1 break;
         proxy_pass http://xv7-core:8000;
         proxy_set_header X-XV7-API-Key ${XV7_API_KEY};
+        # LLM responses can exceed nginx's default upstream timeout.
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 900s;
+        proxy_read_timeout 900s;
     }
 
     location / {
