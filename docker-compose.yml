@@ -133,6 +133,11 @@ services:
       - "3000:80"                      # Browse to http://localhost:3000
     volumes:
       - ./public:/usr/share/nginx/html # Live-reload for index.html and app.js
+    environment:
+      - XV7_API_KEY=${CORE_API_KEY:?CORE_API_KEY must be set}
+    depends_on:
+      xv7-core:
+        condition: service_started
     networks:
       - xv7-network
 
