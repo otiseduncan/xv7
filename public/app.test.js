@@ -37,6 +37,7 @@ function buildDom() {
     <textarea id="promptInput"></textarea>
     <button id="micButton"></button>
     <button id="sendButton"></button>
+    <div id="voiceStatus"></div>
     <span id="modelActiveProfile"></span>
     <span id="modelProfileSource"></span>
     <span id="modelOllamaReachable"></span>
@@ -732,6 +733,203 @@ describe('ModelProfileControl', () => {
 
     ui.toggleVoiceInput();
     expect(document.getElementById('alertBox').textContent).toContain('Microphone permission was denied.');
+  });
+
+  it('mic button has correct idle aria-label', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('micButton').getAttribute('aria-label')).toBe('Start voice input');
+  });
+
+  it('supported speech recognition starts listening and clicking again stops listening', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+
+      start() {
+        if (this.onstart) this.onstart();
+      }
+
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('micButton').click();
+    expect(document.getElementById('micButton').textContent).toContain('Listening...');
+    expect(document.getElementById('micButton').getAttribute('aria-label')).toBe('Stop voice input');
+    expect(document.getElementById('voiceStatus').textContent).toContain('Listening...');
+
+    document.getElementById('micButton').click();
+    expect(document.getElementById('micButton').textContent).toBe('Mic');
+    expect(document.getElementById('micButton').getAttribute('aria-label')).toBe('Start voice input');
+  });
+
+  it('transcript appends to existing prompt text and does not auto-send', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+
+      start() {
+        if (this.onstart) this.onstart();
+      }
+
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    const ui = new Xv7UI();
+    await flushAsync();
+    fetchMock.mockClear();
+
+    document.getElementById('promptInput').value = 'hello';
+    ui.toggleVoiceInput();
+    ui.speechRecognition.onresult({ results: [[{ transcript: 'world' }]] });
+    ui.speechRecognition.onend();
+    await flushAsync();
+
+    expect(document.getElementById('promptInput').value).toBe('hello world');
+    expect(document.getElementById('voiceStatus').textContent).toContain('Voice captured. Review and send.');
+
+    const messageCalls = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] || {};
+      return new URL(call[0], 'http://localhost').pathname.includes('/messages') && (init.method || '').toUpperCase() === 'POST';
+    });
+    expect(messageCalls.length).toBe(0);
+  });
+
+  it('recognition end returns mic to idle and send clears transcript pending status', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+
+      start() {
+        if (this.onstart) this.onstart();
+      }
+
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.toggleVoiceInput();
+    ui.speechRecognition.onresult({ results: [[{ transcript: 'draft prompt' }]] });
+    ui.speechRecognition.onend();
+    await flushAsync();
+
+    expect(document.getElementById('voiceStatus').textContent).toContain('Voice captured. Review and send.');
+
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.getElementById('voiceStatus').textContent).toBe('');
+    expect(document.getElementById('micButton').textContent).toBe('Mic');
+  });
+
+  it('renders read-aloud button on assistant messages and speech uses visible text only', async () => {
+    const speak = vi.fn();
+    const cancel = vi.fn();
+    window.speechSynthesis = { speak, cancel };
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButtons = [...document.querySelectorAll('.message-audio-button')];
+    expect(audioButtons.length).toBeGreaterThan(0);
+    expect(audioButtons[0].getAttribute('aria-label')).toBe('Read assistant response aloud');
+
+    audioButtons[0].click();
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak.mock.calls[0][0].text).toContain('The repo is on main. The working tree is not clean.');
+    expect(speak.mock.calls[0][0].text).not.toContain('Operator:');
+  });
+
+  it('read-aloud toggle stops active speech', async () => {
+    const speak = vi.fn();
+    const cancel = vi.fn();
+    window.speechSynthesis = { speak, cancel };
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButton = document.querySelector('.message-audio-button');
+    audioButton.click();
+    await flushAsync();
+    audioButton.click();
+    await flushAsync();
+
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it('unsupported speech synthesis disables read-aloud gracefully', async () => {
+    window.speechSynthesis = undefined;
+    window.SpeechSynthesisUtterance = undefined;
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButton = document.querySelector('.message-audio-button');
+    expect(audioButton).toBeTruthy();
+    expect(audioButton.disabled).toBe(true);
   });
 
   it('copies entire chat with visible content and compact receipts only', async () => {

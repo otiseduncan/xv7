@@ -52,10 +52,31 @@ class Xv7UI {
   speechRecognition = null;
 
   /** @type {boolean} */
-  speechSupported = false;
+  voiceInputSupported = false;
 
   /** @type {boolean} */
   isListening = false;
+
+  /** @type {string} */
+  voiceInputError = '';
+
+  /** @type {boolean} */
+  transcriptPending = false;
+
+  /** @type {boolean} */
+  speechOutputSupported = false;
+
+  /** @type {boolean} */
+  speaking = false;
+
+  /** @type {string | null} */
+  speakingMessageId = null;
+
+  /** @type {SpeechSynthesisUtterance | null} */
+  activeUtterance = null;
+
+  /** @type {number} */
+  messageCounter = 0;
 
   /** @type {Array<{role:string,text:string,timestamp:string,receiptSummary:string[]}>} */
   visibleConversation = [];
@@ -79,6 +100,7 @@ class Xv7UI {
       micButton: document.getElementById('micButton'),
       copyChatButton: document.getElementById('copyChatButton'),
       copyToast: document.getElementById('copyToast'),
+      voiceStatus: document.getElementById('voiceStatus'),
       modelActiveProfile: document.getElementById('modelActiveProfile'),
       modelProfileSource: document.getElementById('modelProfileSource'),
       modelOllamaReachable: document.getElementById('modelOllamaReachable'),
@@ -214,6 +236,7 @@ class Xv7UI {
 
     await this.refreshModelProfileControl();
     this.setupVoiceInput();
+    this.setupVoiceOutput();
   }
 
   async refreshModelProfileControl() {
@@ -454,6 +477,9 @@ class Xv7UI {
 
       this.appendMessageCard('user', raw, null, null, this.nowIso());
       this.els.promptInput.value = '';
+      this.transcriptPending = false;
+      this.voiceInputError = '';
+      this.setVoiceStatus('');
 
       const data = await this.fetchJson(`/api/sessions/${this.currentSessionId}/messages`, {
         method: 'POST',
@@ -517,6 +543,7 @@ class Xv7UI {
     article.className = role === 'user' ? 'chat-card chat-card-user' : 'chat-card chat-card-assistant';
     article.dataset.role = role;
     article.dataset.timestamp = timestamp || '';
+    article.dataset.messageId = `msg-${++this.messageCounter}`;
 
     const roleLabel = document.createElement('p');
     roleLabel.className = 'chat-role-label';
@@ -534,6 +561,19 @@ class Xv7UI {
       void this.copySingleMessage(article);
     });
     actions.append(copyButton);
+
+    if (role === 'assistant') {
+      const readAloudButton = document.createElement('button');
+      readAloudButton.type = 'button';
+      readAloudButton.className = 'message-audio-button';
+      readAloudButton.dataset.messageId = article.dataset.messageId;
+      readAloudButton.textContent = 'Read';
+      readAloudButton.addEventListener('click', () => {
+        void this.toggleReadAloud(article);
+      });
+      actions.append(readAloudButton);
+      this.renderReadAloudButton(readAloudButton, article.dataset.messageId);
+    }
 
     const text = document.createElement('p');
     text.className = 'chat-visible-text';
@@ -905,11 +945,12 @@ class Xv7UI {
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
-    this.speechSupported = Boolean(SpeechRecognitionCtor);
-    if (!this.speechSupported) {
+    this.voiceInputSupported = Boolean(SpeechRecognitionCtor);
+    if (!this.voiceInputSupported) {
       this.els.micButton.disabled = true;
       this.els.micButton.setAttribute('aria-label', 'Start voice input');
       this.els.micButton.title = 'Voice input is not supported in this browser.';
+      this.setVoiceStatus('Voice input is not supported in this browser.');
       return;
     }
 
@@ -920,10 +961,13 @@ class Xv7UI {
 
     recognition.onstart = () => {
       this.isListening = true;
+      this.voiceInputError = '';
+      this.transcriptPending = false;
       this.els.micButton.classList.add('listening');
       this.els.micButton.textContent = 'Listening...';
       this.els.micButton.setAttribute('aria-label', 'Stop voice input');
       this.els.micButton.title = 'Click to stop voice input.';
+      this.setVoiceStatus('Listening...');
     };
 
     recognition.onend = () => {
@@ -932,35 +976,47 @@ class Xv7UI {
       this.els.micButton.textContent = 'Mic';
       this.els.micButton.setAttribute('aria-label', 'Start voice input');
       this.els.micButton.title = 'Start voice input.';
+      if (this.voiceInputError) {
+        this.setVoiceStatus(this.voiceInputError);
+      } else if (this.transcriptPending) {
+        this.setVoiceStatus('Voice captured. Review and send.');
+      } else {
+        this.setVoiceStatus('');
+      }
     };
 
     recognition.onresult = (event) => {
       const result = event.results?.[0]?.[0]?.transcript;
       if (!result || typeof result !== 'string') return;
-      this.els.promptInput.value = result.trim();
+      this.transcriptPending = true;
+      this.els.promptInput.value = this.mergeTranscript(this.els.promptInput.value, result.trim());
       this.els.promptInput.focus();
       this.showCopyToast('Voice transcript added to prompt.');
     };
 
     recognition.onerror = (event) => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        this.voiceInputError = 'Microphone permission was denied.';
         this.showAlert('Microphone permission was denied.', true, 2200);
         return;
       }
       if (event.error === 'no-speech') {
+        this.voiceInputError = 'No speech was detected. Try again.';
         this.showAlert('No speech was detected. Try again.', true, 1800);
         return;
       }
+      this.voiceInputError = 'Voice input failed to start.';
       this.showAlert('Voice input failed to start.', true, 1800);
     };
 
     this.speechRecognition = recognition;
     this.els.micButton.disabled = false;
     this.els.micButton.title = 'Start voice input.';
+    this.setVoiceStatus('');
   }
 
   toggleVoiceInput() {
-    if (!this.speechSupported || !this.speechRecognition) {
+    if (!this.voiceInputSupported || !this.speechRecognition) {
       this.showAlert('Voice input is not supported in this browser.', true, 2200);
       return;
     }
@@ -970,7 +1026,94 @@ class Xv7UI {
       return;
     }
 
+    this.voiceInputError = '';
     this.speechRecognition.start();
+  }
+
+  setupVoiceOutput() {
+    this.speechOutputSupported = Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance);
+  }
+
+  mergeTranscript(existingValue, transcript) {
+    const current = String(existingValue || '').trim();
+    const next = String(transcript || '').trim();
+    if (!current) return next;
+    if (!next) return current;
+    const joiner = /[\n\s]$/.test(existingValue || '') ? '' : ' ';
+    return `${existingValue}${joiner}${next}`.trim();
+  }
+
+  setVoiceStatus(message) {
+    if (!this.els.voiceStatus) return;
+    this.els.voiceStatus.textContent = message || '';
+  }
+
+  renderReadAloudButton(button, messageId) {
+    if (!button) return;
+    if (!this.speechOutputSupported) {
+      button.disabled = true;
+      button.textContent = 'Read';
+      button.setAttribute('aria-label', 'Read assistant response aloud');
+      button.title = 'Read aloud is not supported in this browser.';
+      return;
+    }
+
+    const isActive = this.speaking && this.speakingMessageId === messageId;
+    button.disabled = false;
+    button.classList.toggle('speaking', isActive);
+    button.textContent = isActive ? 'Stop' : 'Read';
+    button.setAttribute('aria-label', isActive ? 'Stop reading aloud' : 'Read assistant response aloud');
+    button.title = isActive ? 'Stop reading aloud.' : 'Read assistant response aloud.';
+  }
+
+  updateReadAloudButtons() {
+    const buttons = this.els.chatTimeline?.querySelectorAll('.message-audio-button') || [];
+    buttons.forEach((button) => {
+      this.renderReadAloudButton(button, button.dataset.messageId || '');
+    });
+  }
+
+  async toggleReadAloud(article) {
+    const messageId = article?.dataset?.messageId || '';
+    const visibleText = article?.querySelector('.chat-visible-text')?.textContent?.trim() || '';
+    if (!visibleText) return;
+
+    if (!this.speechOutputSupported || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      this.showAlert('Read aloud is not supported in this browser.', true, 1800);
+      return;
+    }
+
+    if (this.speaking && this.speakingMessageId === messageId) {
+      window.speechSynthesis.cancel();
+      this.speaking = false;
+      this.speakingMessageId = null;
+      this.activeUtterance = null;
+      this.updateReadAloudButtons();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new window.SpeechSynthesisUtterance(visibleText);
+    utterance.onend = () => {
+      this.speaking = false;
+      this.speakingMessageId = null;
+      this.activeUtterance = null;
+      this.updateReadAloudButtons();
+    };
+    utterance.onerror = () => {
+      this.speaking = false;
+      this.speakingMessageId = null;
+      this.activeUtterance = null;
+      this.updateReadAloudButtons();
+      this.showAlert('Read aloud failed to start.', true, 1800);
+    };
+
+    this.speaking = true;
+    this.speakingMessageId = messageId;
+    this.activeUtterance = utterance;
+    this.updateReadAloudButtons();
+    window.speechSynthesis.speak(utterance);
   }
 
   async copyEntireChat() {
