@@ -161,6 +161,32 @@ preflight fails, it prints the exact variable names and tells you to run:
 > **Port overrides:** Set `CORE_PORT`, `WEBUI_PORT`, or `OLLAMA_PORT` in `.env`
 > to use different host ports.
 
+### Local UI Authentication Bridge
+
+Raw Core API session routes stay protected and still require API key auth:
+
+- `POST /sessions`
+- `GET /sessions/{session_id}`
+- `PUT /sessions/{session_id}/facts`
+- `POST /sessions/{session_id}/messages`
+- `PUT /runtime/models/active`
+- `DELETE /runtime/models/active`
+
+The local browser UI does not ask users to type or paste an API key.
+
+Instead, `xv7-frontend` (nginx) provides a same-origin bridge:
+
+- Browser calls `/api/...` on `http://localhost:3000`
+- nginx proxies to `http://xv7-core:8000/...`
+- nginx injects `X-XV7-API-Key` server-side from container env
+
+Security properties:
+
+- API key value is not rendered in UI
+- API key value is not exposed to browser JavaScript as a value
+- API key value is not stored in browser local/session storage
+- Raw backend unauthenticated session creation still returns `401`
+
 ### What the launcher does NOT claim
 
 - It does **not** verify Ollama is reachable or that any model is loaded.  

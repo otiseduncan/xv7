@@ -1,0 +1,29 @@
+server {
+    listen 80;
+    server_name _;
+
+    # Public diagnostics and runtime metadata remain read-only and proxy directly.
+    location = /health {
+        proxy_pass http://xv7-core:8000/health;
+    }
+
+    location = /personas {
+        proxy_pass http://xv7-core:8000/personas;
+    }
+
+    location ^~ /runtime/ {
+        proxy_pass http://xv7-core:8000/runtime/;
+    }
+
+    # Local UI auth bridge: browser calls /api/* and nginx injects auth header.
+    location ^~ /api/ {
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass http://xv7-core:8000;
+        proxy_set_header X-XV7-API-Key ${XV7_API_KEY};
+    }
+
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -48,7 +48,6 @@ function buildDom() {
     <span id="modelOllamaReachable"></span>
     <span id="modelEffectiveChat"></span>
     <select id="modelProfileSelect"></select>
-    <input id="modelApiKeyInput" type="password" />
     <button id="modelApplyButton"></button>
     <button id="modelClearButton"></button>
     <span id="modelResolvedChat"></span>
@@ -114,7 +113,7 @@ function createRuntimeFetchMock(options = {}) {
 
   return vi.fn(async (url, init = {}) => {
     const method = (init.method || 'GET').toUpperCase();
-    const path = new URL(url).pathname;
+    const path = new URL(url, 'http://localhost').pathname;
 
     if (path === '/personas') {
       return okJson({
@@ -173,7 +172,7 @@ function createRuntimeFetchMock(options = {}) {
       });
     }
 
-    if (path === '/runtime/models/active' && method === 'PUT') {
+    if (path === '/api/runtime/models/active' && method === 'PUT') {
       const body = JSON.parse(init.body || '{}');
       state.activeProfile = body.profile;
       state.source = 'runtime_override';
@@ -193,7 +192,7 @@ function createRuntimeFetchMock(options = {}) {
       });
     }
 
-    if (path === '/runtime/models/active' && method === 'DELETE') {
+    if (path === '/api/runtime/models/active' && method === 'DELETE') {
       state.activeProfile = 'balanced';
       state.source = 'env';
       return okJson({
@@ -212,11 +211,11 @@ function createRuntimeFetchMock(options = {}) {
       });
     }
 
-    if (path === '/sessions' && method === 'POST') {
+    if (path === '/api/sessions' && method === 'POST') {
       return okJson({ session_id: 'session-1', current_persona: 'default', metadata: {}, messages: [] });
     }
 
-    if (path === '/sessions/session-1/messages' && method === 'POST') {
+    if (path === '/api/sessions/session-1/messages' && method === 'POST') {
       return okJson({
         session_id: 'session-1',
         current_persona: 'default',
@@ -239,14 +238,6 @@ function createRuntimeFetchMock(options = {}) {
 
     return errorText(404, `${method} ${path} not mocked`);
   });
-}
-
-function headerValue(headers, name) {
-  if (!headers) return undefined;
-  if (typeof headers.get === 'function') {
-    return headers.get(name);
-  }
-  return headers[name];
 }
 
 async function flushAsync() {
@@ -274,21 +265,19 @@ describe('ModelProfileControl', () => {
     expect(optionValues).toEqual(['low_resource', 'balanced', 'local_test', 'large_code']);
   });
 
-  it('does not display raw API key text in panel output', async () => {
+  it('does not render an API key input in normal UI', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
     await flushAsync();
 
-    const apiKeyInput = document.getElementById('modelApiKeyInput');
-    apiKeyInput.value = 'super-secret-key';
-    apiKeyInput.dispatchEvent(new Event('input'));
-
-    const pageText = document.body.textContent;
-    expect(pageText.includes('super-secret-key')).toBe(false);
+    expect(document.getElementById('modelApiKeyInput')).toBe(null);
+    const pageText = document.body.textContent || '';
+    expect(pageText.toLowerCase().includes('api key')).toBe(false);
+    expect(pageText.toLowerCase().includes('enter api key')).toBe(false);
   });
 
-  it('apply action sends PUT /runtime/models/active with API key header', async () => {
+  it('apply action sends PUT /api/runtime/models/active via proxy path', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
 
@@ -299,20 +288,15 @@ describe('ModelProfileControl', () => {
     select.value = 'local_test';
     select.dispatchEvent(new Event('change'));
 
-    const apiKeyInput = document.getElementById('modelApiKeyInput');
-    apiKeyInput.value = 'apply-key';
-    apiKeyInput.dispatchEvent(new Event('input'));
-
     document.getElementById('modelApplyButton').click();
     await flushAsync();
 
     const putCalls = fetchMock.mock.calls.filter((call) => {
       const init = call[1] || {};
-      return new URL(call[0]).pathname === '/runtime/models/active' && (init.method || '').toUpperCase() === 'PUT';
+      return new URL(call[0], 'http://localhost').pathname === '/api/runtime/models/active' && (init.method || '').toUpperCase() === 'PUT';
     });
 
     expect(putCalls.length).toBe(1);
-    expect(headerValue(putCalls[0][1].headers, 'X-XV7-API-Key')).toBe('apply-key');
     expect(JSON.parse(putCalls[0][1].body)).toEqual({
       profile: 'local_test',
       require_available: true,
@@ -320,16 +304,12 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('modelEffectiveChat').textContent).toBe('qwen3:14b');
   });
 
-  it('renders model-use receipt after send action', async () => {
+  it('chat send uses /api proxy paths and renders model-use receipt', async () => {
     const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
     global.fetch = fetchMock;
 
     new Xv7UI();
     await flushAsync();
-
-    const apiKeyInput = document.getElementById('modelApiKeyInput');
-    apiKeyInput.value = 'chat-key';
-    apiKeyInput.dispatchEvent(new Event('input'));
 
     const prompt = document.getElementById('promptInput');
     prompt.value = 'Return exactly: XV7_MODEL_PROOF';
@@ -338,15 +318,15 @@ describe('ModelProfileControl', () => {
 
     const sessionCalls = fetchMock.mock.calls.filter((call) => {
       const init = call[1] || {};
-      return new URL(call[0]).pathname === '/sessions' && (init.method || '').toUpperCase() === 'POST';
+      return new URL(call[0], 'http://localhost').pathname === '/api/sessions' && (init.method || '').toUpperCase() === 'POST';
     });
     const messageCalls = fetchMock.mock.calls.filter((call) => {
       const init = call[1] || {};
-      return new URL(call[0]).pathname === '/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST';
+      return new URL(call[0], 'http://localhost').pathname === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST';
     });
 
-    expect(headerValue(sessionCalls[0][1].headers, 'X-XV7-API-Key')).toBe('chat-key');
-    expect(headerValue(messageCalls[0][1].headers, 'X-XV7-API-Key')).toBe('chat-key');
+    expect(sessionCalls.length).toBe(1);
+    expect(messageCalls.length).toBe(1);
 
     expect(document.getElementById('chatReceiptProfile').textContent).toBe('local_test');
     expect(document.getElementById('chatReceiptModelTag').textContent).toBe('qwen3:14b');
@@ -355,48 +335,22 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
   });
 
-  it('does not attempt chat send without API key', async () => {
-    const fetchMock = createRuntimeFetchMock();
-    global.fetch = fetchMock;
-
-    new Xv7UI();
-    await flushAsync();
-
-    const prompt = document.getElementById('promptInput');
-    prompt.value = 'Return exactly: XV7_MODEL_PROOF';
-    document.getElementById('sendButton').click();
-    await flushAsync();
-
-    const sessionCalls = fetchMock.mock.calls.filter((call) => {
-      const init = call[1] || {};
-      return new URL(call[0]).pathname === '/sessions' && (init.method || '').toUpperCase() === 'POST';
-    });
-
-    expect(sessionCalls.length).toBe(0);
-    expect(document.getElementById('alertBox').textContent).toContain('API key is required for chat');
-  });
-
-  it('clear action sends DELETE /runtime/models/active with API key header', async () => {
+  it('clear action sends DELETE /api/runtime/models/active via proxy path', async () => {
     const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
     global.fetch = fetchMock;
 
     new Xv7UI();
     await flushAsync();
 
-    const apiKeyInput = document.getElementById('modelApiKeyInput');
-    apiKeyInput.value = 'clear-key';
-    apiKeyInput.dispatchEvent(new Event('input'));
-
     document.getElementById('modelClearButton').click();
     await flushAsync();
 
     const deleteCalls = fetchMock.mock.calls.filter((call) => {
       const init = call[1] || {};
-      return new URL(call[0]).pathname === '/runtime/models/active' && (init.method || '').toUpperCase() === 'DELETE';
+      return new URL(call[0], 'http://localhost').pathname === '/api/runtime/models/active' && (init.method || '').toUpperCase() === 'DELETE';
     });
 
     expect(deleteCalls.length).toBe(1);
-    expect(headerValue(deleteCalls[0][1].headers, 'X-XV7-API-Key')).toBe('clear-key');
   });
 
   it('handles unreachable and failure state honestly', async () => {
@@ -415,7 +369,7 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('modelPanelStatus').textContent).toContain('runtime models unavailable');
   });
 
-  it('does not attempt mutation without API key', async () => {
+  it('profile mutation does not require browser API key field', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
 
@@ -431,10 +385,9 @@ describe('ModelProfileControl', () => {
 
     const putCalls = fetchMock.mock.calls.filter((call) => {
       const init = call[1] || {};
-      return new URL(call[0]).pathname === '/runtime/models/active' && (init.method || '').toUpperCase() === 'PUT';
+      return new URL(call[0], 'http://localhost').pathname === '/api/runtime/models/active' && (init.method || '').toUpperCase() === 'PUT';
     });
 
-    expect(putCalls.length).toBe(0);
-    expect(document.getElementById('modelApplyButton').disabled).toBe(true);
+    expect(putCalls.length).toBe(1);
   });
 });

@@ -23,10 +23,7 @@ class Xv7UI {
   els;
 
   /** @type {string} */
-  apiBase = 'http://localhost:8000';
-
-  /** @type {string} */
-  modelApiKey = '';
+  apiBase = '';
 
   /** @type {boolean} */
   modelMutationBusy = false;
@@ -58,7 +55,6 @@ class Xv7UI {
       modelOllamaReachable: document.getElementById('modelOllamaReachable'),
       modelEffectiveChat: document.getElementById('modelEffectiveChat'),
       modelProfileSelect: document.getElementById('modelProfileSelect'),
-      modelApiKeyInput: document.getElementById('modelApiKeyInput'),
       modelApplyButton: document.getElementById('modelApplyButton'),
       modelClearButton: document.getElementById('modelClearButton'),
       modelResolvedChat: document.getElementById('modelResolvedChat'),
@@ -104,11 +100,6 @@ class Xv7UI {
 
     this.els.modelProfileSelect.addEventListener('change', () => {
       this.modelProfileSelection = this.els.modelProfileSelect.value;
-      this.renderModelProfileControl();
-    });
-
-    this.els.modelApiKeyInput.addEventListener('input', () => {
-      this.modelApiKey = this.els.modelApiKeyInput.value;
       this.renderModelProfileControl();
     });
 
@@ -227,14 +218,12 @@ class Xv7UI {
     this.els.modelAvailabilityCode.textContent = this.asBoolLabel(availability.code);
     this.els.modelAvailabilityEmbedding.textContent = this.asBoolLabel(availability.embedding);
 
-    const apiKeyPresent = this.modelApiKey.trim().length > 0;
     const canApply =
       !this.modelMutationBusy &&
-      apiKeyPresent &&
       !!this.modelProfileSelection &&
       (this.modelProfileSelection !== activeProfile || profileSource !== 'runtime_override');
 
-    const canClear = !this.modelMutationBusy && apiKeyPresent && profileSource === 'runtime_override';
+    const canClear = !this.modelMutationBusy && profileSource === 'runtime_override';
 
     this.els.modelApplyButton.disabled = !canApply;
     this.els.modelClearButton.disabled = !canClear;
@@ -246,12 +235,6 @@ class Xv7UI {
   }
 
   async applyRuntimeProfileOverride() {
-    if (!this.modelApiKey.trim()) {
-      this.modelPanelStatus = 'API key is required before applying runtime override.';
-      this.renderModelProfileControl();
-      return;
-    }
-
     if (!this.modelProfileSelection) {
       this.modelPanelStatus = 'Select a profile before applying runtime override.';
       this.renderModelProfileControl();
@@ -263,11 +246,8 @@ class Xv7UI {
     this.renderModelProfileControl();
 
     try {
-      const payload = await this.fetchJson('/runtime/models/active', {
+      const payload = await this.fetchJson('/api/runtime/models/active', {
         method: 'PUT',
-        headers: {
-          'X-XV7-API-Key': this.modelApiKey,
-        },
         body: JSON.stringify({
           profile: this.modelProfileSelection,
           require_available: true,
@@ -286,22 +266,13 @@ class Xv7UI {
   }
 
   async clearRuntimeProfileOverride() {
-    if (!this.modelApiKey.trim()) {
-      this.modelPanelStatus = 'API key is required before clearing runtime override.';
-      this.renderModelProfileControl();
-      return;
-    }
-
     this.modelMutationBusy = true;
     this.modelPanelStatus = 'Clearing runtime override...';
     this.renderModelProfileControl();
 
     try {
-      const payload = await this.fetchJson('/runtime/models/active', {
+      const payload = await this.fetchJson('/api/runtime/models/active', {
         method: 'DELETE',
-        headers: {
-          'X-XV7-API-Key': this.modelApiKey,
-        },
       });
 
       this.modelPanelStatus = `Runtime override cleared. Active profile fallback: ${payload.active_profile} (${payload.profile_source}).`;
@@ -361,27 +332,14 @@ class Xv7UI {
     const raw = this.els.promptInput.value.trim();
     if (!raw) return;
 
-    const apiKey = this.modelApiKey.trim();
-    if (!apiKey) {
-      this.showAlert(
-        'API key is required for chat. Enter the operator key in Model Profile Control.',
-        true,
-      );
-      return;
-    }
-
     this.showAlert('', false);
     this.lockInput(true);
     this.setHardwareLoad('Inference', 74);
 
     try {
       if (!this.currentSessionId) {
-        const sessionResponse = await fetch(`${this.apiBase}/sessions`, {
+        const sessionData = await this.fetchJson('/api/sessions', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-XV7-API-Key': apiKey,
-          },
           body: JSON.stringify({
             current_persona: this.activePersona,
             metadata: {
@@ -390,13 +348,6 @@ class Xv7UI {
             },
           }),
         });
-
-        if (!sessionResponse.ok) {
-          const errorText = await sessionResponse.text();
-          throw new Error(errorText || `Session creation failed with status ${sessionResponse.status}`);
-        }
-
-        const sessionData = await sessionResponse.json();
         this.currentSessionId = sessionData.session_id;
         if (!this.currentSessionId || typeof this.currentSessionId !== 'string') {
           throw new Error('Session creation response did not include a valid session_id.');
@@ -406,22 +357,12 @@ class Xv7UI {
       this.appendMessageCard('user', raw, null);
       this.els.promptInput.value = '';
 
-      const messageResponse = await fetch(`${this.apiBase}/sessions/${this.currentSessionId}/messages`, {
+      const data = await this.fetchJson(`/api/sessions/${this.currentSessionId}/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-XV7-API-Key': apiKey,
-        },
         body: JSON.stringify({ raw_text: raw }),
       });
 
-      if (!messageResponse.ok) {
-        const errorText = await messageResponse.text();
-        throw new Error(errorText || `Message request failed with status ${messageResponse.status}`);
-      }
-
       try {
-        const data = await messageResponse.json();
         const messages = Array.isArray(data?.messages) ? data.messages : [];
         const assistantMessage = messages[messages.length - 1];
         const assistantContent =
