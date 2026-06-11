@@ -320,6 +320,9 @@ def test_docker_compose_ps_unavailable_is_honest(
     monkeypatch.setattr(
         "core.operator.actions.runtime.shutil.which", lambda _name: None
     )
+    monkeypatch.setattr(
+        "core.operator.actions.runtime._docker_socket_usable", lambda _path: False
+    )
 
     result = docker_compose_ps(action_id="OP-20260611-0101", repo_root=tmp_path)
     assert result.status == "failed"
