@@ -42,7 +42,9 @@ def test_duplicate_detector_ignores_deleted_records(tmp_path: Path) -> None:
 
 def test_soft_delete_preserves_file_and_changes_status(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    created = service.manager.create_active_memory(content="temporary memory for delete test")
+    created = service.manager.create_active_memory(
+        content="temporary memory for delete test"
+    )
     path = service.store.records_dir / f"{created.id}.json"
     assert path.exists()
 
@@ -53,7 +55,9 @@ def test_soft_delete_preserves_file_and_changes_status(tmp_path: Path) -> None:
 
 def test_restore_reactivates_soft_deleted_memory(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    created = service.manager.create_active_memory(content="temporary memory for restore test")
+    created = service.manager.create_active_memory(
+        content="temporary memory for restore test"
+    )
     service.soft_delete_by_id(created.id)
 
     restored = service.restore_by_id(created.id)

@@ -24,7 +24,9 @@ def test_lifespan_preserves_startup_and_shutdown(monkeypatch) -> None:
     base_agent_stub = _AsyncCloser()
     vector_store_stub = _AsyncCloser()
 
-    monkeypatch.setattr(main, "ensure_session_facts_table", fake_ensure_session_facts_table)
+    monkeypatch.setattr(
+        main, "ensure_session_facts_table", fake_ensure_session_facts_table
+    )
     monkeypatch.setattr(main, "persistent_memory_manager", _PersistentMemoryStub())
     monkeypatch.setattr(main, "base_agent", base_agent_stub)
     monkeypatch.setattr(main, "vector_store", vector_store_stub)

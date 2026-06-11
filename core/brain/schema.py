@@ -25,6 +25,7 @@ class BrainFact(BaseModel):
         "inferred",
         "verified_output",
         "user_confirmed",
+        "direct_user_instruction",
     ]
     source_detail: str | None = None
 

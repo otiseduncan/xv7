@@ -110,6 +110,65 @@
         </details>
 
         <details class="diag-section">
+          <summary class="diag-section-title">Brain Records</summary>
+          <div class="diag-section-body space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <p id="brainRecordsStatus" class="text-[11px] text-slate-500">No records loaded.</p>
+              <button id="brainRecordsRefreshButton" type="button" class="xv7-control-button px-2 py-1 text-[10px]">Refresh</button>
+            </div>
+
+            <div id="brainRecordsTabs" class="brain-record-tabs" role="tablist" aria-label="Brain record layers">
+              <button type="button" data-layer="active_focus" class="xv7-control-button is-active">Focus</button>
+              <button type="button" data-layer="memory" class="xv7-control-button">Memory</button>
+              <button type="button" data-layer="knowledge" class="xv7-control-button">Knowledge</button>
+              <button type="button" data-layer="verified_status" class="xv7-control-button">Verified</button>
+              <button type="button" data-layer="system_prompt" class="xv7-control-button">System</button>
+            </div>
+
+            <ul id="brainRecordsList" class="space-y-2 text-xs text-slate-200">
+              <li class="rounded border border-dashed border-xv7-line px-2 py-1.5 text-slate-500">No records loaded.</li>
+            </ul>
+
+            <div id="brainRecordEditor" class="brain-record-editor hidden">
+              <p class="brain-record-editor-id">Record: <span id="brainRecordEditorId">-</span></p>
+              <label class="brain-record-editor-label" for="brainRecordEditorLayer">Layer</label>
+              <select id="brainRecordEditorLayer" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none">
+                <option value="active_focus">active_focus</option>
+                <option value="memory">memory</option>
+                <option value="knowledge">knowledge</option>
+                <option value="verified_status">verified_status</option>
+                <option value="system_prompt">system_prompt</option>
+              </select>
+
+              <label class="brain-record-editor-label" for="brainRecordEditorTitle">Title</label>
+              <input id="brainRecordEditorTitle" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none" />
+
+              <label class="brain-record-editor-label" for="brainRecordEditorBody">Body</label>
+              <textarea id="brainRecordEditorBody" rows="4" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none"></textarea>
+
+              <label class="brain-record-editor-label" for="brainRecordEditorTags">Tags (comma-separated)</label>
+              <input id="brainRecordEditorTags" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none" />
+
+              <label class="brain-record-editor-label" for="brainRecordEditorStatus">Status</label>
+              <select id="brainRecordEditorStatus" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none">
+                <option value="active">active</option>
+                <option value="archived">archived</option>
+              </select>
+
+              <details class="mt-2">
+                <summary class="text-[11px] text-slate-400">Advanced: raw JSON</summary>
+                <textarea id="brainRecordEditorRaw" rows="6" readonly class="mt-1 w-full rounded-lg border border-xv7-line bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-slate-300 outline-none"></textarea>
+              </details>
+
+              <div class="mt-2 flex gap-2">
+                <button id="brainRecordEditorSaveButton" type="button" class="xv7-control-button flex-1">Save</button>
+                <button id="brainRecordEditorCancelButton" type="button" class="xv7-control-button flex-1">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="diag-section">
           <summary class="diag-section-title">Operator Activity</summary>
           <div class="diag-section-body">
             <ul id="operatorActivityList" class="space-y-2 text-xs text-slate-200">

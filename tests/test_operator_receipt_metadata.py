@@ -16,18 +16,26 @@ from core.runtime.schemas import SessionState
 class _FailingAgent:
     personas = {"default": {"name": "default"}}
 
-    async def generate_response(self, _session_state: SessionState) -> tuple[str, dict[str, str]]:
-        raise AssertionError("Operator metadata tests should not reach runtime model path")
+    async def generate_response(
+        self, _session_state: SessionState
+    ) -> tuple[str, dict[str, str]]:
+        raise AssertionError(
+            "Operator metadata tests should not reach runtime model path"
+        )
 
     async def aclose(self) -> None:
         return None
 
 
-async def _fake_query_similar_memories(_text: str, limit: int = 3) -> list[dict[str, str]]:
+async def _fake_query_similar_memories(
+    _text: str, limit: int = 3
+) -> list[dict[str, str]]:
     return []
 
 
-async def _fake_persist_vector_memory_round_trip(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+async def _fake_persist_vector_memory_round_trip(
+    *_args: Any, **_kwargs: Any
+) -> dict[str, Any]:
     return {"status": "ok"}
 
 
@@ -40,7 +48,9 @@ def _setup_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient
     memory_manager.bootstrap_seed_records()
     monkeypatch.setattr("core.main.persistent_memory_manager", memory_manager)
 
-    monkeypatch.setattr("core.main.vector_store.query_similar_memories", _fake_query_similar_memories)
+    monkeypatch.setattr(
+        "core.main.vector_store.query_similar_memories", _fake_query_similar_memories
+    )
     monkeypatch.setattr(
         "core.main.persist_vector_memory_round_trip",
         _fake_persist_vector_memory_round_trip,
@@ -58,7 +68,9 @@ def _new_session(client: TestClient) -> str:
     return response.json()["session_id"]
 
 
-def _result(action_name: str, status: str, action_id: str, target: str) -> OperatorActionResult:
+def _result(
+    action_name: str, status: str, action_id: str, target: str
+) -> OperatorActionResult:
     from datetime import UTC, datetime
 
     now = datetime.now(UTC)
@@ -163,5 +175,9 @@ def test_session_history_records_success_failed_and_denied(
 
     history = denied_resp.json().get("metadata", {}).get("operator_action_history", [])
     assert isinstance(history, list)
-    assert any(item.get("status") == "failed" for item in history if isinstance(item, dict))
-    assert any(item.get("status") == "denied" for item in history if isinstance(item, dict))
+    assert any(
+        item.get("status") == "failed" for item in history if isinstance(item, dict)
+    )
+    assert any(
+        item.get("status") == "denied" for item in history if isinstance(item, dict)
+    )

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from core.brain.records import BrainRecordLoader
 from core.brain.schema import BrainLayer
 
@@ -38,3 +41,42 @@ def test_verified_status_uses_provenance_sources_only() -> None:
     assert "verified_output" in sources
     assert "user_confirmed" in sources
     assert "inferred" not in sources
+
+
+def test_active_focus_runtime_records_override_seed_store(tmp_path: Path) -> None:
+    seed_dir = tmp_path / "seed_records"
+    runtime_dir = tmp_path / "runtime_records"
+    seed_dir.mkdir(parents=True, exist_ok=True)
+
+    source_seed_dir = Path("data/brain/records")
+    for path in source_seed_dir.glob("*.json"):
+        (seed_dir / path.name).write_text(
+            path.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+    loader = BrainRecordLoader(records_dir=seed_dir, runtime_records_dir=runtime_dir)
+
+    new_record = loader.apply_active_focus_instruction(
+        "correct communication with Otis and understanding his workflows"
+    )
+
+    seed_focus_payload = json.loads(
+        (seed_dir / "XV7-FOCUS-0004.json").read_text(encoding="utf-8")
+    )
+    assert seed_focus_payload["status"] == "active"
+
+    runtime_archived = json.loads(
+        (runtime_dir / "XV7-FOCUS-0004.json").read_text(encoding="utf-8")
+    )
+    assert runtime_archived["status"] == "archived"
+
+    runtime_new = json.loads(
+        (runtime_dir / f"{new_record.record_id}.json").read_text(encoding="utf-8")
+    )
+    assert runtime_new["status"] == "active"
+    assert runtime_new["summary"] == new_record.summary
+
+    active_focus_records = loader.load_active_records(layer=BrainLayer.ACTIVE_FOCUS)
+    active_ids = {record.record_id for record in active_focus_records}
+    assert new_record.record_id in active_ids
+    assert "XV7-FOCUS-0004" not in active_ids

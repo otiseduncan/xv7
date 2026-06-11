@@ -19,7 +19,9 @@ class _Response:
 
 
 class _Client:
-    def __init__(self, response: _Response | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self, response: _Response | None = None, error: Exception | None = None
+    ) -> None:
         self._response = response
         self._error = error
 
@@ -37,7 +39,9 @@ class _Client:
         return self._response
 
 
-def test_scan_ports_reports_bridge_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_scan_ports_reports_bridge_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         "core.operator.actions.host_scan.httpx.Client",
         lambda timeout: _Client(error=httpx.ConnectError("connection refused")),
@@ -49,7 +53,9 @@ def test_scan_ports_reports_bridge_unavailable(monkeypatch: pytest.MonkeyPatch, 
     assert result.data.get("bridge_available") is False
 
 
-def test_scan_ports_maps_success_payload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_scan_ports_maps_success_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     response = _Response(
         200,
         {

@@ -227,15 +227,21 @@ def test_creator_and_purpose_answers_are_deterministic() -> None:
         session_metadata={},
     )
 
-    assert creator == "I was created by Otis Duncan for the XV7 project under Syfernetics."
+    assert (
+        creator == "I was created by Otis Duncan for the XV7 project under Syfernetics."
+    )
     assert "Otis Duncan" in built
     assert "personal ai assistant" in built.lower()
     assert "technical co-pilot" in built.lower()
     assert "everyday life and technical work" in purpose.lower()
-    assert who_is_otis == "Otis Duncan is my creator/operator and the human directing XV7."
+    assert (
+        who_is_otis == "Otis Duncan is my creator/operator and the human directing XV7."
+    )
 
 
-def test_become_family_medical_and_sms_answers_follow_personal_assistant_identity() -> None:
+def test_become_family_medical_and_sms_answers_follow_personal_assistant_identity() -> (
+    None
+):
     contract = AnswerContract()
     records = _layer_map()
 
@@ -428,9 +434,17 @@ def test_relationship_and_gender_answers_are_deterministic() -> None:
     contract = AnswerContract()
     records = _layer_map()
 
-    female = contract.try_answer("Are you female?", records_by_layer=records, session_metadata={})
-    companion_q = contract.try_answer("Are you my companion?", records_by_layer=records, session_metadata={})
-    relationship = contract.try_answer("What is your relationship to me?", records_by_layer=records, session_metadata={})
+    female = contract.try_answer(
+        "Are you female?", records_by_layer=records, session_metadata={}
+    )
+    companion_q = contract.try_answer(
+        "Are you my companion?", records_by_layer=records, session_metadata={}
+    )
+    relationship = contract.try_answer(
+        "What is your relationship to me?",
+        records_by_layer=records,
+        session_metadata={},
+    )
 
     assert female is not None
     assert "yes" in female.lower()
@@ -441,7 +455,7 @@ def test_relationship_and_gender_answers_are_deterministic() -> None:
     assert "best-friend" in companion_q.lower()
     assert "not a romantic" in companion_q.lower()
     assert "companion" in companion_q.lower()  # allowed only in this denial context
-    assert "romantic" in companion_q.lower()    # explains what it is NOT
+    assert "romantic" in companion_q.lower()  # explains what it is NOT
 
     assert relationship is not None
     assert "personal ai assistant" in relationship.lower()

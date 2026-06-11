@@ -13,8 +13,15 @@ from core.brain.schema import BrainLayer, BrainRecord
 class BrainContextManager:
     """Facade for loading active records and assembling runtime context."""
 
-    def __init__(self, records_dir: Path | None = None) -> None:
-        self.loader = BrainRecordLoader(records_dir=records_dir)
+    def __init__(
+        self,
+        records_dir: Path | None = None,
+        runtime_records_dir: Path | None = None,
+    ) -> None:
+        self.loader = BrainRecordLoader(
+            records_dir=records_dir,
+            runtime_records_dir=runtime_records_dir,
+        )
         self.assembler = BrainContextAssembler()
         self.answer_contract = AnswerContract()
 
@@ -285,3 +292,6 @@ class BrainContextManager:
             records_by_layer=layer_map,
             session_metadata=session_metadata or {},
         )
+
+    def apply_active_focus_instruction(self, focus_summary: str) -> BrainRecord:
+        return self.loader.apply_active_focus_instruction(focus_summary)

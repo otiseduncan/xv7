@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import shutil
 from typing import Any
 
 from fastapi.testclient import TestClient
 import pytest
 
+from core.brain.manager import BrainContextManager
 from core.main import app
 from core.memory.manager import PersistentMemoryManager
 from core.memory.store import MemoryStore
@@ -77,6 +79,24 @@ def _setup_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient
         _fake_persist_vector_memory_round_trip,
     )
 
+    source_brain_dir = Path("data/brain/records")
+    test_brain_dir = tmp_path / "brain_seed_records"
+    test_runtime_brain_dir = tmp_path / "brain_runtime_records"
+    test_brain_dir.mkdir(parents=True, exist_ok=True)
+    test_runtime_brain_dir.mkdir(parents=True, exist_ok=True)
+    for path in source_brain_dir.glob("*.json"):
+        shutil.copy2(path, test_brain_dir / path.name)
+
+    monkeypatch.setenv("XV7_BRAIN_RECORDS_PATH", str(test_brain_dir))
+    monkeypatch.setenv("XV7_BRAIN_RUNTIME_RECORDS_PATH", str(test_runtime_brain_dir))
+    monkeypatch.setattr(
+        "core.main.brain_context_manager",
+        BrainContextManager(
+            records_dir=test_brain_dir,
+            runtime_records_dir=test_runtime_brain_dir,
+        ),
+    )
+
     return TestClient(app)
 
 
@@ -103,9 +123,10 @@ def test_repo_check_claim_requires_live_proof_and_flips_after_success(
         json={"raw_text": "Did you check the repo?"},
     )
     assert response_before.status_code == 200
-    assert "do not have proof of a live repo check" in response_before.json()["messages"][-1][
-        "content"
-    ].lower()
+    assert (
+        "do not have proof of a live repo check"
+        in response_before.json()["messages"][-1]["content"].lower()
+    )
 
     def _run_action_success(
         action_name: str,
@@ -128,12 +149,20 @@ def test_repo_check_claim_requires_live_proof_and_flips_after_success(
     payload_check = response_check.json()
     answer_check = payload_check["messages"][-1]["content"]
     assert "Operator receipt:" not in answer_check
-    assert payload_check.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts")
+    assert (
+        payload_check.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("operator_receipts")
+    )
     assert payload_check["metadata"].get("live_repo_check") is True
 
     tool_results = payload_check["metadata"].get("tool_results", [])
     assert isinstance(tool_results, list)
-    assert any(item.get("type") == "repo_check" for item in tool_results if isinstance(item, dict))
+    assert any(
+        item.get("type") == "repo_check"
+        for item in tool_results
+        if isinstance(item, dict)
+    )
 
     response_after = client.post(
         f"/sessions/{session_id}/messages",
@@ -141,9 +170,10 @@ def test_repo_check_claim_requires_live_proof_and_flips_after_success(
         json={"raw_text": "Did you check the repo?"},
     )
     assert response_after.status_code == 200
-    assert "successfully checked the repo in this session" in response_after.json()["messages"][-1][
-        "content"
-    ].lower()
+    assert (
+        "successfully checked the repo in this session"
+        in response_after.json()["messages"][-1]["content"].lower()
+    )
 
 
 def test_failed_operator_action_is_honest_and_includes_receipt(
@@ -182,7 +212,11 @@ def test_failed_operator_action_is_honest_and_includes_receipt(
     assert "failed" in answer.lower()
     assert "git not available" in answer.lower()
     assert "Operator receipt:" not in answer
-    assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts")
+    assert (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("operator_receipts")
+    )
 
     metadata = payload.get("metadata", {})
     assert metadata.get("live_repo_check") is not True
@@ -223,10 +257,21 @@ def test_timed_out_repo_check_returns_honest_failure_receipt_without_hanging(
     answer = payload["messages"][-1]["content"].lower()
     assert "failed" in answer
     assert "timed out" in answer
-    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    operator_receipts = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("operator_receipts", [])
+    )
     assert operator_receipts
     assert operator_receipts[0].get("action_name") == "repo_status"
-    assert "timed out" in str(operator_receipts[0].get("limitation") or operator_receipts[0].get("summary") or "").lower()
+    assert (
+        "timed out"
+        in str(
+            operator_receipts[0].get("limitation")
+            or operator_receipts[0].get("summary")
+            or ""
+        ).lower()
+    )
     assert payload.get("metadata", {}).get("live_repo_check") is not True
 
 
@@ -247,18 +292,20 @@ def test_active_focus_instruction_updates_session_focus_and_is_used_next_turn(
     assert set_focus.status_code == 200
     payload = set_focus.json()
     answer = payload["messages"][-1]["content"]
-    assert "updating my active focus" in answer.lower()
-    assert "COMM-01" in answer
+    assert "updating active focus" in answer.lower()
 
     metadata = payload.get("metadata", {})
     active_focus = metadata.get("active_focus", {})
     assert isinstance(active_focus, dict)
     assert active_focus.get("source") == "direct_user_instruction"
-    assert active_focus.get("id") == "COMM-01"
-    assert active_focus.get("persistence") in {"saved", "session-only"}
+    assert str(active_focus.get("id", "")).startswith("XV7-FOCUS-")
+    assert active_focus.get("persistence") == "brain_record_saved"
 
     context_receipt = metadata.get("context_receipt", {})
-    assert "COMM-01" in context_receipt.get("record_ids", [])
+    assert any(
+        str(record_id).startswith("XV7-FOCUS-")
+        for record_id in context_receipt.get("record_ids", [])
+    )
 
     ask_focus = client.post(
         f"/sessions/{session_id}/messages",
@@ -326,13 +373,17 @@ def test_natural_language_intent_pipeline_updates_working_state(
     # Turn 2: active focus update accepted through natural speech.
     turn2 = outputs[1]
     answer2 = turn2["messages"][-1]["content"].lower()
-    assert "updating my active focus" in answer2
-    assert turn2.get("metadata", {}).get("active_focus", {}).get("id") == "COMM-01"
+    assert "updating active focus" in answer2
+    assert str(
+        turn2.get("metadata", {}).get("active_focus", {}).get("id", "")
+    ).startswith("XV7-FOCUS-")
 
     # Turn 3: second focus update accepted and still COMM-01 family label.
     turn3 = outputs[2]
-    assert "updating my active focus" in turn3["messages"][-1]["content"].lower()
-    assert turn3.get("metadata", {}).get("active_focus", {}).get("id") == "COMM-01"
+    assert "updating active focus" in turn3["messages"][-1]["content"].lower()
+    assert str(
+        turn3.get("metadata", {}).get("active_focus", {}).get("id", "")
+    ).startswith("XV7-FOCUS-")
 
     # Turn 4: correction is treated as learning signal, not protected mutation.
     turn4 = outputs[3]
@@ -354,13 +405,263 @@ def test_natural_language_intent_pipeline_updates_working_state(
 
     # Turn 7: focus recall reflects user-updated focus.
     turn7 = outputs[6]
-    assert "you just changed my active focus to" in turn7["messages"][-1]["content"].lower()
+    assert (
+        "you just changed my active focus to"
+        in turn7["messages"][-1]["content"].lower()
+    )
     assert "habits and workflows" in turn7["messages"][-1]["content"].lower()
 
     # Turn 8: correction policy answer is deterministic and direct.
     turn8 = outputs[7]
     assert "high-priority tuning input" in turn8["messages"][-1]["content"].lower()
     assert "protected rules" in turn8["messages"][-1]["content"].lower()
+
+
+def test_active_focus_voice_transcript_creates_brain_record_and_persists_across_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "change your active focus. Focus or learning your operator Otis and correct communication with him.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "i'm updating active focus" in answer
+    assert "does not exist" not in answer
+    assert "predefined" not in answer
+
+    metadata = payload.get("metadata", {})
+    provenance = metadata.get("answer_provenance", {})
+    assert provenance.get("intent_class") == "active_focus_update"
+    assert provenance.get("protected") is False
+    assert provenance.get("action") == "create_active_focus_record"
+
+    current_focus = provenance.get("current_focus", {})
+    assert isinstance(current_focus, dict)
+    focus_title = str(current_focus.get("title", "")).lower()
+    focus_summary = str(current_focus.get("summary", "")).lower()
+    assert "otis" in focus_title or "otis" in focus_summary
+    assert "communication" in focus_title or "communication" in focus_summary
+    assert "operator" in focus_title or "learning" in focus_summary
+
+    context_receipt = metadata.get("context_receipt", {})
+    assert "context receipt:" in str(context_receipt.get("compact", "")).lower()
+    receipts = context_receipt.get("context_receipts", [])
+    assert receipts
+    assert receipts[0].get("source") == "direct_user_instruction"
+    assert receipts[0].get("persistence") == "brain_record_saved"
+
+    follow_up = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "what is your current active focus"},
+    )
+    assert follow_up.status_code == 200
+    follow_up_text = follow_up.json()["messages"][-1]["content"].lower()
+    assert "otis" in follow_up_text
+    assert "communication" in follow_up_text
+
+    new_session_id = _new_session(client)
+    from_new_session = client.post(
+        f"/sessions/{new_session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "what is your current active focus"},
+    )
+    assert from_new_session.status_code == 200
+    new_session_text = from_new_session.json()["messages"][-1]["content"].lower()
+    assert "otis" in new_session_text
+    assert "communication" in new_session_text
+
+
+def test_active_focus_stt_variant_is_intercepted_pre_model_and_has_required_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "change your active closest to focus on correct communication with your operator Otis and understanding his workflows",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "i'm updating active focus" in answer
+    assert "requires a predefined record" not in answer
+    assert "not listed as an active focus" not in answer
+    assert "cannot shift focus" not in answer
+    assert "provide a predefined focus goal" not in answer
+
+    metadata = payload.get("metadata", {})
+    provenance = metadata.get("answer_provenance", {})
+    assert provenance.get("intent_class") == "active_focus_update"
+    assert provenance.get("action") == "create_active_focus_record"
+
+    context_receipt = metadata.get("context_receipt", {})
+    receipts = context_receipt.get("context_receipts", [])
+    assert receipts
+    first = receipts[0]
+    assert first.get("intent_class") == "active_focus_update"
+    assert first.get("action") == "create_active_focus_record"
+    assert first.get("persistence") == "brain_record_saved"
+
+    last_payload = metadata.get("last_assistant_payload", {})
+    assert isinstance(last_payload, dict)
+    assert last_payload.get("model_use_receipt") in ({}, None)
+    assert "model: qwen" not in answer
+
+    follow_up = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "what is your current active focus"},
+    )
+    assert follow_up.status_code == 200
+    follow_up_text = follow_up.json()["messages"][-1]["content"].lower()
+    assert "communication" in follow_up_text
+    assert "otis" in follow_up_text
+    assert "workflows" in follow_up_text
+
+
+def test_active_focus_guided_next_steps_uses_behavioral_directive_not_generic_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    set_focus = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "change your active focus to correct communication with operator Otis and understanding his workflows",
+        },
+    )
+    assert set_focus.status_code == 200
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "so what are the next steps that we need to pursue an increasing fluid communication",
+        },
+    )
+    assert response.status_code == 200
+
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+
+    assert "track otis corrections" in answer
+    assert "save communication preferences" in answer
+    assert "learn workflow habits" in answer
+    assert "ask one clarifying question" in answer
+    assert "compact receipts" in answer
+    assert "new session" in answer
+    assert "container restart" in answer
+    assert "source/proof" in answer
+    assert "repo and runtime status" in answer
+
+    assert "confirm tool access" not in answer
+    assert "without explicit tool access" not in answer
+    assert "workflow mapping" not in answer
+    assert "local scan" not in answer
+
+    metadata = payload.get("metadata", {})
+    assert metadata.get("active_focus_id") == "XV7-FOCUS-0005"
+    assert metadata.get("focus_applied") is True
+    assert metadata.get("response_mode") == "active_focus_guided"
+    assert metadata.get("focus_mode") == "communication_workflow_learning"
+    assert metadata.get("active_focus_text")
+    assert metadata.get("context_includes_focus") is True
+    assert metadata.get("model_used") == "policy_only"
+    assert metadata.get("fallback_used") is False
+    assert metadata.get("source_record_ids") == ["XV7-FOCUS-0005"]
+
+    context_receipt = metadata.get("context_receipt", {})
+    compact = str(context_receipt.get("compact", ""))
+    assert "Focus: XV7-FOCUS-0005" in compact
+    assert "Memory:" in compact
+    assert "Knowledge:" in compact
+    assert "Model:" in compact
+    assert "Proof:" in compact
+
+    assert "focusapplied" not in answer
+    assert "contextincludesfocus" not in answer
+    assert "response_mode" not in answer
+    assert "active_focus_id" not in answer
+
+
+def test_fresh_session_uses_persisted_focus_for_guided_next_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_a = _new_session(client)
+
+    set_focus = client.post(
+        f"/sessions/{session_a}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "change your active focus to correct communication with your operator otis and understanding his workflows",
+        },
+    )
+    assert set_focus.status_code == 200
+
+    session_b = _new_session(client)
+    response = client.post(
+        f"/sessions/{session_b}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "so what are the next steps that we need to pursue an increasing fluid communication",
+        },
+    )
+    assert response.status_code == 200
+
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+
+    assert "track otis corrections" in answer
+    assert "save communication preferences" in answer
+    assert "learn workflow habits" in answer
+    assert "ask one clarifying question" in answer
+    assert "compact receipts" in answer
+    assert "verify persistence" in answer
+    assert "source/proof" in answer
+
+    assert "local scan" not in answer
+    assert "operator mode staging" not in answer
+    assert "bridge unavailable" not in answer
+    assert "without explicit tool access" not in answer
+
+    metadata = payload.get("metadata", {})
+    active_focus_id = str(metadata.get("active_focus_id", ""))
+    assert active_focus_id.startswith("XV7-FOCUS-")
+    assert metadata.get("focus_applied") is True
+    assert metadata.get("response_mode") == "active_focus_guided"
+    source_record_ids = metadata.get("source_record_ids", [])
+    assert isinstance(source_record_ids, list)
+    assert active_focus_id in source_record_ids
+    assert "XV7-KNOWLEDGE-0006" not in source_record_ids
+
+    context_receipt = metadata.get("context_receipt", {})
+    compact = str(context_receipt.get("compact", ""))
+    assert "Focus:" in compact
+    receipt_record_ids = context_receipt.get("record_ids", [])
+    assert active_focus_id in receipt_record_ids
+    assert "XV7-KNOWLEDGE-0006" not in receipt_record_ids
 
 
 def test_are_containers_running_does_not_fake_proof_when_unavailable(
@@ -401,7 +702,9 @@ def test_are_containers_running_does_not_fake_proof_when_unavailable(
             receipt_label=f"scan_docker {action_id}",
         )
 
-    monkeypatch.setattr("core.operator.manager.run_action", _run_action_compose_unavailable)
+    monkeypatch.setattr(
+        "core.operator.manager.run_action", _run_action_compose_unavailable
+    )
 
     response = client.post(
         f"/sessions/{session_id}/messages",
@@ -453,7 +756,9 @@ def test_processor_prompt_routes_to_scan_cpu_and_reports_bridge_unavailable_with
             receipt_label=f"scan_cpu {action_id}",
         )
 
-    monkeypatch.setattr("core.operator.manager.run_action", _run_action_bridge_unavailable)
+    monkeypatch.setattr(
+        "core.operator.manager.run_action", _run_action_bridge_unavailable
+    )
 
     response = client.post(
         f"/sessions/{session_id}/messages",
@@ -468,7 +773,11 @@ def test_processor_prompt_routes_to_scan_cpu_and_reports_bridge_unavailable_with
     assert "not running yet" in answer
     assert "context required" not in answer
     assert "Operator receipt:" not in answer
-    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    operator_receipts = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("operator_receipts", [])
+    )
     assert operator_receipts
     assert operator_receipts[0].get("action_name") == "scan_cpu"
     assert operator_receipts[0].get("status") == "failed"
@@ -501,12 +810,17 @@ def test_can_you_scan_my_system_routes_to_scan_system_and_not_context_missing(
             stdout_summary="",
             stderr_summary="Local host scan bridge is not running.",
             exit_code=503,
-            data={"bridge_available": False, "limitation": "Local host scan bridge is not running."},
+            data={
+                "bridge_available": False,
+                "limitation": "Local host scan bridge is not running.",
+            },
             safety=OperatorSafety(allowed=True),
             receipt_label=f"scan_system {action_id}",
         )
 
-    monkeypatch.setattr("core.operator.manager.run_action", _run_action_bridge_unavailable)
+    monkeypatch.setattr(
+        "core.operator.manager.run_action", _run_action_bridge_unavailable
+    )
 
     response = client.post(
         f"/sessions/{session_id}/messages",
@@ -518,7 +832,11 @@ def test_can_you_scan_my_system_routes_to_scan_system_and_not_context_missing(
     answer = payload["messages"][-1]["content"].lower()
     assert "local host scan bridge" in answer
     assert "context required" not in answer
-    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    operator_receipts = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("operator_receipts", [])
+    )
     assert operator_receipts
     assert operator_receipts[0].get("action_name") == "scan_system"
 
@@ -603,7 +921,12 @@ def test_working_tree_clean_prompt_routes_to_repo_status_not_mutation_deny(
             stdout_summary="ok",
             stderr_summary="",
             exit_code=0,
-            data={"branch": "main", "clean": True, "sync": "in_sync", "upstream": "origin/main"},
+            data={
+                "branch": "main",
+                "clean": True,
+                "sync": "in_sync",
+                "upstream": "origin/main",
+            },
             safety=OperatorSafety(allowed=True),
             receipt_label=f"repo_status {action_id}",
         )

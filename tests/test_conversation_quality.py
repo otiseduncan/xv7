@@ -76,7 +76,9 @@ def test_missing_memory_answer_is_honest(monkeypatch, tmp_path: Path) -> None:
         "XV7-VERIFIED-0001.json",
     ):
         source = Path("data/brain/records") / name
-        (records_dir / name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        (records_dir / name).write_text(
+            source.read_text(encoding="utf-8"), encoding="utf-8"
+        )
 
     monkeypatch.setenv("XV7_BRAIN_RECORDS_PATH", str(records_dir))
     manager = BrainContextManager(records_dir=records_dir)
@@ -84,7 +86,9 @@ def test_missing_memory_answer_is_honest(monkeypatch, tmp_path: Path) -> None:
     assert answer == "Missing required record: memory."
 
 
-def test_verified_facts_answer_uses_verified_status_only(monkeypatch, tmp_path: Path) -> None:
+def test_verified_facts_answer_uses_verified_status_only(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -100,7 +104,9 @@ def test_verified_facts_answer_uses_verified_status_only(monkeypatch, tmp_path: 
     assert "Verified facts:" in answer
     assert "Context receipt:" not in answer
     assert "System Prompt" not in answer
-    assert payload.get("metadata", {}).get("context_receipt", {}).get("context_receipts")
+    assert (
+        payload.get("metadata", {}).get("context_receipt", {}).get("context_receipts")
+    )
 
 
 def test_every_contract_answer_has_compact_receipt(monkeypatch, tmp_path: Path) -> None:
@@ -126,13 +132,19 @@ def test_every_contract_answer_has_compact_receipt(monkeypatch, tmp_path: Path) 
         payload = response.json()
         answer = payload["messages"][-1]["content"]
         assert "Context receipt:" not in answer
-        assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
+        assistant_payload = payload.get("metadata", {}).get(
+            "last_assistant_payload", {}
+        )
         assert isinstance(assistant_payload, dict)
-        has_receipt_metadata = bool(assistant_payload.get("context_receipt")) or bool(assistant_payload.get("memory_receipts"))
+        has_receipt_metadata = bool(assistant_payload.get("context_receipt")) or bool(
+            assistant_payload.get("memory_receipts")
+        )
         assert has_receipt_metadata
 
 
-def test_model_question_requires_proof_in_chat_path(monkeypatch, tmp_path: Path) -> None:
+def test_model_question_requires_proof_in_chat_path(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -174,7 +186,9 @@ def test_memory_recall_uses_memory_records_only(monkeypatch, tmp_path: Path) -> 
     assert "Context receipt:" not in answer
 
 
-def test_verified_vs_remembered_separation_in_chat_path(monkeypatch, tmp_path: Path) -> None:
+def test_verified_vs_remembered_separation_in_chat_path(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -223,7 +237,9 @@ def test_forget_that_is_ambiguous_does_not_delete(monkeypatch, tmp_path: Path) -
     assert "matches multiple memories" in answer
 
 
-def test_structured_context_receipt_has_layer_by_prompt(monkeypatch, tmp_path: Path) -> None:
+def test_structured_context_receipt_has_layer_by_prompt(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -251,7 +267,9 @@ def test_structured_context_receipt_has_layer_by_prompt(monkeypatch, tmp_path: P
         assert structured[0].get("layer") == expected_layer
 
 
-def test_identity_creator_purpose_prompts_are_deterministic(monkeypatch, tmp_path: Path) -> None:
+def test_identity_creator_purpose_prompts_are_deterministic(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -278,7 +296,11 @@ def test_identity_creator_purpose_prompts_are_deterministic(monkeypatch, tmp_pat
         assert "context does not specify" not in lowered
         assert "context receipt:" not in lowered
         assert "operator receipt:" not in lowered
-        assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("context_receipt")
+        assert (
+            payload.get("metadata", {})
+            .get("last_assistant_payload", {})
+            .get("context_receipt")
+        )
 
     who = client.post(
         f"/sessions/{session_id}/messages",
@@ -291,7 +313,11 @@ def test_identity_creator_purpose_prompts_are_deterministic(monkeypatch, tmp_pat
     assert "technical co-pilot" in who_answer.lower()
     assert "companion" not in who_answer.lower()
 
-    for prompt in ("are you female", "are you my companion", "what is your relationship to me"):
+    for prompt in (
+        "are you female",
+        "are you my companion",
+        "what is your relationship to me",
+    ):
         resp = client.post(
             f"/sessions/{session_id}/messages",
             headers={"X-XV7-API-Key": "test-secret"},
@@ -300,11 +326,17 @@ def test_identity_creator_purpose_prompts_are_deterministic(monkeypatch, tmp_pat
         assert resp.status_code == 200
         a = resp.json()["messages"][-1]["content"]
         assert a, f"Empty answer for: {prompt}"
-        if "why were you built" not in prompt and "purpose" not in prompt and "become" not in prompt:
+        if (
+            "why were you built" not in prompt
+            and "purpose" not in prompt
+            and "become" not in prompt
+        ):
             # Relationship boundary prompts must never contain 'companion' EXCEPT in the
             # deliberate denial answer ("not a romantic or sexual companion").
             if "are you my companion" not in prompt:
-                assert "companion" not in a.lower(), f"Unexpected 'companion' in answer to '{prompt}': {a!r}"
+                assert "companion" not in a.lower(), (
+                    f"Unexpected 'companion' in answer to '{prompt}': {a!r}"
+                )
 
 
 def test_why_built_and_purpose_answers_are_present(monkeypatch, tmp_path: Path) -> None:
@@ -403,7 +435,9 @@ def test_become_prompt_is_personal_assistant_first(monkeypatch, tmp_path: Path) 
     assert "companion" not in answer
 
 
-def test_local_capability_prompts_are_honest_and_current(monkeypatch, tmp_path: Path) -> None:
+def test_local_capability_prompts_are_honest_and_current(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -436,7 +470,9 @@ def test_local_capability_prompts_are_honest_and_current(monkeypatch, tmp_path: 
         assert "context required" not in answer
 
 
-def test_can_you_delete_files_uses_operator_mode_boundary(monkeypatch, tmp_path: Path) -> None:
+def test_can_you_delete_files_uses_operator_mode_boundary(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -451,6 +487,10 @@ def test_can_you_delete_files_uses_operator_mode_boundary(monkeypatch, tmp_path:
     assert "only through operator mode" in answer
     assert "specific slash command" in answer
     assert "explicit approval" in answer
-    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    operator_receipts = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("operator_receipts", [])
+    )
     assert operator_receipts
     assert operator_receipts[0].get("status") == "denied"

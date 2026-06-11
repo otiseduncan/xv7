@@ -16,18 +16,26 @@ from core.runtime.schemas import SessionState
 class _FailingAgent:
     personas = {"default": {"name": "default"}}
 
-    async def generate_response(self, _session_state: SessionState) -> tuple[str, dict[str, str]]:
-        raise AssertionError("Operator-history tests should be served by operator layer")
+    async def generate_response(
+        self, _session_state: SessionState
+    ) -> tuple[str, dict[str, str]]:
+        raise AssertionError(
+            "Operator-history tests should be served by operator layer"
+        )
 
     async def aclose(self) -> None:
         return None
 
 
-async def _fake_query_similar_memories(_text: str, limit: int = 3) -> list[dict[str, str]]:
+async def _fake_query_similar_memories(
+    _text: str, limit: int = 3
+) -> list[dict[str, str]]:
     return []
 
 
-async def _fake_persist_vector_memory_round_trip(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+async def _fake_persist_vector_memory_round_trip(
+    *_args: Any, **_kwargs: Any
+) -> dict[str, Any]:
     return {"status": "ok"}
 
 
@@ -40,7 +48,9 @@ def _setup_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient
     memory_manager.bootstrap_seed_records()
     monkeypatch.setattr("core.main.persistent_memory_manager", memory_manager)
 
-    monkeypatch.setattr("core.main.vector_store.query_similar_memories", _fake_query_similar_memories)
+    monkeypatch.setattr(
+        "core.main.vector_store.query_similar_memories", _fake_query_similar_memories
+    )
     monkeypatch.setattr(
         "core.main.persist_vector_memory_round_trip",
         _fake_persist_vector_memory_round_trip,
@@ -71,7 +81,10 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
         json={"raw_text": "Did you check the repo?"},
     )
     assert none_resp.status_code == 200
-    assert "do not have proof of a live repo check" in none_resp.json()["messages"][-1]["content"].lower()
+    assert (
+        "do not have proof of a live repo check"
+        in none_resp.json()["messages"][-1]["content"].lower()
+    )
 
     def _run_action_failed(
         action_name: str,
@@ -115,7 +128,10 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
         json={"raw_text": "Did you check the repo?"},
     )
     assert failed_resp.status_code == 200
-    assert "attempted a repo check, but it failed" in failed_resp.json()["messages"][-1]["content"].lower()
+    assert (
+        "attempted a repo check, but it failed"
+        in failed_resp.json()["messages"][-1]["content"].lower()
+    )
 
     def _run_action_success(
         action_name: str,
@@ -159,7 +175,10 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
         json={"raw_text": "Did you check the repo?"},
     )
     assert success_resp.status_code == 200
-    assert "successfully checked the repo" in success_resp.json()["messages"][-1]["content"].lower()
+    assert (
+        "successfully checked the repo"
+        in success_resp.json()["messages"][-1]["content"].lower()
+    )
 
 
 def test_what_did_you_just_check_and_last_receipt(
@@ -219,7 +238,10 @@ def test_what_did_you_just_check_and_last_receipt(
         json={"raw_text": "Show the last operator receipt."},
     )
     assert last_receipt.status_code == 200
-    assert "Last operator receipt summary" in last_receipt.json()["messages"][-1]["content"]
+    assert (
+        "Last operator receipt summary"
+        in last_receipt.json()["messages"][-1]["content"]
+    )
 
     history_list = client.post(
         f"/sessions/{session_id}/messages",

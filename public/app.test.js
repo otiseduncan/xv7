@@ -120,6 +120,26 @@ function buildDom() {
     <div id="diagnosticsBackdrop" class="hidden"></div>
     <button id="diagnosticsToggleButton"></button>
     <button id="diagnosticsCloseButton"></button>
+    <p id="brainRecordsStatus"></p>
+    <button id="brainRecordsRefreshButton"></button>
+    <div id="brainRecordsTabs">
+      <button data-layer="active_focus"></button>
+      <button data-layer="memory"></button>
+      <button data-layer="knowledge"></button>
+      <button data-layer="verified_status"></button>
+      <button data-layer="system_prompt"></button>
+    </div>
+    <ul id="brainRecordsList"></ul>
+    <div id="brainRecordEditor" class="hidden"></div>
+    <span id="brainRecordEditorId"></span>
+    <select id="brainRecordEditorLayer"></select>
+    <input id="brainRecordEditorTitle" />
+    <textarea id="brainRecordEditorBody"></textarea>
+    <input id="brainRecordEditorTags" />
+    <select id="brainRecordEditorStatus"></select>
+    <button id="brainRecordEditorSaveButton"></button>
+    <button id="brainRecordEditorCancelButton"></button>
+    <textarea id="brainRecordEditorRaw"></textarea>
   `;
 }
 
@@ -129,6 +149,31 @@ function createRuntimeFetchMock(options = {}) {
     source: options.source || 'env',
     reachable: options.reachable ?? true,
     failModels: options.failModels ?? false,
+    brainRecords: [
+      {
+        record_id: 'XV7-FOCUS-0005',
+        layer: 'active_focus',
+        title: 'Communication-first continuity',
+        summary: 'Keep communication continuity and avoid fallback drift.',
+        body: 'Focus on communication continuity and deterministic routing.',
+        status: 'active',
+        priority: 300,
+        tags: ['focus', 'communication'],
+        source: 'runtime_override',
+        writable: true,
+        updated_at: '2026-06-11T00:00:00Z',
+        raw_record: {
+          record_id: 'XV7-FOCUS-0005',
+          layer: 'active_focus',
+          title: 'Communication-first continuity',
+          summary: 'Keep communication continuity and avoid fallback drift.',
+          body: 'Focus on communication continuity and deterministic routing.',
+          status: 'active',
+          priority: 300,
+          tags: ['focus', 'communication'],
+        },
+      },
+    ],
   };
 
   const profiles = {
@@ -436,6 +481,57 @@ function createRuntimeFetchMock(options = {}) {
           summary: 'cancelled',
         },
       });
+    }
+
+    if (path === '/runtime/brain/records' && method === 'GET') {
+      const layer = String(query.get('layer') || '');
+      const records = state.brainRecords.filter((item) => !layer || item.layer === layer);
+      return okJson({ count: records.length, records });
+    }
+
+    if (path.startsWith('/runtime/brain/records/') && method === 'PUT') {
+      const recordId = decodeURIComponent(path.split('/').at(-1) || '');
+      const body = JSON.parse(init.body || '{}');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.layer = body.layer || current.layer;
+      current.title = body.title || current.title;
+      current.body = body.body || current.body;
+      current.summary = String(current.body || '').slice(0, 160);
+      current.tags = Array.isArray(body.tags) ? body.tags : current.tags;
+      current.status = body.status || current.status;
+      current.raw_record = {
+        ...current.raw_record,
+        layer: current.layer,
+        title: current.title,
+        body: current.body,
+        summary: current.summary,
+        tags: current.tags,
+        status: current.status,
+      };
+      return okJson(current);
+    }
+
+    if (path.endsWith('/deactivate') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.status = 'archived';
+      current.raw_record = { ...current.raw_record, status: 'archived' };
+      return okJson(current);
+    }
+
+    if (path.endsWith('/set-active') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      state.brainRecords.forEach((item) => {
+        if (item.layer === 'active_focus') {
+          item.status = item.record_id === recordId ? 'active' : 'archived';
+          item.raw_record = { ...item.raw_record, status: item.status };
+        }
+      });
+      const updated = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!updated) return errorText(404, 'Record not found');
+      return okJson(updated);
     }
 
     if (path === '/api/sessions/session-1/messages' && method === 'POST') {
@@ -2051,6 +2147,66 @@ describe('ModelProfileControl', () => {
       (node.textContent || '').startsWith('Model:'),
     );
     expect(modelChip).toBeTruthy();
+  });
+
+  it('renders per-message Why this answer drawer with focus metadata', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Focus-guided response',
+      null,
+      {
+        source_record_ids: ['XV7-FOCUS-0005', 'XV7-KNOWLEDGE-0006'],
+        active_focus_id: 'XV7-FOCUS-0005',
+        focus_applied: true,
+        context_includes_focus: true,
+        fallback_used: false,
+        fallback_reason: 'not-needed',
+        response_mode: 'active_focus_guided',
+        context_receipt: {
+          context_receipts: [
+            { layer: 'active_focus', record_id: 'XV7-FOCUS-0005' },
+            { layer: 'knowledge', record_id: 'XV7-KNOWLEDGE-0006' },
+          ],
+        },
+        model_use_receipt: { model_tag: 'policy_only' },
+        policy_provenance: {
+          intent_class: 'active_focus_follow_up',
+          response_mode: 'active_focus_guided',
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.why-answer-drawer');
+    expect(drawer).toBeTruthy();
+    expect((drawer?.textContent || '').toLowerCase()).toContain('why this answer');
+    expect(drawer?.textContent || '').toContain('active_focus_follow_up');
+    expect(drawer?.textContent || '').toContain('XV7-FOCUS-0005');
+    expect(drawer?.textContent || '').toContain('Focus');
+  });
+
+  it('loads brain records in diagnostics and switches tab layer', async () => {
+    global.fetch = createRuntimeFetchMock();
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('diagnosticsToggleButton').click();
+    await flushAsync();
+
+    const cards = [...document.querySelectorAll('.brain-record-card')];
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards[0].textContent || '').toContain('XV7-FOCUS-0005');
+
+    const memoryTab = document.querySelector('#brainRecordsTabs button[data-layer="memory"]');
+    expect(memoryTab).toBeTruthy();
+    memoryTab.click();
+    await flushAsync();
+
+    expect(document.getElementById('brainRecordsStatus').textContent).toContain('memory');
   });
 
   it('renders avatar card with Xoduz label and idle default state', async () => {

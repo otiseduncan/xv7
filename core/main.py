@@ -5,7 +5,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Literal
 from uuid import UUID
 from uuid import uuid4
 
@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
+from core.brain.schema import BrainLayer, BrainRecord
 from core.memory.manager import PersistentMemoryManager
 from core.operator.history import append_history, get_history
 from core.operator.manager import OperatorManager
@@ -102,6 +103,18 @@ class SetActiveModelProfileRequest(BaseModel):
     require_available: bool = Field(default=True)
 
 
+class BrainRecordUpdateRequest(BaseModel):
+    """Payload for runtime brain record edits (stored as runtime overrides)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    layer: BrainLayer | None = None
+    title: str | None = Field(default=None, min_length=1)
+    body: str | None = Field(default=None, min_length=1)
+    tags: list[str] | None = None
+    status: Literal["active", "archived"] | None = None
+
+
 memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
 if memory_path.suffix == ".db":
     facts_db_path = memory_path
@@ -177,10 +190,46 @@ def sanitize_visible_answer_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+def _summary_from_body(body: str) -> str:
+    cleaned = " ".join(body.split()).strip()
+    if not cleaned:
+        return "(empty)"
+    if len(cleaned) <= 160:
+        return cleaned
+    return cleaned[:157].rstrip() + "..."
+
+
+def _serialize_brain_record(
+    *,
+    record: BrainRecord,
+    source: str,
+    path: Path,
+) -> dict[str, Any]:
+    return {
+        "record_id": record.record_id,
+        "layer": record.layer.value,
+        "title": record.title,
+        "summary": record.summary,
+        "body": record.body,
+        "status": record.status,
+        "priority": record.priority,
+        "tags": list(record.tags),
+        "source": source,
+        "writable": source == "runtime_override",
+        "updated_at": brain_context_manager.loader.record_updated_at(path),
+        "raw_record": record.model_dump(mode="json"),
+    }
+
+
 ACTIVE_FOCUS_UPDATE_PREFIXES = (
     "focus on ",
+    "focus or ",
+    "active closest to focus on ",
+    "active closest to focus or ",
     "from now on focus on ",
+    "from now on focus or ",
     "change your active focus to ",
+    "change your active closest to focus to ",
     "change active focus to ",
     "set your focus to ",
     "set active focus to ",
@@ -188,6 +237,9 @@ ACTIVE_FOCUS_UPDATE_PREFIXES = (
     "change my focus to ",
     "make your focus ",
     "your active focus is ",
+    "from now on your focus is ",
+    "your priority is ",
+    "we need your focus to be ",
 )
 
 INTENT_CLASSES = {
@@ -275,19 +327,85 @@ def _extract_active_focus_instruction(question: str) -> str | None:
 
     if normalized.startswith("please "):
         normalized = normalized[len("please ") :]
+
+    def _cleanup_focus_text(raw_text: str) -> str:
+        cleaned = raw_text.strip(" .!?,:")
+        cleaned = re.sub(r"^focus\s+(?:on|or)\s+", "", cleaned)
+        cleaned = re.sub(r"^active\s+closest\s+to\s+focus\s+(?:on|or)\s+", "", cleaned)
+        cleaned = re.sub(r"^active\s+focus\s+(?:on|or)\s+", "", cleaned)
+        cleaned = " ".join(cleaned.split())
+        return cleaned
+
     for prefix in ACTIVE_FOCUS_UPDATE_PREFIXES:
         if normalized.startswith(prefix):
-            focus_text = normalized[len(prefix) :].strip(" .!?")
+            focus_text = _cleanup_focus_text(normalized[len(prefix) :])
             if len(focus_text) >= 3:
                 return focus_text
 
     from_now_on_match = re.match(r"^from now on\s*,?\s*focus on\s+(.+)$", normalized)
     if from_now_on_match:
-        focus_text = from_now_on_match.group(1).strip(" .!?")
+        focus_text = _cleanup_focus_text(from_now_on_match.group(1))
         if len(focus_text) >= 3:
             return focus_text
 
+    voice_variants = (
+        r"^change\s+(?:your|my)?\s*active\s*focus\s*[\.:,]?\s*focus\s+(?:on|or)\s+(.+)$",
+        r"^change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus\s*[\.:,]?\s*focus\s+(?:on|or)\s+(.+)$",
+        r"^change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus\s*[\.:,]?\s+(.+)$",
+        r"^change\s+(?:your|my)?\s*active\s*focus\s*[\.:,]?\s+(.+)$",
+        r"^from\s+now\s+on\s*,?\s*(?:your\s+)?focus\s+is\s+(.+)$",
+        r"^your\s+priority\s+is\s+(.+)$",
+        r"^we\s+need\s+your\s+focus\s+to\s+be\s+(.+)$",
+        r"^active\s+closest\s+to\s+focus\s+(?:on|or)\s+(.+)$",
+    )
+    for pattern in voice_variants:
+        matched = re.match(pattern, normalized)
+        if matched:
+            focus_text = _cleanup_focus_text(matched.group(1))
+            if len(focus_text) >= 3:
+                return focus_text
+
     return None
+
+
+def _is_active_focus_candidate(question: str) -> bool:
+    normalized = _normalize_intent_text(question)
+    if STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?"):
+        return False
+    return bool(
+        re.search(
+            r"\b(change\s+(?:your|my)?\s*active\s*focus|"
+            r"change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus|"
+            r"set\s+(?:your|the)?\s*active\s*focus|"
+            r"from\s+now\s+on\s+(?:your\s+)?focus\s+is|"
+            r"your\s+priority\s+is|"
+            r"we\s+need\s+your\s+focus\s+to\s+be|"
+            r"active\s+closest\s+to\s+focus\s+(?:on|or)|"
+            r"focus\s+(?:on|or)\s+)\b",
+            normalized,
+        )
+    )
+
+
+def _is_unclear_focus_instruction(focus_text: str) -> bool:
+    cleaned = " ".join(focus_text.strip().split())
+    if len(cleaned) < 10:
+        return True
+
+    tokens = [token for token in cleaned.split(" ") if token]
+    if len(tokens) < 3:
+        return True
+
+    vague_only = {
+        "this",
+        "that",
+        "it",
+        "more",
+        "better",
+        "same",
+        "normal",
+    }
+    return all(token in vague_only for token in tokens)
 
 
 def _extract_after_prefixes(normalized: str, prefixes: tuple[str, ...]) -> str:
@@ -383,13 +501,6 @@ def _focus_violates_protected_rules(focus_text: str) -> bool:
     return bool(ACTIVE_FOCUS_PROTECTED_PATTERN.search(focus_text))
 
 
-def _focus_label_for_text(focus_text: str) -> str:
-    lowered = focus_text.lower()
-    if any(token in lowered for token in ("communicat", "habit", "workflow")):
-        return "COMM-01"
-    return "FOCUS-USER"
-
-
 def _active_focus_system_prompt(session_metadata: dict[str, Any]) -> str:
     focus = session_metadata.get("active_focus")
     if not isinstance(focus, dict):
@@ -470,6 +581,151 @@ def _session_focus_context_receipt(
                 "source": source,
                 "persistence": persistence,
                 "status": "active",
+            }
+        ],
+        "record_ids": [focus_id],
+    }
+
+
+def _resolve_effective_active_focus(
+    session_metadata: dict[str, Any],
+) -> dict[str, Any] | None:
+    focus = session_metadata.get("active_focus")
+    if isinstance(focus, dict):
+        focus_id = str(focus.get("id", "")).strip()
+        focus_summary = str(focus.get("summary", "")).strip()
+        if focus_id and focus_summary:
+            return focus
+
+    active_focus_records = brain_context_manager.loader.load_active_records(
+        layer=BrainLayer.ACTIVE_FOCUS
+    )
+    if not active_focus_records:
+        return None
+
+    record = active_focus_records[0]
+    return {
+        "id": record.record_id,
+        "title": record.title,
+        "summary": record.summary,
+        "source": "brain_record_runtime",
+        "persistence": "brain_record_saved",
+    }
+
+
+def _merge_focus_context_receipt(
+    base_receipt: dict[str, Any] | None,
+    session_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(base_receipt or {})
+    focus_receipt = _session_focus_context_receipt(session_metadata)
+    if focus_receipt is None:
+        return merged
+
+    existing_contexts = list(merged.get("context_receipts", []))
+    if not any(
+        isinstance(item, dict) and str(item.get("layer", "")).lower() == "active_focus"
+        for item in existing_contexts
+    ):
+        existing_contexts.extend(list(focus_receipt.get("context_receipts", [])))
+    merged["context_receipts"] = existing_contexts
+
+    existing_ids = list(merged.get("record_ids", []))
+    for record_id in list(focus_receipt.get("record_ids", [])):
+        if record_id not in existing_ids:
+            existing_ids.append(record_id)
+    merged["record_ids"] = existing_ids
+
+    focus_compact = str(focus_receipt.get("compact", "")).strip()
+    base_compact = str(merged.get("compact", "")).strip()
+    if focus_compact and focus_compact not in base_compact:
+        merged["compact"] = (
+            f"{base_compact} | {focus_compact}" if base_compact else focus_compact
+        )
+
+    return merged
+
+
+def _is_communication_workflow_focus(session_metadata: dict[str, Any]) -> bool:
+    focus = session_metadata.get("active_focus")
+    if not isinstance(focus, dict):
+        return False
+    summary = str(focus.get("summary", "")).lower()
+    if not summary:
+        return False
+    return any(
+        token in summary
+        for token in (
+            "communicat",
+            "workflow",
+            "habit",
+            "otis",
+            "operator",
+        )
+    )
+
+
+def _is_focus_guided_follow_up(question: str) -> bool:
+    normalized = _normalize_intent_text(question)
+    patterns = (
+        "next steps",
+        "what now",
+        "how do we improve this",
+        "what should we pursue",
+        "communicate better",
+        "fluid communication",
+        "increasing fluid communication",
+    )
+    return any(token in normalized for token in patterns)
+
+
+def _is_local_scan_or_operator_prompt(question: str) -> bool:
+    normalized = _normalize_intent_text(question)
+    scan_tokens = (
+        "local scan",
+        "scan",
+        "bridge",
+        "hardware",
+        "host visibility",
+        "operator mode",
+        "staging",
+        "stage action",
+        "cpu",
+        "gpu",
+        "disk",
+        "ports",
+        "container",
+    )
+    return any(token in normalized for token in scan_tokens)
+
+
+def _active_focus_guided_plan_answer() -> str:
+    return (
+        "Next steps for better communication with Otis, under the current Active Focus:\n"
+        "1. Track Otis corrections turn-by-turn and convert them into durable behavior updates.\n"
+        "2. Save communication preferences (style, depth, tone, constraints) and apply them on every response.\n"
+        "3. Learn workflow habits from repeated patterns and reflect them in execution order.\n"
+        "4. Ask one clarifying question whenever an instruction is ambiguous before taking action.\n"
+        "5. Use compact receipts to show what was applied, what source was used, and what changed.\n"
+        "6. Verify persistence by checking behavior after new session, reload, and container restart.\n"
+        "7. Reduce hallucinations by requiring explicit source/proof on repo and runtime status claims.\n\n"
+        "Clarifying question (only if needed now): which lane should I tune first for you — correction handling, preference persistence, or workflow habit learning?"
+    )
+
+
+def _active_focus_guided_context_receipt(focus_id: str) -> dict[str, Any]:
+    return {
+        "compact": (
+            f"Focus: {focus_id}; Memory: learning-signals; "
+            "Knowledge: communication-workflow; Model: policy_only; "
+            "Proof: active_focus_guided"
+        ),
+        "context_receipts": [
+            {
+                "layer": "active_focus",
+                "record_id": focus_id,
+                "FocusApplied": True,
+                "Mode": "communication_workflow_learning",
             }
         ],
         "record_ids": [focus_id],
@@ -712,6 +968,97 @@ async def runtime_active_context() -> dict[str, Any]:
     }
 
 
+@app.get("/runtime/brain/records")
+async def runtime_brain_records(
+    layer: BrainLayer | None = None,
+    include_archived: bool = True,
+) -> dict[str, Any]:
+    entries = brain_context_manager.loader.load_records_with_source()
+    records: list[dict[str, Any]] = []
+
+    for record, source, path in entries:
+        if layer is not None and record.layer != layer:
+            continue
+        if not include_archived and record.status != "active":
+            continue
+        records.append(_serialize_brain_record(record=record, source=source, path=path))
+
+    return {
+        "count": len(records),
+        "records": records,
+    }
+
+
+@app.put(
+    "/runtime/brain/records/{record_id}",
+    dependencies=[Depends(require_api_key)],
+)
+async def update_runtime_brain_record(
+    record_id: str,
+    payload: BrainRecordUpdateRequest,
+) -> dict[str, Any]:
+    found = brain_context_manager.loader.get_record_with_source(record_id)
+    if found is None:
+        raise ValueError(f"Record not found: {record_id}")
+
+    record, _, _ = found
+    updates: dict[str, Any] = {}
+
+    if payload.layer is not None:
+        updates["layer"] = payload.layer
+    if payload.title is not None:
+        updates["title"] = payload.title.strip()
+    if payload.body is not None:
+        cleaned_body = payload.body.strip()
+        updates["body"] = cleaned_body
+        updates["summary"] = _summary_from_body(cleaned_body)
+    if payload.tags is not None:
+        updates["tags"] = [
+            tag
+            for tag in {
+                str(tag).strip()
+                for tag in payload.tags
+                if isinstance(tag, str) and tag.strip()
+            }
+        ]
+    if payload.status is not None:
+        updates["status"] = payload.status
+
+    updated = record.model_copy(update=updates)
+    brain_context_manager.loader.save_runtime_override(updated)
+    refreshed = brain_context_manager.loader.get_record_with_source(record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Updated record not found after save: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/deactivate",
+    dependencies=[Depends(require_api_key)],
+)
+async def deactivate_runtime_brain_record(record_id: str) -> dict[str, Any]:
+    updated = brain_context_manager.loader.archive_record(record_id)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Deactivated record not found after save: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/set-active",
+    dependencies=[Depends(require_api_key)],
+)
+async def set_active_runtime_brain_record(record_id: str) -> dict[str, Any]:
+    updated = brain_context_manager.loader.set_record_active(record_id)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Activated record not found after save: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
 @app.get("/personas")
 async def get_personas() -> dict[str, Any]:
     """Return registered persona configurations for local discovery/debugging."""
@@ -888,6 +1235,10 @@ async def add_session_message(
 
     session_state = await memory_manager.get_session(session_id)
     inference_state = session_state.model_copy(deep=True)
+    resolved_focus = _resolve_effective_active_focus(session_state.metadata)
+    if isinstance(resolved_focus, dict):
+        session_state.metadata["active_focus"] = resolved_focus
+        inference_state.metadata["active_focus"] = resolved_focus
     intent_class = _classify_speech_act(payload.raw_text)
 
     current_history = get_history(session_state.metadata)
@@ -1126,7 +1477,220 @@ async def add_session_message(
         return updated_state
 
     active_focus_instruction = _extract_active_focus_instruction(payload.raw_text)
+    if (
+        _is_active_focus_candidate(payload.raw_text)
+        and active_focus_instruction is None
+    ):
+        visible_text = (
+            "I heard an Active Focus change, but the target focus is unclear. "
+            "What exact focus should I set right now?"
+        )
+        session_state.metadata["pending_focus_update"] = {
+            "status": "pending_clarification",
+            "source": "direct_user_instruction",
+            "raw_text": payload.raw_text,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt={
+                "compact": "Context receipt: Active Focus pending clarification.",
+                "context_receipts": [
+                    {
+                        "layer": "active_focus",
+                        "record_id": "FOCUS-PENDING",
+                        "source": "direct_user_instruction",
+                        "persistence": "none",
+                        "status": "pending",
+                    }
+                ],
+                "record_ids": ["FOCUS-PENDING"],
+            },
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "active_focus_intent",
+                "brain_answer_source": "active_focus_clarification_pending",
+                "intent_class": "active_focus_update",
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+                "protected": False,
+                "action": "stage_pending_focus_update",
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    if (
+        _is_communication_workflow_focus(session_state.metadata)
+        and _is_focus_guided_follow_up(payload.raw_text)
+        and not _is_local_scan_or_operator_prompt(payload.raw_text)
+    ):
+        active_focus_payload = session_state.metadata.get("active_focus", {})
+        focus_id = str(
+            active_focus_payload.get("id", "XV7-FOCUS-UNKNOWN")
+            if isinstance(active_focus_payload, dict)
+            else "XV7-FOCUS-UNKNOWN"
+        )
+        active_focus_text = (
+            str(active_focus_payload.get("summary", "")).strip()
+            if isinstance(active_focus_payload, dict)
+            else ""
+        )
+        visible_text = _active_focus_guided_plan_answer()
+        context_receipt = _active_focus_guided_context_receipt(focus_id)
+        source_record_ids = list(context_receipt.get("record_ids", []))
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt(
+                context_receipt, session_state.metadata
+            ),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "active_focus_guided",
+                "brain_answer_source": "active_focus_guided_plan",
+                "intent_class": "active_focus_follow_up",
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+                "active_focus_id": focus_id,
+                "focus_applied": True,
+                "response_mode": "active_focus_guided",
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        updated_state.metadata["active_focus_id"] = focus_id
+        updated_state.metadata["focus_applied"] = True
+        updated_state.metadata["focus_mode"] = "communication_workflow_learning"
+        updated_state.metadata["active_focus_text"] = active_focus_text
+        updated_state.metadata["context_includes_focus"] = True
+        updated_state.metadata["response_mode"] = "active_focus_guided"
+        updated_state.metadata["model_used"] = "policy_only"
+        updated_state.metadata["fallback_used"] = False
+        updated_state.metadata["source_record_ids"] = source_record_ids
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     if active_focus_instruction is not None:
+        if _is_unclear_focus_instruction(active_focus_instruction):
+            visible_text = (
+                "I heard an Active Focus change, but it is still too broad. "
+                "What exact focus should I set right now?"
+            )
+            session_state.metadata["pending_focus_update"] = {
+                "status": "pending_clarification",
+                "source": "direct_user_instruction",
+                "raw_text": payload.raw_text,
+                "candidate_focus": active_focus_instruction,
+            }
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt={
+                    "compact": "Context receipt: Active Focus pending clarification.",
+                    "context_receipts": [
+                        {
+                            "layer": "active_focus",
+                            "record_id": "FOCUS-PENDING",
+                            "source": "direct_user_instruction",
+                            "persistence": "none",
+                            "status": "pending",
+                        }
+                    ],
+                    "record_ids": ["FOCUS-PENDING"],
+                },
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "active_focus_intent",
+                    "brain_answer_source": "active_focus_clarification_pending",
+                    "intent_class": "active_focus_update",
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                    "protected": False,
+                    "action": "stage_pending_focus_update",
+                },
+                warnings=[],
+                action_history_refs=action_history_refs,
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
         if _focus_violates_protected_rules(active_focus_instruction):
             visible_text = (
                 "I cannot set that Active Focus because it conflicts with protected system rules "
@@ -1189,10 +1753,13 @@ async def add_session_message(
             await memory_manager.update_session(updated_state)
             return updated_state
 
-        focus_id = _focus_label_for_text(active_focus_instruction)
         focus_summary = active_focus_instruction.strip()
-        focus_payload = {
-            "id": focus_id,
+        focus_record = brain_context_manager.apply_active_focus_instruction(
+            focus_summary
+        )
+        focus_payload: dict[str, Any] = {
+            "id": focus_record.record_id,
+            "title": focus_record.title,
             "summary": focus_summary,
             "source": "direct_user_instruction",
         }
@@ -1200,31 +1767,36 @@ async def add_session_message(
             session_id=session_id,
             focus_payload=focus_payload,
         )
-        focus_payload["persistence"] = "saved" if persisted else "session-only"
+        focus_payload["persistence"] = "brain_record_saved"
+        focus_payload["session_fact_saved"] = persisted
         session_state.metadata["active_focus"] = focus_payload
+        session_state.metadata.pop("pending_focus_update", None)
 
         visible_text = (
-            "Understood. I'm updating my Active Focus.\n\n"
+            "I'm updating Active Focus.\n\n"
             "New Active Focus:\n"
-            f"{focus_id} - {focus_summary}\n\n"
+            f"{focus_record.record_id} - {focus_summary}\n\n"
             "I will treat this as the current priority until you change it."
         )
 
         context_receipt = {
             "compact": (
-                f"Context receipt: Active Focus {focus_id} "
-                f"(source=direct_user_instruction; persistence={focus_payload['persistence']})."
+                f"Context receipt: Active Focus {focus_record.record_id} "
+                "(intent_class=active_focus_update; action=create_active_focus_record; "
+                f"source=direct_user_instruction; persistence={focus_payload['persistence']})."
             ),
             "context_receipts": [
                 {
                     "layer": "active_focus",
-                    "record_id": focus_id,
+                    "record_id": focus_record.record_id,
+                    "intent_class": "active_focus_update",
+                    "action": "create_active_focus_record",
                     "source": "direct_user_instruction",
                     "persistence": focus_payload["persistence"],
                     "status": "active",
                 }
             ],
-            "record_ids": [focus_id],
+            "record_ids": [focus_record.record_id],
         }
 
         assistant_payload = build_assistant_payload(
@@ -1241,6 +1813,13 @@ async def add_session_message(
                 "request_id": str(uuid4()),
                 "session_id": str(session_id),
                 "runtime_model_inference_proven": False,
+                "protected": False,
+                "action": "create_active_focus_record",
+                "current_focus": {
+                    "record_id": focus_record.record_id,
+                    "title": focus_record.title,
+                    "summary": focus_record.summary,
+                },
             },
             warnings=[],
             action_history_refs=action_history_refs,
@@ -1319,7 +1898,7 @@ async def add_session_message(
         }
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
-            context_receipt={},
+            context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
             operator_receipts=[structured_receipt],
             memory_receipts=[],
             model_use_receipt={},
@@ -1389,7 +1968,7 @@ async def add_session_message(
         }
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
-            context_receipt={},
+            context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
             operator_receipts=[],
             memory_receipts=[memory_action.receipt] if memory_action.receipt else [],
             model_use_receipt={},
@@ -1453,6 +2032,10 @@ async def add_session_message(
             override_receipt = _session_focus_context_receipt(session_state.metadata)
             if override_receipt is not None:
                 effective_context_receipt = override_receipt
+        effective_context_receipt = _merge_focus_context_receipt(
+            effective_context_receipt,
+            session_state.metadata,
+        )
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=effective_context_receipt,
@@ -1533,7 +2116,10 @@ async def add_session_message(
         raw_text=assistant_output,
         message_metadata=build_assistant_payload(
             visible_text=visible_text,
-            context_receipt=brain_context.receipt,
+            context_receipt=_merge_focus_context_receipt(
+                brain_context.receipt,
+                session_state.metadata,
+            ),
             operator_receipts=[],
             memory_receipts=[],
             model_use_receipt=model_use_receipt,
@@ -1575,7 +2161,10 @@ async def add_session_message(
         "runtime_model_inference_proven": True,
     }
     updated_state.metadata["vector_memory"] = vector_memory_receipt
-    updated_state.metadata["context_receipt"] = brain_context.receipt
+    updated_state.metadata["context_receipt"] = _merge_focus_context_receipt(
+        brain_context.receipt,
+        session_state.metadata,
+    )
     updated_state.metadata["last_assistant_payload"] = updated_state.messages[
         -1
     ].metadata

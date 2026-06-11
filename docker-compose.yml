@@ -164,6 +164,8 @@ services:
       - ENV=${ENV:-development}
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_BASE_URL=http://open-webui:8080
+      - XV7_BRAIN_RECORDS_PATH=/app/data/brain/records
+      - XV7_BRAIN_RUNTIME_RECORDS_PATH=/app/data/brain/runtime_records
       - XV7_API_KEY=${CORE_API_KEY:?CORE_API_KEY must be set}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DB_PATH=${DB_PATH:-/app/data/xv7.db}

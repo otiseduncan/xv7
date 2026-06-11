@@ -21,14 +21,20 @@ def test_active_context_compact_receipt_has_required_layers() -> None:
     assert "Verified Status XV7-VERIFIED-0001" in compact
     assert isinstance(structured, list)
     assert all(isinstance(item, dict) for item in structured)
-    assert all("layer" in item and "record_id" in item for item in structured if isinstance(item, dict))
+    assert all(
+        "layer" in item and "record_id" in item
+        for item in structured
+        if isinstance(item, dict)
+    )
 
 
 def test_missing_record_reports_missing_in_answer(monkeypatch, tmp_path: Path) -> None:
     records_dir = tmp_path / "records"
     records_dir.mkdir(parents=True, exist_ok=True)
     source = Path("data/brain/records/XV7-SYSTEM-0001.json")
-    (records_dir / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (records_dir / source.name).write_text(
+        source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     monkeypatch.setenv("XV7_BRAIN_RECORDS_PATH", str(records_dir))
 
@@ -43,14 +49,18 @@ def test_missing_record_reports_missing_in_answer(monkeypatch, tmp_path: Path) -
 class _FailingAgent:
     personas = {"default": {"name": "default"}}
 
-    async def generate_response(self, _session_state: SessionState) -> tuple[str, dict[str, str]]:
+    async def generate_response(
+        self, _session_state: SessionState
+    ) -> tuple[str, dict[str, str]]:
         raise AssertionError("B4 pass questions should be answered from brain records")
 
     async def aclose(self) -> None:
         return None
 
 
-async def _fake_query_similar_memories(_text: str, limit: int = 3) -> list[dict[str, str]]:
+async def _fake_query_similar_memories(
+    _text: str, limit: int = 3
+) -> list[dict[str, str]]:
     return []
 
 
@@ -114,7 +124,13 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
         ),
     ]
 
-    for question, expected, required_receipt_fragment, expected_layer, unexpected_layer_labels in cases:
+    for (
+        question,
+        expected,
+        required_receipt_fragment,
+        expected_layer,
+        unexpected_layer_labels,
+    ) in cases:
         response = client.post(
             f"/sessions/{session_id}/messages",
             headers={"X-XV7-API-Key": "test-secret"},
@@ -132,7 +148,9 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
         context_receipt = payload["metadata"].get("context_receipt", {})
         assert "record_ids" in context_receipt
         assert len(context_receipt["record_ids"]) >= 1
-        assert required_receipt_fragment.split()[-1] in context_receipt.get("record_ids", [])
+        assert required_receipt_fragment.split()[-1] in context_receipt.get(
+            "record_ids", []
+        )
         structured = context_receipt.get("context_receipts", [])
         assert isinstance(structured, list)
         assert len(structured) >= 1

@@ -604,6 +604,104 @@ details[open] > .diag-section-title::before {
   background: rgba(5, 8, 18, 0.78);
 }
 
+.why-answer-drawer {
+  margin-top: 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: rgba(5, 8, 18, 0.72);
+}
+
+.why-answer-drawer summary {
+  cursor: pointer;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--color-text-accent);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.brain-record-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.brain-record-tabs button {
+  border-radius: 0.45rem;
+  border: 1px solid var(--color-border);
+  background: rgba(8, 17, 31, 0.7);
+  color: var(--color-text-muted);
+  padding: 0.2rem 0.5rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+}
+
+.brain-record-tabs button.is-active {
+  border-color: rgba(96, 192, 255, 0.85);
+  color: var(--color-text-accent);
+  background: rgba(3, 26, 51, 0.92);
+}
+
+.brain-record-card {
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: rgba(5, 8, 18, 0.62);
+  padding: 0.45rem 0.55rem;
+}
+
+.brain-record-title {
+  color: var(--color-text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+}
+
+.brain-record-meta {
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+  margin-top: 0.2rem;
+}
+
+.brain-record-summary {
+  color: var(--color-text);
+  font-size: 0.72rem;
+  margin-top: 0.3rem;
+}
+
+.brain-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.42rem;
+}
+
+.brain-record-action {
+  padding: 0.24rem 0.45rem;
+  font-size: 0.62rem;
+}
+
+.brain-record-editor {
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: rgba(5, 8, 18, 0.72);
+  padding: 0.5rem;
+}
+
+.brain-record-editor-id {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--color-text-accent);
+  font-size: 0.68rem;
+  margin-bottom: 0.35rem;
+}
+
+.brain-record-editor-label {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-top: 0.28rem;
+}
+
 .receipt-details summary {
   cursor: pointer;
   padding: 0.45rem 0.6rem;

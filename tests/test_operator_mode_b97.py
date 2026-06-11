@@ -203,7 +203,10 @@ def test_pending_action_expiry_blocks_execution(
     assert confirm.status_code == 200
     payload = confirm.json()
     assert payload["receipt"]["status"] == "failed"
-    assert "expired" in str(payload["receipt"].get("summary", "")).lower() or "expired" in str(payload["answer"]).lower()
+    assert (
+        "expired" in str(payload["receipt"].get("summary", "")).lower()
+        or "expired" in str(payload["answer"]).lower()
+    )
     assert target.exists()
 
 

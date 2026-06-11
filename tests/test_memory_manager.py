@@ -13,11 +13,15 @@ def _manager(tmp_path: Path) -> PersistentMemoryManager:
     return manager
 
 
-def test_active_listing_excludes_deleted_superseded_and_inactive(tmp_path: Path) -> None:
+def test_active_listing_excludes_deleted_superseded_and_inactive(
+    tmp_path: Path,
+) -> None:
     manager = _manager(tmp_path)
     pending = manager.create_pending_memory(content="Possibly prefers verbose details.")
     manager.soft_delete_memory("XV7-MEMORY-0002")
-    manager.supersede_memory("XV7-MEMORY-0003", new_content="Otis prefers concise updates.")
+    manager.supersede_memory(
+        "XV7-MEMORY-0003", new_content="Otis prefers concise updates."
+    )
 
     active_ids = {record.id for record in manager.list_active_memories()}
     assert "XV7-MEMORY-0002" not in active_ids
@@ -71,11 +75,17 @@ def test_memory_search_returns_compact_receipt(tmp_path: Path) -> None:
 
 def test_chat_memory_recall_and_verified_separation(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
-    recall = manager.try_handle_chat("What do you remember about XV7?", session_metadata={})
+    recall = manager.try_handle_chat(
+        "What do you remember about XV7?", session_metadata={}
+    )
     assert recall is not None
     assert "Memory records only" in recall.answer
 
-    metadata = {"last_memory_match_ids": recall.metadata_updates.get("last_memory_match_ids", [])}
+    metadata = {
+        "last_memory_match_ids": recall.metadata_updates.get(
+            "last_memory_match_ids", []
+        )
+    }
     separation = manager.try_handle_chat(
         "Is that verified or just remembered?",
         session_metadata=metadata,
@@ -110,11 +120,15 @@ def test_pending_memory_listing_and_approval(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     pending = manager.create_pending_memory(content="receipt memory candidate")
 
-    listed = manager.try_handle_chat("Do you have any pending memories?", session_metadata={})
+    listed = manager.try_handle_chat(
+        "Do you have any pending memories?", session_metadata={}
+    )
     assert listed is not None
     assert pending.id in listed.answer
 
-    approved = manager.try_handle_chat("Approve the pending receipt memory.", session_metadata={})
+    approved = manager.try_handle_chat(
+        "Approve the pending receipt memory.", session_metadata={}
+    )
     assert approved is not None
     assert "Approved and activated" in approved.answer
 
@@ -139,7 +153,9 @@ def test_search_memory_results_and_non_matches(tmp_path: Path) -> None:
 
 def test_update_memory_supersedes_and_status_visible(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
-    created = manager.create_active_memory(content="Otis wants receipts to stay compact.")
+    created = manager.create_active_memory(
+        content="Otis wants receipts to stay compact."
+    )
     metadata = {"last_memory_match_ids": [created.id]}
 
     updated = manager.try_handle_chat(
@@ -149,14 +165,20 @@ def test_update_memory_supersedes_and_status_visible(tmp_path: Path) -> None:
     assert updated is not None
     assert "superseding" in updated.answer
 
-    status = manager.try_handle_chat("Show the receipt memory status.", session_metadata={})
+    status = manager.try_handle_chat(
+        "Show the receipt memory status.", session_metadata={}
+    )
     assert status is not None
     assert "Receipt memory statuses:" in status.answer
 
 
-def test_forget_specific_memory_soft_deletes_without_hard_delete(tmp_path: Path) -> None:
+def test_forget_specific_memory_soft_deletes_without_hard_delete(
+    tmp_path: Path,
+) -> None:
     manager = _manager(tmp_path)
-    created = manager.create_active_memory(content="Otis wants receipts to stay compact.")
+    created = manager.create_active_memory(
+        content="Otis wants receipts to stay compact."
+    )
 
     forgotten = manager.try_handle_chat(
         "Forget the receipt memory.",
@@ -177,6 +199,8 @@ def test_safety_refuses_mass_destructive_memory_commands(tmp_path: Path) -> None
     assert forget_all is not None
     assert "will not mass-delete" in forget_all.answer
 
-    import_all = manager.try_handle_chat("Import all XV6.1 memory.", session_metadata={})
+    import_all = manager.try_handle_chat(
+        "Import all XV6.1 memory.", session_metadata={}
+    )
     assert import_all is not None
     assert "cannot bulk import XV6.1" in import_all.answer

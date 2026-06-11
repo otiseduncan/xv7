@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-import os
 from pathlib import Path
 import subprocess
 
@@ -27,7 +26,9 @@ def _ok_json(_url: str) -> tuple[bool, dict]:
     return True, {"status": "ok"}
 
 
-def test_repo_status_receipt_and_read_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_repo_status_receipt_and_read_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     def _fake_run_git(_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
         if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
             return _Proc(0, "main\n")  # type: ignore[return-value]
@@ -262,7 +263,9 @@ def test_operator_manager_keeps_mutation_denials(prompt: str) -> None:
     assert handled.result.status == "denied"
 
 
-def test_runtime_health_operation_is_get_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_runtime_health_operation_is_get_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr("core.operator.actions.runtime._get_json", _ok_json)
     monkeypatch.setattr(
         "core.operator.actions.runtime._probe_url",
@@ -278,14 +281,18 @@ def test_runtime_health_operation_is_get_only(monkeypatch: pytest.MonkeyPatch, t
     assert "DELETE" not in operation
     checks = result.data.get("service_checks", [])
     assert checks
-    assert all(item.get("checked_from") in {"container", "host", "unknown"} for item in checks)
+    assert all(
+        item.get("checked_from") in {"container", "host", "unknown"} for item in checks
+    )
     assert all("url_used" in item for item in checks)
     assert all("service_name" in item for item in checks)
     assert all("reachable" in item for item in checks)
     assert all("limitation" in item for item in checks)
 
 
-def test_runtime_health_prefers_internal_urls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_runtime_health_prefers_internal_urls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama:11434")
     monkeypatch.setenv("WEBUI_BASE_URL", "http://open-webui:8080")
     monkeypatch.setenv("XV7_FRONTEND_INTERNAL_URL", "http://xv7-frontend")
@@ -307,8 +314,12 @@ def test_runtime_health_prefers_internal_urls(monkeypatch: pytest.MonkeyPatch, t
     assert by_service.get("xv7-frontend", "").startswith("http://xv7-frontend")
 
 
-def test_docker_compose_ps_unavailable_is_honest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("core.operator.actions.runtime.shutil.which", lambda _name: None)
+def test_docker_compose_ps_unavailable_is_honest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "core.operator.actions.runtime.shutil.which", lambda _name: None
+    )
 
     result = docker_compose_ps(action_id="OP-20260611-0101", repo_root=tmp_path)
     assert result.status == "failed"
@@ -317,7 +328,9 @@ def test_docker_compose_ps_unavailable_is_honest(monkeypatch: pytest.MonkeyPatch
     assert result.data.get("docker_socket_available") is False
 
 
-def test_operator_environment_reports_capabilities(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_operator_environment_reports_capabilities(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama:11434")
     monkeypatch.setattr(
         "core.operator.actions.environment.shutil.which",
