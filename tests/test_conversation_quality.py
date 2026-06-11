@@ -6,6 +6,8 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from core.brain.manager import BrainContextManager
+from core.memory.manager import PersistentMemoryManager
+from core.memory.store import MemoryStore
 from core.main import app
 from core.runtime.schemas import SessionState
 
@@ -34,9 +36,15 @@ async def _fake_persist_vector_memory_round_trip(
     return {"status": "ok"}
 
 
-def _setup_contract_only(monkeypatch) -> TestClient:
+def _setup_contract_only(monkeypatch, tmp_path: Path) -> TestClient:
     monkeypatch.setenv("XV7_API_KEY", "test-secret")
     monkeypatch.setattr("core.main.base_agent", _FailingAgent())
+
+    memory_store = MemoryStore(records_dir=tmp_path / "memory_records")
+    memory_manager = PersistentMemoryManager(store=memory_store)
+    memory_manager.bootstrap_seed_records()
+    monkeypatch.setattr("core.main.persistent_memory_manager", memory_manager)
+
     monkeypatch.setattr(
         "core.main.vector_store.query_similar_memories",
         _fake_query_similar_memories,
@@ -76,8 +84,8 @@ def test_missing_memory_answer_is_honest(monkeypatch, tmp_path: Path) -> None:
     assert answer == "Missing required record: memory."
 
 
-def test_verified_facts_answer_uses_verified_status_only(monkeypatch) -> None:
-    client = _setup_contract_only(monkeypatch)
+def test_verified_facts_answer_uses_verified_status_only(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     response = client.post(
@@ -93,8 +101,8 @@ def test_verified_facts_answer_uses_verified_status_only(monkeypatch) -> None:
     assert "System Prompt" not in answer
 
 
-def test_every_contract_answer_has_compact_receipt(monkeypatch) -> None:
-    client = _setup_contract_only(monkeypatch)
+def test_every_contract_answer_has_compact_receipt(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     prompts = [
@@ -117,8 +125,8 @@ def test_every_contract_answer_has_compact_receipt(monkeypatch) -> None:
         assert "Context receipt:" in answer
 
 
-def test_model_question_requires_proof_in_chat_path(monkeypatch) -> None:
-    client = _setup_contract_only(monkeypatch)
+def test_model_question_requires_proof_in_chat_path(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     response = client.post(
@@ -139,3 +147,70 @@ def test_model_question_requires_proof_in_chat_path(monkeypatch) -> None:
     assert provenance.get("answer_source") == "brain_policy"
     assert provenance.get("policy_source") == "answer_contract"
     assert provenance.get("runtime_model_inference_proven") is False
+
+
+def test_memory_recall_uses_memory_records_only(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "What do you remember?"},
+    )
+
+    assert response.status_code == 200
+    answer = response.json()["messages"][-1]["content"]
+    assert "Remembered items (Memory records only):" in answer
+    assert "Verified facts:" not in answer
+    assert "Knowledge facts:" not in answer
+    assert "Context receipt: Memory" in answer
+
+
+def test_verified_vs_remembered_separation_in_chat_path(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    remember = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "What do you remember about XV7?"},
+    )
+    assert remember.status_code == 200
+
+    separation = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Is that verified or just remembered?"},
+    )
+    assert separation.status_code == 200
+    answer = separation.json()["messages"][-1]["content"]
+    assert "not verified status" in answer
+    assert "Context receipt: Memory" in answer
+
+
+def test_forget_that_is_ambiguous_does_not_delete(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    created_a = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Remember this: Otis wants receipts to stay compact."},
+    )
+    created_b = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Remember this: Otis wants receipt memory to include ids."},
+    )
+    assert created_a.status_code == 200
+    assert created_b.status_code == 200
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Forget that receipt memory."},
+    )
+    assert response.status_code == 200
+    answer = response.json()["messages"][-1]["content"]
+    assert "matches multiple memories" in answer

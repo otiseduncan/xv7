@@ -15,8 +15,6 @@
 #   docker compose up -d
 # =============================================================================
 
-version: "3.9"
-
 # ---------------------------------------------------------------------------
 # Named volumes — all state persisted outside container lifecycles
 # ---------------------------------------------------------------------------
@@ -156,7 +154,9 @@ services:
     volumes:
       - ./core:/app/core                 # Live-reload: source changes apply instantly
       - ./config:/app/config             # Persona and system configuration files
+      - ./:/workspace:ro                 # Full repo mount for read-only operator git/file checks
       - core_data:/app/data:rw           # Persistent DB, vectors, memory logs
+      - ./data/brain/records:/app/data/brain/records:ro
       - xv7_shared:/app/shared           # Write 3D assets & state for open-webui
     networks:
       - xv7-network
@@ -171,6 +171,7 @@ services:
       - MEMORY_DB_PATH=${MEMORY_DB_PATH:-/app/data/memory}
       - ASSETS_PATH=${ASSETS_PATH:-/app/shared/assets}
       - XV7_MODEL_PROFILE=${XV7_MODEL_PROFILE:-balanced}
+      - XV7_OPERATOR_REPO_ROOT=/workspace
     depends_on:
       ollama:
         condition: service_healthy

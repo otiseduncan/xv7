@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
+from core.memory.manager import PersistentMemoryManager
+from core.operator.manager import OperatorManager
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
 from core.runtime.model_profile_selection import (
@@ -155,6 +157,9 @@ memory_manager = MemoryManager()
 base_agent = BaseAgent()
 vector_store = VectorMemoryEngine()
 brain_context_manager = BrainContextManager()
+persistent_memory_manager = PersistentMemoryManager()
+_operator_repo_root = Path(os.getenv("XV7_OPERATOR_REPO_ROOT", str(Path.cwd())))
+operator_manager = OperatorManager(repo_root=_operator_repo_root)
 
 
 @app.on_event("shutdown")
@@ -168,6 +173,7 @@ async def on_shutdown() -> None:
 async def on_startup() -> None:
     """Initialize persistence tables before serving requests."""
     await ensure_session_facts_table()
+    persistent_memory_manager.bootstrap_seed_records()
 
 
 @app.exception_handler(SessionNotFoundError)
@@ -390,6 +396,102 @@ async def add_session_message(
 
     session_state = await memory_manager.get_session(session_id)
     inference_state = session_state.model_copy(deep=True)
+
+    operator_action = operator_manager.try_handle_chat(payload.raw_text)
+    if operator_action is not None:
+        assistant_output = operator_action.answer.strip()
+        operator_receipt = operator_action.result.receipt()
+        assistant_output = f"{assistant_output}\n\n{operator_receipt}"
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=assistant_output,
+        )
+        assistant_message = updated_state.messages[-1]
+
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = {
+            "answer_source": "brain_policy",
+            "policy_source": "operator_manager",
+            "brain_answer_source": "operator_action",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        updated_state.metadata["operator_last_action"] = operator_action.result.model_dump(mode="json")
+        if (
+            operator_action.result.action_name == "repo_status"
+            and operator_action.result.status == "success"
+        ):
+            updated_state.metadata["live_repo_check"] = True
+            current_tool_results = updated_state.metadata.get("tool_results", [])
+            if not isinstance(current_tool_results, list):
+                current_tool_results = []
+            current_tool_results.append(
+                {
+                    "type": "repo_check",
+                    "action_id": operator_action.result.action_id,
+                    "status": operator_action.result.status,
+                }
+            )
+            updated_state.metadata["tool_results"] = current_tool_results
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = {
+            "compact": operator_receipt,
+            "source": "operator_action",
+        }
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    memory_action = persistent_memory_manager.try_handle_chat(
+        payload.raw_text,
+        session_metadata=session_state.metadata,
+    )
+    if memory_action is not None:
+        assistant_output = memory_action.answer.strip()
+        if memory_action.receipt:
+            assistant_output = f"{assistant_output}\n\n{memory_action.receipt}"
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=assistant_output,
+        )
+        assistant_message = updated_state.messages[-1]
+
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = {
+            "answer_source": "brain_policy",
+            "policy_source": "persistent_memory",
+            "brain_answer_source": "memory_records",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = {
+            "compact": memory_action.receipt,
+            "source": "persistent_memory",
+        }
+        for key, value in memory_action.metadata_updates.items():
+            updated_state.metadata[key] = value
+        await memory_manager.update_session(updated_state)
+        return updated_state
 
     brain_context = brain_context_manager.build_context_for_question(payload.raw_text)
     inference_state.messages.insert(
