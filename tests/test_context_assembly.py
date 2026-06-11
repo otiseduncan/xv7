@@ -16,7 +16,7 @@ def test_active_context_compact_receipt_has_required_layers() -> None:
     compact = str(context.receipt.get("compact", ""))
 
     assert "System Prompt XV7-SYSTEM-0001" in compact
-    assert "Active Focus XV7-FOCUS-0001" in compact
+    assert "Active Focus XV7-FOCUS-0002" in compact
     assert "Verified Status XV7-VERIFIED-0001" in compact
 
 
@@ -88,8 +88,8 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
         ),
         (
             "What are we working on?",
-            "B4 brain/context integration",
-            "Active Focus XV7-FOCUS-0001",
+            "B5.1 provenance cleanup",
+            "Active Focus XV7-FOCUS-0002",
             ["System Prompt", "Knowledge", "Memory", "Verified Status"],
         ),
         (

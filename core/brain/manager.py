@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from typing import Any
 
+from core.brain.answer_contract import AnswerContract
 from core.brain.context import BrainContext, BrainContextAssembler
 from core.brain.records import BrainRecordLoader
 from core.brain.schema import BrainLayer, BrainRecord
@@ -14,6 +16,7 @@ class BrainContextManager:
     def __init__(self, records_dir: Path | None = None) -> None:
         self.loader = BrainRecordLoader(records_dir=records_dir)
         self.assembler = BrainContextAssembler()
+        self.answer_contract = AnswerContract()
 
     def build_active_context(self) -> BrainContext:
         records = self.loader.load_active_records()
@@ -46,8 +49,26 @@ class BrainContextManager:
             "what do you know is verified",
             "what repo/status are we on?",
             "what repo/status are we on",
+            "what failed?",
+            "what failed",
+            "did you check the repo?",
+            "did you check the repo",
+            "what model was proven during operator readiness?",
+            "what model was proven during operator readiness",
         }:
             return [BrainLayer.VERIFIED_STATUS]
+
+        if normalized in {"what do you remember?", "what do you remember"}:
+            return [BrainLayer.MEMORY]
+
+        if normalized in {"are we beta ready?", "are we beta ready"}:
+            return [BrainLayer.VERIFIED_STATUS, BrainLayer.ACTIVE_FOCUS]
+
+        if normalized in {"what model are you using?", "what model are you using"}:
+            return [BrainLayer.SYSTEM_PROMPT]
+
+        if "guess" in normalized:
+            return [BrainLayer.ACTIVE_FOCUS]
 
         layers: list[BrainLayer] = [BrainLayer.SYSTEM_PROMPT]
         if re.search(r"\b(work|working|focus|task|priority)\b", normalized):
@@ -80,60 +101,18 @@ class BrainContextManager:
             target_layers=selected_layers,
         )
 
-    def answer_from_records(self, question: str) -> str | None:
-        """Return deterministic answers for core B4 context checks.
-
-        Returns None when the question is outside the supported B4 pass set.
-        """
-        normalized = self._normalize_question(question)
+    def answer_from_records(
+        self,
+        question: str,
+        *,
+        session_metadata: dict[str, Any] | None = None,
+    ) -> str | None:
+        """Return policy-controlled answers for quality-critical prompts."""
         records = self.loader.load_active_records()
 
         layer_map = self._highest_priority_by_layer(records)
-        system = layer_map.get(BrainLayer.SYSTEM_PROMPT)
-        focus = layer_map.get(BrainLayer.ACTIVE_FOCUS)
-        verified = layer_map.get(BrainLayer.VERIFIED_STATUS)
-
-        if normalized in {"who are you?", "who are you"}:
-            if system is None:
-                return "Missing required record: system_prompt."
-            return system.facts[0].statement if system.facts else system.summary
-
-        if normalized in {"what are we working on?", "what are we working on"}:
-            if focus is None:
-                return "Missing required record: active_focus."
-            return focus.summary
-
-        if normalized in {
-            "what do you know is verified?",
-            "what do you know is verified",
-        }:
-            if verified is None:
-                return "Missing required record: verified_status."
-            verified_facts = [f.statement for f in verified.facts]
-            if not verified_facts:
-                return "Verified status record is present but has no facts."
-            joined = " ".join(f"- {item}" for item in verified_facts)
-            return f"Verified facts: {joined}"
-
-        if normalized in {"what repo/status are we on?", "what repo/status are we on"}:
-            if verified is None:
-                return "Missing required record: verified_status."
-
-            repo_items = []
-            for fact in verified.facts:
-                text = fact.statement.lower()
-                if (
-                    "repo path" in text
-                    or "branch" in text
-                    or "synced" in text
-                    or "start_xv7_local.ps1" in text
-                    or "operator_readiness_report.py" in text
-                ):
-                    repo_items.append(fact.statement)
-
-            if not repo_items:
-                return "Verified status is present but repo/status details are missing."
-
-            return "Repo/status: " + " ".join(f"- {item}" for item in repo_items)
-
-        return None
+        return self.answer_contract.try_answer(
+            question,
+            records_by_layer=layer_map,
+            session_metadata=session_metadata or {},
+        )

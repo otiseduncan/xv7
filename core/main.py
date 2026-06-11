@@ -398,7 +398,10 @@ async def add_session_message(
     )
 
     compact_receipt = str(brain_context.receipt.get("compact", "")).strip()
-    brain_answer = brain_context_manager.answer_from_records(payload.raw_text)
+    brain_answer = brain_context_manager.answer_from_records(
+        payload.raw_text,
+        session_metadata=session_state.metadata,
+    )
     if brain_answer is not None:
         assistant_output = brain_answer.strip()
         if compact_receipt:
@@ -419,16 +422,14 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        model_use_receipt = {
-            "model_profile": "xv7_brain_context",
-            "profile_source": "runtime_context",
-            "runtime_role": "chat",
-            "model_tag": "xv7-brain-records",
-            "model_selection_source": "brain_records",
+        updated_state.metadata["answer_provenance"] = {
+            "answer_source": "brain_policy",
+            "policy_source": "answer_contract",
+            "brain_answer_source": "brain_records",
             "request_id": str(uuid4()),
             "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
         }
-        updated_state.metadata["model_use_receipt"] = model_use_receipt
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = brain_context.receipt
         await memory_manager.update_session(updated_state)
@@ -489,6 +490,14 @@ async def add_session_message(
     )
     model_use_receipt["session_id"] = str(session_id)
     updated_state.metadata["model_use_receipt"] = model_use_receipt
+    updated_state.metadata["answer_provenance"] = {
+        "answer_source": "runtime_model_inference",
+        "policy_source": "none",
+        "brain_answer_source": "context_assisted",
+        "request_id": model_use_receipt.get("request_id"),
+        "session_id": str(session_id),
+        "runtime_model_inference_proven": True,
+    }
     updated_state.metadata["vector_memory"] = vector_memory_receipt
     updated_state.metadata["context_receipt"] = brain_context.receipt
     await memory_manager.update_session(updated_state)

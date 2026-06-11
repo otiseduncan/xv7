@@ -115,12 +115,14 @@ Missing optional env vars produce warnings, not hard failures.
 The launcher:
 
 1. Detects and prints the repo root.
-2. Runs `python scripts/check_readiness.py` — exits if it fails (use `-SkipReadinessErrors` to continue past warnings).
-3. Verifies Docker is running.
-4. Runs `docker compose up -d` and writes a timestamped log to `runtime\logs\`.
-5. Polls `http://localhost:8000/health` until the Core API responds (default timeout: 60 s).
-6. Prints reachable endpoints.
-7. Exits **1** on any failure.
+2. Runs `python scripts/check_readiness.py` and writes output to `runtime\logs\readiness_preflight.log`.
+3. Continues launch by default if readiness reports issues (warnings are printed).
+4. Use `-RequireReadiness` to fail fast on readiness issues.
+5. Verifies Docker is running.
+6. Runs `docker compose up -d` and writes a timestamped log to `runtime\logs\`.
+7. Polls `http://localhost:8000/health` until the Core API responds (default timeout: 60 s).
+8. Prints reachable endpoints.
+9. Exits **1** on launch failures.
 
 Before `docker compose up -d`, the launcher validates `.env` and fails fast if
 `WEBUI_SECRET_KEY` or `CORE_API_KEY` are missing/blank/placeholders. When this
@@ -133,11 +135,11 @@ preflight fails, it prints the exact variable names and tells you to run:
 ### Start options
 
 ```powershell
-# Default — fail on readiness issues
+# Default — continue launch even if readiness reports warnings
 .\scripts\start_xv7_local.ps1
 
-# Continue past missing optional env vars
-.\scripts\start_xv7_local.ps1 -SkipReadinessErrors
+# Strict preflight mode — block launch unless readiness is clean
+.\scripts\start_xv7_local.ps1 -RequireReadiness
 
 # Give containers up to 2 minutes to start
 .\scripts\start_xv7_local.ps1 -HealthTimeoutSeconds 120
@@ -257,6 +259,23 @@ python scripts/operator_readiness_report.py
 python scripts/operator_readiness_report.py --profile local_test
 python scripts/operator_readiness_report.py --skip-chat-proof
 python scripts/operator_readiness_report.py --json
+```
+
+### Known-good launch proof
+
+This is the canonical local proof flow for this slice:
+
+```powershell
+.\scripts\start_xv7_local.ps1
+python scripts/operator_readiness_report.py
+```
+
+Both commands must complete cleanly.
+
+Optional one-command wrapper:
+
+```powershell
+.\scripts\proof_xv7_local.ps1
 ```
 
 What this report verifies:
