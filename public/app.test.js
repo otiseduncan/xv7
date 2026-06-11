@@ -327,16 +327,53 @@ describe('ModelProfileControl', () => {
     new Xv7UI();
     await flushAsync();
 
+    const apiKeyInput = document.getElementById('modelApiKeyInput');
+    apiKeyInput.value = 'chat-key';
+    apiKeyInput.dispatchEvent(new Event('input'));
+
     const prompt = document.getElementById('promptInput');
     prompt.value = 'Return exactly: XV7_MODEL_PROOF';
     document.getElementById('sendButton').click();
     await flushAsync();
+
+    const sessionCalls = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] || {};
+      return new URL(call[0]).pathname === '/sessions' && (init.method || '').toUpperCase() === 'POST';
+    });
+    const messageCalls = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] || {};
+      return new URL(call[0]).pathname === '/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST';
+    });
+
+    expect(headerValue(sessionCalls[0][1].headers, 'X-XV7-API-Key')).toBe('chat-key');
+    expect(headerValue(messageCalls[0][1].headers, 'X-XV7-API-Key')).toBe('chat-key');
 
     expect(document.getElementById('chatReceiptProfile').textContent).toBe('local_test');
     expect(document.getElementById('chatReceiptModelTag').textContent).toBe('qwen3:14b');
     expect(document.getElementById('chatReceiptRole').textContent).toBe('chat');
     expect(document.getElementById('chatReceiptSelectionSource').textContent).toBe('registry_effective_profile');
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
+  });
+
+  it('does not attempt chat send without API key', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Return exactly: XV7_MODEL_PROOF';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const sessionCalls = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] || {};
+      return new URL(call[0]).pathname === '/sessions' && (init.method || '').toUpperCase() === 'POST';
+    });
+
+    expect(sessionCalls.length).toBe(0);
+    expect(document.getElementById('alertBox').textContent).toContain('API key is required for chat');
   });
 
   it('clear action sends DELETE /runtime/models/active with API key header', async () => {

@@ -361,6 +361,15 @@ class Xv7UI {
     const raw = this.els.promptInput.value.trim();
     if (!raw) return;
 
+    const apiKey = this.modelApiKey.trim();
+    if (!apiKey) {
+      this.showAlert(
+        'API key is required for chat. Enter the operator key in Model Profile Control.',
+        true,
+      );
+      return;
+    }
+
     this.showAlert('', false);
     this.lockInput(true);
     this.setHardwareLoad('Inference', 74);
@@ -371,6 +380,7 @@ class Xv7UI {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-XV7-API-Key': apiKey,
           },
           body: JSON.stringify({
             current_persona: this.activePersona,
@@ -400,6 +410,7 @@ class Xv7UI {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-XV7-API-Key': apiKey,
         },
         body: JSON.stringify({ raw_text: raw }),
       });

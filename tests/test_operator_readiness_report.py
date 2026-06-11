@@ -188,6 +188,44 @@ def test_auth_proof_requires_401_without_key(
     assert auth_without.result == "pass"
 
 
+def test_auth_proof_fails_if_unauthenticated_session_creation_returns_201(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setenv("CORE_API_KEY", "test-key")
+
+    fake_http, _ = _http_fake_factory(secret_expected="test-key")
+
+    def _fake_with_regression(
+        method: str,
+        url: str,
+        *,
+        timeout_seconds: float,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, object] | None = None,
+    ):
+        if (
+            method == "POST"
+            and url.endswith(":8000/sessions")
+            and not (headers or {}).get("X-XV7-API-Key")
+        ):
+            return 201, {"session_id": "unexpected-public"}, None
+        return fake_http(
+            method,
+            url,
+            timeout_seconds=timeout_seconds,
+            headers=headers,
+            json_body=json_body,
+        )
+
+    monkeypatch.setattr(report_mod, "_http_json", _fake_with_regression)
+
+    report = report_mod.build_operator_readiness_report(_args(["--skip-chat-proof"]))
+    auth_without = next(c for c in report.checks if c.name == "auth_without_key")
+    assert auth_without.result == "fail"
+    assert report.exit_code() != 0
+
+
 def test_auth_proof_requires_201_with_key(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
