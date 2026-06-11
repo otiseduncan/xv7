@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 from uuid import UUID
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
 from core.memory.manager import PersistentMemoryManager
+from core.operator.history import append_history, get_history
 from core.operator.manager import OperatorManager
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
@@ -93,6 +95,29 @@ def build_facts_system_prompt(facts: dict[str, Any]) -> str:
     )
 
 
+def build_assistant_payload(
+    *,
+    visible_text: str,
+    context_receipt: dict[str, Any] | None = None,
+    operator_receipts: list[dict[str, Any]] | None = None,
+    memory_receipts: list[str] | None = None,
+    model_use_receipt: dict[str, Any] | None = None,
+    policy_provenance: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+    action_history_refs: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "visible_text": visible_text,
+        "context_receipt": context_receipt or {},
+        "operator_receipts": operator_receipts or [],
+        "memory_receipts": memory_receipts or [],
+        "model_use_receipt": model_use_receipt or {},
+        "policy_provenance": policy_provenance or {},
+        "warnings": warnings or [],
+        "action_history_refs": action_history_refs or [],
+    }
+
+
 async def ensure_session_facts_table() -> None:
     async with aiosqlite.connect(facts_db_path) as conn:
         await conn.execute(
@@ -144,7 +169,19 @@ async def upsert_session_facts(session_id: str, facts: dict[str, Any]) -> None:
         await conn.commit()
 
 
-app = FastAPI(title="xv7-core")
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Preserve startup and shutdown behavior via lifespan events."""
+    await ensure_session_facts_table()
+    persistent_memory_manager.bootstrap_seed_records()
+    try:
+        yield
+    finally:
+        await base_agent.aclose()
+        await vector_store.aclose()
+
+
+app = FastAPI(title="xv7-core", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -160,21 +197,6 @@ brain_context_manager = BrainContextManager()
 persistent_memory_manager = PersistentMemoryManager()
 _operator_repo_root = Path(os.getenv("XV7_OPERATOR_REPO_ROOT", str(Path.cwd())))
 operator_manager = OperatorManager(repo_root=_operator_repo_root)
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    """Close pooled HTTP resources on app shutdown."""
-    await base_agent.aclose()
-    await vector_store.aclose()
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    """Initialize persistence tables before serving requests."""
-    await ensure_session_facts_table()
-    persistent_memory_manager.bootstrap_seed_records()
-
 
 @app.exception_handler(SessionNotFoundError)
 async def session_not_found_handler(
@@ -397,16 +419,54 @@ async def add_session_message(
     session_state = await memory_manager.get_session(session_id)
     inference_state = session_state.model_copy(deep=True)
 
-    operator_action = operator_manager.try_handle_chat(payload.raw_text)
+    operator_action = operator_manager.try_handle_chat(
+        payload.raw_text,
+        session_metadata=session_state.metadata,
+    )
     if operator_action is not None:
-        assistant_output = operator_action.answer.strip()
+        visible_text = operator_action.answer.strip()
         operator_receipt = operator_action.result.receipt()
-        assistant_output = f"{assistant_output}\n\n{operator_receipt}"
+        assistant_output = f"{visible_text}\n\n{operator_receipt}"
+        structured_receipt = operator_action.result.structured_receipt()
+
+        current_history = get_history(session_state.metadata)
+        if operator_action.record_history:
+            current_history = append_history(session_state.metadata, structured_receipt)
+        action_history_refs = [
+            str(item.get("action_id", ""))
+            for item in current_history[-5:]
+            if isinstance(item, dict) and str(item.get("action_id", ""))
+        ]
+
+        warnings: list[str] = []
+        limitation = structured_receipt.get("limitation")
+        if isinstance(limitation, str) and limitation.strip():
+            warnings.append(limitation)
+
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "operator_manager",
+            "brain_answer_source": "operator_action",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt={"compact": operator_receipt, "source": "operator_action"},
+            operator_receipts=[structured_receipt],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=warnings,
+            action_history_refs=action_history_refs,
+        )
 
         updated_state = await memory_manager.add_message(
             session_id=session_id,
             role="assistant",
             raw_text=assistant_output,
+            message_metadata=assistant_payload,
         )
         assistant_message = updated_state.messages[-1]
 
@@ -418,15 +478,10 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = {
-            "answer_source": "brain_policy",
-            "policy_source": "operator_manager",
-            "brain_answer_source": "operator_action",
-            "request_id": str(uuid4()),
-            "session_id": str(session_id),
-            "runtime_model_inference_proven": False,
-        }
+        updated_state.metadata["answer_provenance"] = policy_provenance
         updated_state.metadata["operator_last_action"] = operator_action.result.model_dump(mode="json")
+        updated_state.metadata["operator_action_history"] = current_history
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
         if (
             operator_action.result.action_name == "repo_status"
             and operator_action.result.status == "success"
@@ -444,10 +499,7 @@ async def add_session_message(
             )
             updated_state.metadata["tool_results"] = current_tool_results
         updated_state.metadata["vector_memory"] = vector_memory_receipt
-        updated_state.metadata["context_receipt"] = {
-            "compact": operator_receipt,
-            "source": "operator_action",
-        }
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
         await memory_manager.update_session(updated_state)
         return updated_state
 
@@ -456,14 +508,39 @@ async def add_session_message(
         session_metadata=session_state.metadata,
     )
     if memory_action is not None:
-        assistant_output = memory_action.answer.strip()
+        visible_text = memory_action.answer.strip()
+        assistant_output = visible_text
         if memory_action.receipt:
             assistant_output = f"{assistant_output}\n\n{memory_action.receipt}"
+
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "persistent_memory",
+            "brain_answer_source": "memory_records",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt={"compact": memory_action.receipt, "source": "persistent_memory"},
+            operator_receipts=[],
+            memory_receipts=[memory_action.receipt] if memory_action.receipt else [],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=[],
+            action_history_refs=[
+                str(item.get("action_id", ""))
+                for item in get_history(session_state.metadata)[-5:]
+                if isinstance(item, dict) and str(item.get("action_id", ""))
+            ],
+        )
 
         updated_state = await memory_manager.add_message(
             session_id=session_id,
             role="assistant",
             raw_text=assistant_output,
+            message_metadata=assistant_payload,
         )
         assistant_message = updated_state.messages[-1]
 
@@ -475,19 +552,10 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = {
-            "answer_source": "brain_policy",
-            "policy_source": "persistent_memory",
-            "brain_answer_source": "memory_records",
-            "request_id": str(uuid4()),
-            "session_id": str(session_id),
-            "runtime_model_inference_proven": False,
-        }
+        updated_state.metadata["answer_provenance"] = policy_provenance
         updated_state.metadata["vector_memory"] = vector_memory_receipt
-        updated_state.metadata["context_receipt"] = {
-            "compact": memory_action.receipt,
-            "source": "persistent_memory",
-        }
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
         for key, value in memory_action.metadata_updates.items():
             updated_state.metadata[key] = value
         await memory_manager.update_session(updated_state)
@@ -505,14 +573,39 @@ async def add_session_message(
         session_metadata=session_state.metadata,
     )
     if brain_answer is not None:
-        assistant_output = brain_answer.strip()
+        visible_text = brain_answer.strip()
+        assistant_output = visible_text
         if compact_receipt:
             assistant_output = f"{assistant_output}\n\n{compact_receipt}"
+
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "answer_contract",
+            "brain_answer_source": "brain_records",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=brain_context.receipt,
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=[],
+            action_history_refs=[
+                str(item.get("action_id", ""))
+                for item in get_history(session_state.metadata)[-5:]
+                if isinstance(item, dict) and str(item.get("action_id", ""))
+            ],
+        )
 
         updated_state = await memory_manager.add_message(
             session_id=session_id,
             role="assistant",
             raw_text=assistant_output,
+            message_metadata=assistant_payload,
         )
         assistant_message = updated_state.messages[-1]
 
@@ -524,16 +617,10 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = {
-            "answer_source": "brain_policy",
-            "policy_source": "answer_contract",
-            "brain_answer_source": "brain_records",
-            "request_id": str(uuid4()),
-            "session_id": str(session_id),
-            "runtime_model_inference_proven": False,
-        }
+        updated_state.metadata["answer_provenance"] = policy_provenance
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = brain_context.receipt
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
         await memory_manager.update_session(updated_state)
         return updated_state
 
@@ -570,7 +657,8 @@ async def add_session_message(
         inference_state
     )
 
-    assistant_output = raw_response.strip()
+    visible_text = raw_response.strip()
+    assistant_output = visible_text
     if compact_receipt:
         assistant_output = f"{assistant_output}\n\n{compact_receipt}"
 
@@ -578,6 +666,27 @@ async def add_session_message(
         session_id=session_id,
         role="assistant",
         raw_text=assistant_output,
+        message_metadata=build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=brain_context.receipt,
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt=model_use_receipt,
+            policy_provenance={
+                "answer_source": "runtime_model_inference",
+                "policy_source": "none",
+                "brain_answer_source": "context_assisted",
+                "request_id": model_use_receipt.get("request_id"),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": True,
+            },
+            warnings=[],
+            action_history_refs=[
+                str(item.get("action_id", ""))
+                for item in get_history(session_state.metadata)[-5:]
+                if isinstance(item, dict) and str(item.get("action_id", ""))
+            ],
+        ),
     )
 
     assistant_message = updated_state.messages[-1]
@@ -602,6 +711,7 @@ async def add_session_message(
     }
     updated_state.metadata["vector_memory"] = vector_memory_receipt
     updated_state.metadata["context_receipt"] = brain_context.receipt
+    updated_state.metadata["last_assistant_payload"] = updated_state.messages[-1].metadata
     await memory_manager.update_session(updated_state)
 
     return updated_state
