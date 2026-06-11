@@ -150,6 +150,67 @@
             </div>
           </div>
         </details>
+
+        <details class="diag-section">
+          <summary class="diag-section-title">Voice Diagnostics</summary>
+          <div class="diag-section-body">
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">Voice input</span><span id="voiceDiagInput" class="font-mono text-xv7-accentText">unknown</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Mic state</span><span id="voiceDiagMicState" class="font-mono text-xv7-accentText">idle</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Voice output supported</span><span id="voiceDiagOutput" class="font-mono text-xv7-accentText">unknown</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Voices loaded</span><span id="voiceDiagVoiceCount" class="font-mono text-xv7-accentText">0</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Selected voice</span><span id="voiceDiagSelected" class="max-w-[150px] truncate font-mono text-xv7-accentText">Browser default</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Volume</span><span id="voiceDiagVolume" class="font-mono text-xv7-accentText">1.0</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Rate</span><span id="voiceDiagRate" class="font-mono text-xv7-accentText">1.0</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Pitch</span><span id="voiceDiagPitch" class="font-mono text-xv7-accentText">1.1</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Speaking</span><span id="voiceDiagSpeaking" class="font-mono text-xv7-accentText">no</span></li>
+            </ul>
+          </div>
+        </details>
+
+        <details open class="diag-section">
+          <summary class="diag-section-title">Voice Settings</summary>
+          <div class="diag-section-body space-y-3">
+            <p id="voiceSettingsStatus" class="text-[11px] text-slate-500">Loading browser voices...</p>
+            <div class="space-y-1.5">
+              <label for="voiceSelect" class="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Voice</label>
+              <select id="voiceSelect" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-3 py-2 text-xs text-slate-100 outline-none transition focus:border-xv7-glow">
+                <option value="">Browser default</option>
+              </select>
+            </div>
+
+            <div class="space-y-2">
+              <div class="voice-control-label-row">
+                <label for="voiceVolume" class="voice-control-label">Volume</label>
+              </div>
+              <input id="voiceVolume" type="range" min="0" max="1" step="0.1" value="1" class="voice-range" />
+            </div>
+
+            <div class="space-y-2">
+              <div class="voice-control-label-row">
+                <label for="voiceRate" class="voice-control-label">Speed</label>
+              </div>
+              <input id="voiceRate" type="range" min="0.5" max="2" step="0.1" value="1" class="voice-range" />
+            </div>
+
+            <div class="space-y-2">
+              <div class="voice-control-label-row">
+                <label for="voicePitch" class="voice-control-label">Pitch</label>
+              </div>
+              <input id="voicePitch" type="range" min="0.5" max="2" step="0.1" value="1.1" class="voice-range" />
+            </div>
+
+            <label class="voice-mute-row">
+              <input id="voiceMute" type="checkbox" class="voice-mute-checkbox" />
+              <span>Mute</span>
+            </label>
+
+            <div class="flex gap-2">
+              <button id="voiceTestButton" type="button" class="xv7-control-button flex-1">Test Voice</button>
+              <button id="voiceStopButton" type="button" class="xv7-control-button flex-1">Stop</button>
+            </div>
+          </div>
+        </details>
       </div>
     </aside>
 
@@ -179,6 +240,42 @@
                 <button id="modelApplyButton" class="flex-1 rounded-lg border border-xv7-primary/70 bg-xv7-primary/15 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-xv7-glow transition hover:bg-xv7-primary/25 disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
                 <button id="modelClearButton" class="flex-1 rounded-lg border border-amber-300/60 bg-amber-300/10 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-100 transition hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50">Clear</button>
               </div>
+            </section>
+
+            <section class="space-y-2 rounded-xl border border-xv7-line bg-xv7-panelSoft/80 p-3">
+              <div>
+                <label class="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Voice Output</label>
+                <p class="mt-1 text-[11px] text-slate-500">Shell controls stay synced with the drawer.</p>
+              </div>
+
+              <div class="space-y-2">
+                <div class="voice-control-label-row">
+                  <label for="sidebarVoiceVolume" class="voice-control-label">Volume</label>
+                  <span id="sidebarVoiceVolumeValue" class="text-[10px] text-xv7-accentText">100%</span>
+                </div>
+                <input id="sidebarVoiceVolume" type="range" min="0" max="1" step="0.1" value="1" class="voice-range" />
+              </div>
+
+              <button id="sidebarVoiceMuteButton" type="button" class="flex w-full items-center justify-between rounded-lg border border-xv7-line bg-xv7-panel px-3 py-2 text-left text-xs text-slate-200 transition hover:border-xv7-primary/60 hover:bg-xv7-panelSoft" aria-pressed="false" aria-label="Mute voice output">
+                <span class="flex items-center gap-2">
+                  <span id="sidebarVoiceMuteIconOn" aria-hidden="true" class="inline-flex h-4 w-4 items-center justify-center text-xv7-accentText">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                      <path d="M11 5 6.5 9H3v6h3.5L11 19z" />
+                      <path d="M15 9a4 4 0 0 1 0 6" />
+                      <path d="M17.5 6.5a7 7 0 0 1 0 11" />
+                    </svg>
+                  </span>
+                  <span id="sidebarVoiceMuteIconOff" aria-hidden="true" class="hidden inline-flex h-4 w-4 items-center justify-center text-amber-200">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                      <path d="M11 5 6.5 9H3v6h3.5L11 19z" />
+                      <path d="m16 9 5 5" />
+                      <path d="m21 9-5 5" />
+                    </svg>
+                  </span>
+                  <span id="sidebarVoiceMuteLabel">Mute output</span>
+                </span>
+                <span id="sidebarVoiceMuteState" class="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">On</span>
+              </button>
             </section>
 
             <button id="diagnosticsToggleButton" aria-label="Open diagnostics panel" class="mt-auto rounded-lg border border-xv7-line bg-xv7-panelSoft px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-slate-300 transition hover:border-xv7-primary/60 hover:text-xv7-accentText">⬡ Diagnostics</button>
@@ -232,6 +329,6 @@
       <footer id="appFooter" class="app-footer border-t border-xv7-line bg-xv7-panel/80" aria-hidden="true"></footer>
     </div>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20260611-1"></script>
   </body>
 </html>

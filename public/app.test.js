@@ -38,6 +38,23 @@ function buildDom() {
     <button id="micButton"></button>
     <button id="sendButton"></button>
     <div id="voiceStatus"></div>
+    <p id="voiceSettingsStatus"></p>
+    <select id="voiceSelect"></select>
+    <input id="voiceVolume" type="range" />
+    <input id="voiceRate" type="range" />
+    <input id="voicePitch" type="range" />
+    <input id="voiceMute" type="checkbox" />
+    <button id="voiceTestButton"></button>
+    <button id="voiceStopButton"></button>
+    <span id="voiceDiagInput"></span>
+    <span id="voiceDiagMicState"></span>
+    <span id="voiceDiagOutput"></span>
+    <span id="voiceDiagSpeaking"></span>
+    <span id="voiceDiagVoiceCount"></span>
+    <span id="voiceDiagSelected"></span>
+    <span id="voiceDiagVolume"></span>
+    <span id="voiceDiagRate"></span>
+    <span id="voiceDiagPitch"></span>
     <span id="modelActiveProfile"></span>
     <span id="modelProfileSource"></span>
     <span id="modelOllamaReachable"></span>
@@ -403,6 +420,15 @@ async function flushAsync() {
   await Promise.resolve();
 }
 
+function buildSpeechSynthesisMock(voices = []) {
+  return {
+    speak: vi.fn(),
+    cancel: vi.fn(),
+    getVoices: vi.fn(() => voices),
+    onvoiceschanged: null,
+  };
+}
+
 describe('ModelProfileControl', () => {
   beforeEach(() => {
     buildDom();
@@ -412,6 +438,9 @@ describe('ModelProfileControl', () => {
     };
     window.SpeechRecognition = undefined;
     window.webkitSpeechRecognition = undefined;
+    window.speechSynthesis = undefined;
+    window.SpeechSynthesisUtterance = undefined;
+    window.localStorage.clear();
   });
 
   it('renders active profile and available profiles', async () => {
@@ -733,6 +762,38 @@ describe('ModelProfileControl', () => {
 
     ui.toggleVoiceInput();
     expect(document.getElementById('alertBox').textContent).toContain('Microphone permission was denied.');
+    expect(document.getElementById('voiceStatus').textContent).toContain('Allow microphone permission in the browser to use voice input.');
+  });
+
+  it('recognition error clears listening state and records last error state', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+      start() {
+        if (this.onstart) this.onstart();
+        if (this.onerror) this.onerror({ error: 'no-speech' });
+      }
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.toggleVoiceInput();
+    ui.speechRecognition.onend();
+    await flushAsync();
+
+    expect(ui.voiceState.listening).toBe(false);
+    expect(ui.voiceState.lastVoiceError).toContain('No speech was detected');
   });
 
   it('mic button has correct idle aria-label', async () => {
@@ -812,6 +873,7 @@ describe('ModelProfileControl', () => {
 
     expect(document.getElementById('promptInput').value).toBe('hello world');
     expect(document.getElementById('voiceStatus').textContent).toContain('Voice captured. Review and send.');
+    expect(ui.voiceState.transcriptPending).toBe(true);
 
     const messageCalls = fetchMock.mock.calls.filter((call) => {
       const init = call[1] || {};
@@ -856,12 +918,13 @@ describe('ModelProfileControl', () => {
 
     expect(document.getElementById('voiceStatus').textContent).toBe('');
     expect(document.getElementById('micButton').textContent).toBe('Mic');
+    expect(ui.voiceState.transcriptPending).toBe(false);
   });
 
   it('renders read-aloud button on assistant messages and speech uses visible text only', async () => {
-    const speak = vi.fn();
-    const cancel = vi.fn();
-    window.speechSynthesis = { speak, cancel };
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
     window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
       this.text = text;
       this.onend = null;
@@ -882,15 +945,15 @@ describe('ModelProfileControl', () => {
     expect(audioButtons[0].getAttribute('aria-label')).toBe('Read assistant response aloud');
 
     audioButtons[0].click();
-    expect(speak).toHaveBeenCalledTimes(1);
-    expect(speak.mock.calls[0][0].text).toContain('The repo is on main. The working tree is not clean.');
-    expect(speak.mock.calls[0][0].text).not.toContain('Operator:');
+    expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+    expect(window.speechSynthesis.speak.mock.calls[0][0].text).toContain('The repo is on main. The working tree is not clean.');
+    expect(window.speechSynthesis.speak.mock.calls[0][0].text).not.toContain('Operator:');
   });
 
   it('read-aloud toggle stops active speech', async () => {
-    const speak = vi.fn();
-    const cancel = vi.fn();
-    window.speechSynthesis = { speak, cancel };
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
     window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
       this.text = text;
       this.onend = null;
@@ -912,7 +975,328 @@ describe('ModelProfileControl', () => {
     audioButton.click();
     await flushAsync();
 
-    expect(cancel).toHaveBeenCalled();
+    expect(window.speechSynthesis.cancel).toHaveBeenCalled();
+    expect(audioButton.getAttribute('aria-label')).toBe('Read assistant response aloud');
+  });
+
+  it('starting read-aloud cancels previous speech first', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+    document.getElementById('promptInput').value = 'What is your name?';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButtons = [...document.querySelectorAll('.message-audio-button')];
+    audioButtons[0].click();
+    await flushAsync();
+    audioButtons[1].click();
+    await flushAsync();
+
+    expect(window.speechSynthesis.cancel).toHaveBeenCalled();
+  });
+
+  it('read-aloud clears speaking state on end', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButton = document.querySelector('.message-audio-button');
+    audioButton.click();
+    await flushAsync();
+
+    ui.activeUtterance.onend();
+    await flushAsync();
+
+    expect(ui.voiceState.speaking).toBe(false);
+    expect(document.getElementById('voiceStatus').textContent).toContain('Read-aloud stopped.');
+  });
+
+  it('read-aloud clears speaking state on error', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButton = document.querySelector('.message-audio-button');
+    audioButton.click();
+    await flushAsync();
+
+    ui.activeUtterance.onerror();
+    await flushAsync();
+
+    expect(ui.voiceState.speaking).toBe(false);
+    expect(ui.voiceState.lastVoiceError).toContain('Browser blocked voice playback. Try clicking Test Voice again.');
+  });
+
+  it('custom voice events fire for listening start stop and transcript captured', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+      start() {
+        if (this.onstart) this.onstart();
+      }
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+    global.fetch = createRuntimeFetchMock();
+
+    const listeningStart = vi.fn();
+    const listeningStop = vi.fn();
+    const transcriptCaptured = vi.fn();
+    window.addEventListener('xv7:voice-listening-start', listeningStart);
+    window.addEventListener('xv7:voice-listening-stop', listeningStop);
+    window.addEventListener('xv7:voice-transcript-captured', transcriptCaptured);
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.toggleVoiceInput();
+    ui.speechRecognition.onresult({ results: [[{ transcript: 'voice event text' }]] });
+    ui.speechRecognition.onend();
+    await flushAsync();
+
+    expect(listeningStart).toHaveBeenCalled();
+    expect(listeningStop).toHaveBeenCalled();
+    expect(transcriptCaptured).toHaveBeenCalled();
+  });
+
+  it('custom voice events fire for speaking start and stop', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    const speakingStart = vi.fn();
+    const speakingStop = vi.fn();
+    window.addEventListener('xv7:voice-speaking-start', speakingStart);
+    window.addEventListener('xv7:voice-speaking-stop', speakingStop);
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const audioButton = document.querySelector('.message-audio-button');
+    audioButton.click();
+    await flushAsync();
+    ui.activeUtterance.onend();
+    await flushAsync();
+
+    expect(speakingStart).toHaveBeenCalled();
+    expect(speakingStop).toHaveBeenCalled();
+  });
+
+  it('voice diagnostics renders supported and unsupported states', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    window.speechSynthesis = undefined;
+    window.SpeechSynthesisUtterance = undefined;
+    const uiUnsupported = new Xv7UI();
+    await flushAsync();
+    expect(document.getElementById('voiceDiagInput').textContent).toBe('unsupported');
+    expect(document.getElementById('voiceDiagOutput').textContent).toBe('no');
+
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+
+      start() {
+        if (this.onstart) this.onstart();
+      }
+
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+    window.SpeechRecognition = SpeechRecognitionMock;
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+
+    buildDom();
+    global.fetch = createRuntimeFetchMock();
+    new Xv7UI();
+    await flushAsync();
+    expect(document.getElementById('voiceDiagInput').textContent).toBe('supported');
+    expect(document.getElementById('voiceDiagOutput').textContent).toBe('yes');
+  });
+
+  it('voice selector renders and prefers a female-like voice when available', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Zira Desktop', lang: 'en-US', default: false },
+      { name: 'Microsoft David Desktop', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const optionValues = [...document.querySelectorAll('#voiceSelect option')].map((option) => option.value);
+    expect(optionValues).toContain('Microsoft Zira Desktop');
+    expect(document.getElementById('voiceSelect').value).toBe('Microsoft Zira Desktop');
+    expect(document.getElementById('voiceSettingsStatus').textContent).toContain('Using Microsoft Zira Desktop.');
+    expect(document.getElementById('voiceDiagVoiceCount').textContent).toBe('2');
+    expect(document.getElementById('voiceDiagSelected').textContent).toBe('Microsoft Zira Desktop');
+  });
+
+  it('voice settings persist to localStorage and restore on reload', async () => {
+    window.localStorage.setItem('xv7.voice.voiceName', 'Microsoft Jenny Desktop');
+    window.localStorage.setItem('xv7.voice.volume', '0.7');
+    window.localStorage.setItem('xv7.voice.rate', '1.3');
+    window.localStorage.setItem('xv7.voice.pitch', '1.4');
+    window.localStorage.setItem('xv7.voice.muted', 'true');
+
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Desktop', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('voiceSelect').value).toBe('Microsoft Jenny Desktop');
+    expect(document.getElementById('voiceVolume').value).toBe('0.7');
+    expect(document.getElementById('voiceRate').value).toBe('1.3');
+    expect(document.getElementById('voicePitch').value).toBe('1.4');
+    expect(document.getElementById('voiceMute').checked).toBe(true);
+  });
+
+  it('applies selected voice settings to utterances and the test voice phrase', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Desktop', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('voiceSelect').value = 'Microsoft Jenny Desktop';
+    document.getElementById('voiceSelect').dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('voiceVolume').value = '0.6';
+    document.getElementById('voiceVolume').dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('voiceRate').value = '1.4';
+    document.getElementById('voiceRate').dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('voicePitch').value = '1.2';
+    document.getElementById('voicePitch').dispatchEvent(new Event('input', { bubbles: true }));
+
+    document.getElementById('voiceTestButton').click();
+    await flushAsync();
+
+    expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+    const utterance = window.speechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.text).toBe('Hello Otis. I am Xoduz. This is my selected voice.');
+    expect(utterance.voice.name).toBe('Microsoft Jenny Desktop');
+    expect(utterance.volume).toBeCloseTo(0.6, 1);
+    expect(utterance.rate).toBeCloseTo(1.4, 1);
+    expect(utterance.pitch).toBeCloseTo(1.2, 1);
+  });
+
+  it('muted state lowers playback volume and stop voice cancels playback', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Desktop', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('voiceMute').checked = true;
+    document.getElementById('voiceMute').dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('voiceTestButton').click();
+    await flushAsync();
+
+    expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+    expect(window.speechSynthesis.speak.mock.calls[0][0].volume).toBe(0);
+
+    document.getElementById('voiceMute').checked = false;
+    document.getElementById('voiceMute').dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('voiceTestButton').click();
+    await flushAsync();
+    document.getElementById('voiceStopButton').click();
+
+    expect(window.speechSynthesis.cancel).toHaveBeenCalled();
   });
 
   it('unsupported speech synthesis disables read-aloud gracefully', async () => {

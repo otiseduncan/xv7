@@ -11,7 +11,7 @@
     5. Starts the full stack with: docker compose up -d
     6. Polls the Core API /health endpoint to confirm it is responding.
     7. Prints reachable endpoints.
-    8. Exits nonzero on any failure.
+    8. Exits nonzero on launch failures.
 
     What this script does NOT claim:
     - Ollama reachability — check GET /runtime/ollama after startup.
@@ -19,8 +19,11 @@
     - GPU status — not probed here.
 
 .PARAMETER SkipReadinessErrors
-    Continue past readiness-check failures (e.g. unset optional env vars).
-    Warnings are still printed. Required vars will still fail docker compose.
+    Continue past readiness-check failures even when -RequireReadiness is set.
+
+.PARAMETER RequireReadiness
+    Fail fast when readiness preflight returns nonzero.
+    By default, readiness failures are treated as warnings and launch continues.
 
 .PARAMETER HealthTimeoutSeconds
     Total seconds to wait for the Core API /health to respond.
@@ -31,8 +34,8 @@
     .\scripts\start_xv7_local.ps1
 
 .EXAMPLE
-    # Continue even if optional env vars are missing:
-    .\scripts\start_xv7_local.ps1 -SkipReadinessErrors
+    # Require readiness preflight to pass before launch:
+    .\scripts\start_xv7_local.ps1 -RequireReadiness
 
 .EXAMPLE
     # Wait up to 2 minutes for the API to start:
@@ -41,6 +44,7 @@
 [CmdletBinding()]
 param(
     [switch]$SkipReadinessErrors,
+    [switch]$RequireReadiness,
     [int]$HealthTimeoutSeconds = 60
 )
 
@@ -218,19 +222,24 @@ Write-Ok 'Required Docker secret variables are valid.'
 # ---------------------------------------------------------------------------
 
 Write-Step 'Running pre-launch readiness check'
-Write-Host '  Command: python scripts/check_readiness.py'
-Write-Host ''
-
-& python scripts\check_readiness.py
+$readinessLog = Join-Path $logsDir 'readiness_preflight.log'
+& python scripts\check_readiness.py *> $readinessLog
 $readinessExit = $LASTEXITCODE
 
 Write-Host ''
 if ($readinessExit -eq 0) {
-    Write-Ok 'Readiness check passed.'
-} elseif ($SkipReadinessErrors) {
-    Write-Warn "Readiness check reported issues (exit $readinessExit). Continuing because -SkipReadinessErrors was set."
+    Write-Ok "Readiness check passed (details in $readinessLog)."
+} elseif ($RequireReadiness -and (-not $SkipReadinessErrors)) {
+    Write-Fail "Readiness check failed (exit $readinessExit)."
+    Write-Host "  Readiness log: $readinessLog"
+    if (Test-Path $readinessLog) {
+        Write-Host '  Last 20 lines:'
+        Get-Content -Path $readinessLog -Tail 20 | ForEach-Object { Write-Host "    $_" }
+    }
+    Exit-WithFailure 'Fix readiness issues or rerun without -RequireReadiness to continue launch.'
 } else {
-    Exit-WithFailure "Readiness check failed (exit $readinessExit). Fix the issues above, or re-run with -SkipReadinessErrors to continue anyway."
+    Write-Warn "Readiness check reported issues (exit $readinessExit). Continuing launch."
+    Write-Warn "Readiness log: $readinessLog"
 }
 
 # ---------------------------------------------------------------------------
@@ -238,8 +247,6 @@ if ($readinessExit -eq 0) {
 # ---------------------------------------------------------------------------
 
 Write-Step 'Checking Docker availability'
-Write-Host '  Command: docker info'
-
 $dockerOutput = & docker info 2>&1
 if ($LASTEXITCODE -ne 0) {
     Exit-WithFailure 'Docker is not running or not installed. Start Docker Desktop and retry.'
@@ -254,18 +261,21 @@ $timestamp  = Get-Date -Format 'yyyyMMdd_HHmmss'
 $composeLog = Join-Path $logsDir "compose_up_$timestamp.log"
 
 Write-Step 'Starting XV7 Docker Compose stack'
-Write-Host '  Command: docker compose up -d'
 Write-Host "  Log file: $composeLog"
 Write-Host ''
 
-& docker compose up -d 2>&1 | Tee-Object -FilePath $composeLog
+& docker compose up -d *> $composeLog
 $composeExit = $LASTEXITCODE
 
 Write-Host ''
 if ($composeExit -ne 0) {
+    Write-Fail "docker compose up -d failed (exit $composeExit). Showing last 40 log lines:"
+    if (Test-Path $composeLog) {
+        Get-Content -Path $composeLog -Tail 40 | ForEach-Object { Write-Host "  $_" }
+    }
     Exit-WithFailure "docker compose up -d failed (exit $composeExit). Check log: $composeLog"
 }
-Write-Ok 'docker compose up -d succeeded.'
+Write-Ok "docker compose up -d succeeded (details in $composeLog)."
 
 # ---------------------------------------------------------------------------
 # 7. Resolve ports (honour env var overrides in the current shell)
@@ -287,23 +297,27 @@ $pollInterval = 5
 $attempts     = [Math]::Ceiling($HealthTimeoutSeconds / $pollInterval)
 $healthy      = $false
 
+Write-Host '  Polling /health' -NoNewline
+
 for ($i = 1; $i -le $attempts; $i++) {
-    Write-Host "  Attempt $i/$attempts — GET $healthUrl"
     try {
         $resp = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop
         if ($resp.StatusCode -eq 200) {
             $healthy = $true
+            Write-Host ' ok'
             break
         }
     } catch {
         # Container still starting — keep polling
     }
+    Write-Host '.' -NoNewline
     if ($i -lt $attempts) {
         Start-Sleep -Seconds $pollInterval
     }
 }
 
 if (-not $healthy) {
+    Write-Host ''
     Write-Warn "Core API did not respond at $healthUrl within ${HealthTimeoutSeconds}s."
     Write-Warn 'The containers may still be initialising. Check status with:'
     Write-Warn '  docker compose ps'
@@ -328,8 +342,12 @@ Write-Host ''
 Write-Warn 'Ollama reachability and model availability are NOT verified here.'
 Write-Warn "Check: GET http://localhost:$corePort/runtime/ollama  (requires API key if XV7_API_KEY is set)"
 Write-Host ''
+Write-Host '  FINAL PROOF (copy/paste):' -ForegroundColor Cyan
+Write-Host '    python scripts/operator_readiness_report.py' -ForegroundColor White
+Write-Host '  Optional one-command proof:' -ForegroundColor Cyan
+Write-Host '    .\scripts\proof_xv7_local.ps1' -ForegroundColor White
+Write-Host ''
 Write-Host '  View all logs  : docker compose logs -f'
 Write-Host '  Stop the stack : docker compose down'
 Write-Host "  Compose log    : $composeLog"
-Write-Host '  Final launch proof: python scripts/operator_readiness_report.py'
 Write-Host ''

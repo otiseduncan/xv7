@@ -76,6 +76,19 @@ docker exec xv7-ollama ollama pull nomic-embed-text
 
 Navigate to **http://localhost:3000** and create your admin account.
 
+### 5. Known-Good Local Launch Proof
+
+```powershell
+.\scripts\start_xv7_local.ps1
+python scripts/operator_readiness_report.py
+```
+
+Optional one-command wrapper:
+
+```powershell
+.\scripts\proof_xv7_local.ps1
+```
+
 ---
 
 ## Development

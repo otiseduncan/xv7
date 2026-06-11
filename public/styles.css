@@ -125,6 +125,40 @@ details[open] > .diag-section-title::before {
   padding: 0.6rem 0.7rem;
 }
 
+.voice-control-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.voice-control-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.voice-range {
+  width: 100%;
+  accent-color: var(--color-primary);
+}
+
+.voice-mute-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+
+.voice-mute-checkbox {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--color-primary);
+}
+
 /* ─── Operator summary chip ────────────────── */
 
 .operator-summary-chip {

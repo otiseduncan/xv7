@@ -75,6 +75,21 @@ class Xv7UI {
   /** @type {SpeechSynthesisUtterance | null} */
   activeUtterance = null;
 
+  /** @type {SpeechSynthesisVoice[]} */
+  availableVoices = [];
+
+  /** @type {{voiceName:string,volume:number,rate:number,pitch:number,muted:boolean}} */
+  voiceSettings = {
+    voiceName: '',
+    volume: 1,
+    rate: 1,
+    pitch: 1.1,
+    muted: false,
+  };
+
+  /** @type {string} */
+  voiceAvailabilityNote = '';
+
   /** @type {number} */
   messageCounter = 0;
 
@@ -83,6 +98,17 @@ class Xv7UI {
 
   /** @type {boolean} */
   diagnosticsDrawerOpen = false;
+
+  voiceState = {
+    inputSupported: false,
+    listening: false,
+    permissionDenied: false,
+    transcriptPending: false,
+    outputSupported: false,
+    speaking: false,
+    speakingMessageId: null,
+    lastVoiceError: '',
+  };
 
   constructor() {
     this.els = {
@@ -101,6 +127,30 @@ class Xv7UI {
       copyChatButton: document.getElementById('copyChatButton'),
       copyToast: document.getElementById('copyToast'),
       voiceStatus: document.getElementById('voiceStatus'),
+      voiceSettingsStatus: document.getElementById('voiceSettingsStatus'),
+      voiceSelect: document.getElementById('voiceSelect'),
+      voiceVolume: document.getElementById('voiceVolume'),
+      sidebarVoiceVolume: document.getElementById('sidebarVoiceVolume'),
+      sidebarVoiceVolumeValue: document.getElementById('sidebarVoiceVolumeValue'),
+      voiceRate: document.getElementById('voiceRate'),
+      voicePitch: document.getElementById('voicePitch'),
+      voiceMute: document.getElementById('voiceMute'),
+      sidebarVoiceMuteButton: document.getElementById('sidebarVoiceMuteButton'),
+      sidebarVoiceMuteIconOn: document.getElementById('sidebarVoiceMuteIconOn'),
+      sidebarVoiceMuteIconOff: document.getElementById('sidebarVoiceMuteIconOff'),
+      sidebarVoiceMuteLabel: document.getElementById('sidebarVoiceMuteLabel'),
+      sidebarVoiceMuteState: document.getElementById('sidebarVoiceMuteState'),
+      voiceTestButton: document.getElementById('voiceTestButton'),
+      voiceStopButton: document.getElementById('voiceStopButton'),
+      voiceDiagInput: document.getElementById('voiceDiagInput'),
+      voiceDiagMicState: document.getElementById('voiceDiagMicState'),
+      voiceDiagOutput: document.getElementById('voiceDiagOutput'),
+      voiceDiagSpeaking: document.getElementById('voiceDiagSpeaking'),
+      voiceDiagVoiceCount: document.getElementById('voiceDiagVoiceCount'),
+      voiceDiagSelected: document.getElementById('voiceDiagSelected'),
+      voiceDiagVolume: document.getElementById('voiceDiagVolume'),
+      voiceDiagRate: document.getElementById('voiceDiagRate'),
+      voiceDiagPitch: document.getElementById('voiceDiagPitch'),
       modelActiveProfile: document.getElementById('modelActiveProfile'),
       modelProfileSource: document.getElementById('modelProfileSource'),
       modelOllamaReachable: document.getElementById('modelOllamaReachable'),
@@ -212,6 +262,66 @@ class Xv7UI {
         this.closeDiagnosticsDrawer();
       });
     }
+
+    if (this.els.voiceSelect) {
+      this.els.voiceSelect.addEventListener('change', () => {
+        this.voiceSettings.voiceName = this.els.voiceSelect.value;
+        this.saveVoicePreferences();
+        this.renderVoiceDiagnostics();
+      });
+    }
+
+    if (this.els.voiceVolume) {
+      this.els.voiceVolume.addEventListener('input', () => {
+        this.setVoiceVolume(this.els.voiceVolume.value);
+      });
+    }
+
+    if (this.els.sidebarVoiceVolume) {
+      this.els.sidebarVoiceVolume.addEventListener('input', () => {
+        this.setVoiceVolume(this.els.sidebarVoiceVolume.value);
+      });
+    }
+
+    if (this.els.voiceRate) {
+      this.els.voiceRate.addEventListener('input', () => {
+        this.voiceSettings.rate = this.clampVoiceNumber(this.els.voiceRate.value, 0.5, 2, 1);
+        this.saveVoicePreferences();
+        this.renderVoiceDiagnostics();
+      });
+    }
+
+    if (this.els.voicePitch) {
+      this.els.voicePitch.addEventListener('input', () => {
+        this.voiceSettings.pitch = this.clampVoiceNumber(this.els.voicePitch.value, 0.5, 2, 1.1);
+        this.saveVoicePreferences();
+        this.renderVoiceDiagnostics();
+      });
+    }
+
+    if (this.els.voiceMute) {
+      this.els.voiceMute.addEventListener('change', () => {
+        this.setVoiceMuted(Boolean(this.els.voiceMute.checked));
+      });
+    }
+
+    if (this.els.sidebarVoiceMuteButton) {
+      this.els.sidebarVoiceMuteButton.addEventListener('click', () => {
+        this.setVoiceMuted(!this.voiceSettings.muted);
+      });
+    }
+
+    if (this.els.voiceTestButton) {
+      this.els.voiceTestButton.addEventListener('click', () => {
+        void this.playVoiceSample();
+      });
+    }
+
+    if (this.els.voiceStopButton) {
+      this.els.voiceStopButton.addEventListener('click', () => {
+        this.stopVoicePlayback();
+      });
+    }
   }
 
   async initialize() {
@@ -235,8 +345,11 @@ class Xv7UI {
     }
 
     await this.refreshModelProfileControl();
+    this.loadVoicePreferences();
     this.setupVoiceInput();
     this.setupVoiceOutput();
+    this.refreshVoiceVoices();
+    this.renderVoiceDiagnostics();
   }
 
   async refreshModelProfileControl() {
@@ -480,6 +593,9 @@ class Xv7UI {
       this.transcriptPending = false;
       this.voiceInputError = '';
       this.setVoiceStatus('');
+      this.voiceState.transcriptPending = false;
+      this.voiceState.lastVoiceError = '';
+      this.renderVoiceDiagnostics();
 
       const data = await this.fetchJson(`/api/sessions/${this.currentSessionId}/messages`, {
         method: 'POST',
@@ -505,13 +621,23 @@ class Xv7UI {
         const assistantText = this.resolveAssistantVisibleText(assistantMeta, assistantContent);
         const reasoningText = this.extractReasoning(assistantContent);
 
-        this.appendMessageCard(
+        const assistantArticle = this.appendMessageCard(
           'assistant',
           assistantText || 'No assistant content returned.',
           reasoningText,
           assistantMeta,
           this.inferAssistantTimestamp(assistantMeta),
         );
+
+        const spokenText = String(assistantText || 'No assistant content returned.').trim();
+        if (spokenText) {
+          this.startSpeechPlayback(spokenText, {
+            messageId: assistantArticle?.dataset?.messageId || null,
+            startStatus: 'Reading response aloud...',
+            stopStatus: 'Read-aloud stopped.',
+            failStatus: 'Browser blocked voice playback. Try clicking Read again.',
+          });
+        }
 
         this.renderModelUseReceipt(data?.metadata?.model_use_receipt);
         this.renderOperatorActivity(data?.metadata?.operator_action_history);
@@ -612,6 +738,8 @@ class Xv7UI {
     this.els.chatTimeline.append(article);
     this.els.chatTimeline.scrollTop = this.els.chatTimeline.scrollHeight;
     this.visibleConversation.push(copyPayload);
+
+    return article;
   }
 
   appendReceiptChips(article, messageMetadata) {
@@ -946,11 +1074,14 @@ class Xv7UI {
       window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
     this.voiceInputSupported = Boolean(SpeechRecognitionCtor);
+    this.voiceState.inputSupported = this.voiceInputSupported;
     if (!this.voiceInputSupported) {
       this.els.micButton.disabled = true;
       this.els.micButton.setAttribute('aria-label', 'Start voice input');
       this.els.micButton.title = 'Voice input is not supported in this browser.';
       this.setVoiceStatus('Voice input is not supported in this browser.');
+      this.voiceState.permissionDenied = false;
+      this.renderVoiceDiagnostics();
       return;
     }
 
@@ -963,15 +1094,22 @@ class Xv7UI {
       this.isListening = true;
       this.voiceInputError = '';
       this.transcriptPending = false;
+      this.voiceState.listening = true;
+      this.voiceState.permissionDenied = false;
+      this.voiceState.transcriptPending = false;
+      this.voiceState.lastVoiceError = '';
       this.els.micButton.classList.add('listening');
       this.els.micButton.textContent = 'Listening...';
       this.els.micButton.setAttribute('aria-label', 'Stop voice input');
       this.els.micButton.title = 'Click to stop voice input.';
       this.setVoiceStatus('Listening...');
+      this.dispatchVoiceEvent('xv7:voice-listening-start');
+      this.renderVoiceDiagnostics();
     };
 
     recognition.onend = () => {
       this.isListening = false;
+      this.voiceState.listening = false;
       this.els.micButton.classList.remove('listening');
       this.els.micButton.textContent = 'Mic';
       this.els.micButton.setAttribute('aria-label', 'Start voice input');
@@ -981,38 +1119,57 @@ class Xv7UI {
       } else if (this.transcriptPending) {
         this.setVoiceStatus('Voice captured. Review and send.');
       } else {
-        this.setVoiceStatus('');
+        this.setVoiceStatus('Voice input ready.');
       }
+      this.dispatchVoiceEvent('xv7:voice-listening-stop');
+      this.renderVoiceDiagnostics();
     };
 
     recognition.onresult = (event) => {
       const result = event.results?.[0]?.[0]?.transcript;
       if (!result || typeof result !== 'string') return;
       this.transcriptPending = true;
+      this.voiceState.transcriptPending = true;
       this.els.promptInput.value = this.mergeTranscript(this.els.promptInput.value, result.trim());
       this.els.promptInput.focus();
       this.showCopyToast('Voice transcript added to prompt.');
+      this.dispatchVoiceEvent('xv7:voice-transcript-captured', { transcript: result.trim() });
+      this.renderVoiceDiagnostics();
     };
 
     recognition.onerror = (event) => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         this.voiceInputError = 'Microphone permission was denied.';
+        this.voiceState.permissionDenied = true;
+        this.voiceState.lastVoiceError = 'Microphone permission was denied.';
         this.showAlert('Microphone permission was denied.', true, 2200);
+        this.setVoiceStatus('Microphone permission was denied. Allow microphone permission in the browser to use voice input.');
+        this.dispatchVoiceEvent('xv7:voice-error', { error: event.error });
+        this.renderVoiceDiagnostics();
         return;
       }
       if (event.error === 'no-speech') {
         this.voiceInputError = 'No speech was detected. Try again.';
+        this.voiceState.lastVoiceError = 'No speech was detected. Try again.';
         this.showAlert('No speech was detected. Try again.', true, 1800);
+        this.setVoiceStatus('Recognition error.');
+        this.dispatchVoiceEvent('xv7:voice-error', { error: event.error });
+        this.renderVoiceDiagnostics();
         return;
       }
       this.voiceInputError = 'Voice input failed to start.';
+      this.voiceState.lastVoiceError = 'Voice input failed to start.';
       this.showAlert('Voice input failed to start.', true, 1800);
+      this.setVoiceStatus('Recognition error.');
+      this.dispatchVoiceEvent('xv7:voice-error', { error: event.error });
+      this.renderVoiceDiagnostics();
     };
 
     this.speechRecognition = recognition;
     this.els.micButton.disabled = false;
     this.els.micButton.title = 'Start voice input.';
-    this.setVoiceStatus('');
+    this.setVoiceStatus('Voice input ready.');
+    this.renderVoiceDiagnostics();
   }
 
   toggleVoiceInput() {
@@ -1027,11 +1184,316 @@ class Xv7UI {
     }
 
     this.voiceInputError = '';
+    this.voiceState.lastVoiceError = '';
     this.speechRecognition.start();
   }
 
   setupVoiceOutput() {
     this.speechOutputSupported = Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance);
+    this.voiceState.outputSupported = this.speechOutputSupported;
+
+    if (!this.speechOutputSupported) {
+      this.availableVoices = [];
+      this.voiceAvailabilityNote = 'No browser voices are available.';
+      this.renderVoiceDiagnostics();
+      return;
+    }
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        this.refreshVoiceVoices();
+      };
+    }
+
+    this.renderVoiceDiagnostics();
+  }
+
+  loadVoicePreferences() {
+    try {
+      const voiceName = window.localStorage.getItem('xv7.voice.voiceName');
+      const volume = window.localStorage.getItem('xv7.voice.volume');
+      const rate = window.localStorage.getItem('xv7.voice.rate');
+      const pitch = window.localStorage.getItem('xv7.voice.pitch');
+      const muted = window.localStorage.getItem('xv7.voice.muted');
+
+      this.voiceSettings.voiceName = typeof voiceName === 'string' ? voiceName : '';
+      this.voiceSettings.volume = this.clampVoiceNumber(volume, 0, 1, 1);
+      this.voiceSettings.rate = this.clampVoiceNumber(rate, 0.5, 2, 1);
+      this.voiceSettings.pitch = this.clampVoiceNumber(pitch, 0.5, 2, 1.1);
+      this.voiceSettings.muted = muted === 'true';
+    } catch {
+      this.voiceSettings.voiceName = '';
+      this.voiceSettings.volume = 1;
+      this.voiceSettings.rate = 1;
+      this.voiceSettings.pitch = 1.1;
+      this.voiceSettings.muted = false;
+    }
+  }
+
+  saveVoicePreferences() {
+    try {
+      window.localStorage.setItem('xv7.voice.voiceName', this.voiceSettings.voiceName || '');
+      window.localStorage.setItem('xv7.voice.volume', String(this.voiceSettings.volume));
+      window.localStorage.setItem('xv7.voice.rate', String(this.voiceSettings.rate));
+      window.localStorage.setItem('xv7.voice.pitch', String(this.voiceSettings.pitch));
+      window.localStorage.setItem('xv7.voice.muted', String(this.voiceSettings.muted));
+    } catch {
+      // Best-effort only.
+    }
+  }
+
+  clampVoiceNumber(value, min, max, fallback) {
+    const parsed = Number.parseFloat(String(value));
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+  }
+
+  refreshVoiceVoices() {
+    if (!this.speechOutputSupported || !window.speechSynthesis) {
+      this.availableVoices = [];
+      this.renderVoiceDiagnostics();
+      return;
+    }
+
+    const voices = typeof window.speechSynthesis.getVoices === 'function' ? window.speechSynthesis.getVoices() : [];
+    this.availableVoices = Array.isArray(voices) ? voices.filter((voice) => voice && typeof voice.name === 'string') : [];
+
+    this.renderVoiceSelectOptions();
+    this.applyPreferredVoiceIfNeeded();
+    this.renderVoiceDiagnostics();
+  }
+
+  renderVoiceSelectOptions() {
+    if (!this.els.voiceSelect) return;
+
+    const currentValue = this.voiceSettings.voiceName || '';
+    const voices = [...this.availableVoices].sort((left, right) => {
+      const leftLabel = `${left.lang || ''} ${left.name || ''}`.toLowerCase();
+      const rightLabel = `${right.lang || ''} ${right.name || ''}`.toLowerCase();
+      return leftLabel.localeCompare(rightLabel);
+    });
+
+    this.els.voiceSelect.innerHTML = '';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Browser default';
+    this.els.voiceSelect.append(defaultOption);
+
+    voices.forEach((voice) => {
+      const option = document.createElement('option');
+      option.value = voice.name || '';
+      option.textContent = `${voice.name || 'Unnamed voice'} (${voice.lang || 'unknown'})`;
+      this.els.voiceSelect.append(option);
+    });
+
+    this.els.voiceSelect.value = voices.some((voice) => voice.name === currentValue) ? currentValue : '';
+  }
+
+  applyPreferredVoiceIfNeeded() {
+    if (!this.availableVoices.length) {
+      this.voiceAvailabilityNote = 'No browser voices are available.';
+      this.voiceSettings.voiceName = '';
+      this.syncVoiceSettingsToControls();
+      return;
+    }
+
+    const currentVoice = this.availableVoices.find((voice) => voice.name === this.voiceSettings.voiceName);
+    if (currentVoice) {
+      this.voiceAvailabilityNote = this.isFemaleLikeVoice(currentVoice)
+        ? `Using ${currentVoice.name}.`
+        : 'Using browser default voice. Select a different voice if needed.';
+      this.syncVoiceSettingsToControls();
+      return;
+    }
+
+    const preferredVoice = this.choosePreferredVoice(this.availableVoices);
+    this.voiceSettings.voiceName = preferredVoice?.name || '';
+    this.voiceAvailabilityNote = preferredVoice && this.isFemaleLikeVoice(preferredVoice)
+      ? `Using ${preferredVoice.name}.`
+      : 'Using browser default voice. Select a different voice if needed.';
+    this.saveVoicePreferences();
+    this.syncVoiceSettingsToControls();
+  }
+
+  choosePreferredVoice(voices) {
+    if (!Array.isArray(voices) || !voices.length) return null;
+
+    const femaleHints = ['female', 'woman', 'jenny', 'aria', 'sonia', 'zira', 'susan', 'samantha', 'victoria', 'google us english', 'microsoft zira', 'microsoft jenny', 'microsoft aria'];
+    const femaleVoice = voices.find((voice) => {
+      const haystack = `${voice.name || ''} ${voice.lang || ''}`.toLowerCase();
+      return femaleHints.some((hint) => haystack.includes(hint));
+    });
+    if (femaleVoice) return femaleVoice;
+
+    const englishVoice = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith('en'));
+    if (englishVoice) return englishVoice;
+
+    return voices.find((voice) => voice.default) || voices[0] || null;
+  }
+
+  isFemaleLikeVoice(voice) {
+    if (!voice) return false;
+    const haystack = `${voice.name || ''} ${voice.lang || ''}`.toLowerCase();
+    return ['female', 'woman', 'jenny', 'aria', 'sonia', 'zira', 'susan', 'samantha', 'victoria', 'google us english', 'microsoft zira', 'microsoft jenny', 'microsoft aria']
+      .some((hint) => haystack.includes(hint));
+  }
+
+  syncVoiceSettingsToControls() {
+    if (this.els.voiceSelect) this.els.voiceSelect.value = this.voiceSettings.voiceName || '';
+    if (this.els.voiceVolume) this.els.voiceVolume.value = String(this.voiceSettings.volume);
+    if (this.els.sidebarVoiceVolume) this.els.sidebarVoiceVolume.value = String(this.voiceSettings.volume);
+    if (this.els.sidebarVoiceVolumeValue) this.els.sidebarVoiceVolumeValue.textContent = `${Math.round(this.voiceSettings.volume * 100)}%`;
+    if (this.els.voiceRate) this.els.voiceRate.value = String(this.voiceSettings.rate);
+    if (this.els.voicePitch) this.els.voicePitch.value = String(this.voiceSettings.pitch);
+    if (this.els.voiceMute) this.els.voiceMute.checked = Boolean(this.voiceSettings.muted);
+    if (this.els.sidebarVoiceMuteButton) {
+      const isMuted = Boolean(this.voiceSettings.muted);
+      this.els.sidebarVoiceMuteButton.setAttribute('aria-pressed', String(isMuted));
+      this.els.sidebarVoiceMuteButton.setAttribute('aria-label', isMuted ? 'Unmute voice output' : 'Mute voice output');
+    }
+    if (this.els.sidebarVoiceMuteIconOn) {
+      this.els.sidebarVoiceMuteIconOn.classList.toggle('hidden', Boolean(this.voiceSettings.muted));
+    }
+    if (this.els.sidebarVoiceMuteIconOff) {
+      this.els.sidebarVoiceMuteIconOff.classList.toggle('hidden', !Boolean(this.voiceSettings.muted));
+    }
+    if (this.els.sidebarVoiceMuteLabel) {
+      this.els.sidebarVoiceMuteLabel.textContent = this.voiceSettings.muted ? 'Unmute output' : 'Mute output';
+    }
+    if (this.els.sidebarVoiceMuteState) {
+      this.els.sidebarVoiceMuteState.textContent = this.voiceSettings.muted ? 'Muted' : 'On';
+    }
+  }
+
+  setVoiceVolume(value) {
+    this.voiceSettings.volume = this.clampVoiceNumber(value, 0, 1, 1);
+    this.saveVoicePreferences();
+    this.renderVoiceDiagnostics();
+  }
+
+  setVoiceMuted(muted) {
+    this.voiceSettings.muted = Boolean(muted);
+    this.saveVoicePreferences();
+    this.renderVoiceDiagnostics();
+  }
+
+  buildSpeechUtterance(text) {
+    if (!window.SpeechSynthesisUtterance) return null;
+
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    const selectedVoice = this.availableVoices.find((voice) => voice.name === this.voiceSettings.voiceName) || this.choosePreferredVoice(this.availableVoices);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      if (selectedVoice.lang) {
+        utterance.lang = selectedVoice.lang;
+      }
+    }
+    utterance.volume = this.voiceSettings.muted ? 0 : this.voiceSettings.volume;
+    utterance.rate = this.voiceSettings.rate;
+    utterance.pitch = this.voiceSettings.pitch;
+    return utterance;
+  }
+
+  startSpeechPlayback(text, options = {}) {
+    if (!this.speechOutputSupported || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      return false;
+    }
+
+    const utterance = this.buildSpeechUtterance(text);
+    if (!utterance) return false;
+
+    const messageId = options.messageId || null;
+    const startStatus = options.startStatus || 'Reading response aloud...';
+    const stopStatus = options.stopStatus || 'Read-aloud stopped.';
+    const failStatus = options.failStatus || 'Browser blocked voice playback. Try clicking Test Voice again.';
+
+    window.speechSynthesis.cancel();
+    if (this.speaking && this.speakingMessageId) {
+      this.dispatchVoiceEvent('xv7:voice-speaking-stop', { messageId: this.speakingMessageId });
+    }
+
+    utterance.onend = () => {
+      this.speaking = false;
+      this.speakingMessageId = null;
+      this.activeUtterance = null;
+      this.voiceState.speaking = false;
+      this.voiceState.speakingMessageId = null;
+      this.setVoiceStatus(stopStatus);
+      this.dispatchVoiceEvent('xv7:voice-speaking-stop', { messageId });
+      this.renderVoiceDiagnostics();
+      this.updateReadAloudButtons();
+    };
+    utterance.onerror = () => {
+      this.speaking = false;
+      this.speakingMessageId = null;
+      this.activeUtterance = null;
+      this.voiceState.speaking = false;
+      this.voiceState.speakingMessageId = null;
+      this.voiceState.lastVoiceError = failStatus;
+      this.setVoiceStatus(failStatus);
+      this.dispatchVoiceEvent('xv7:voice-error', { error: 'speech_output_error', messageId });
+      this.dispatchVoiceEvent('xv7:voice-speaking-stop', { messageId });
+      this.renderVoiceDiagnostics();
+      this.updateReadAloudButtons();
+      this.showAlert(failStatus, true, 1800);
+    };
+
+    this.speaking = true;
+    this.speakingMessageId = messageId;
+    this.activeUtterance = utterance;
+    this.voiceState.speaking = true;
+    this.voiceState.speakingMessageId = messageId;
+    this.setVoiceStatus(startStatus);
+    this.dispatchVoiceEvent('xv7:voice-speaking-start', { messageId, text });
+    this.renderVoiceDiagnostics();
+    this.updateReadAloudButtons();
+
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      this.speaking = false;
+      this.speakingMessageId = null;
+      this.activeUtterance = null;
+      this.voiceState.speaking = false;
+      this.voiceState.speakingMessageId = null;
+      this.voiceState.lastVoiceError = failStatus;
+      this.setVoiceStatus(failStatus);
+      this.renderVoiceDiagnostics();
+      this.updateReadAloudButtons();
+      this.showAlert(failStatus, true, 1800);
+      return false;
+    }
+
+    return true;
+  }
+
+  stopVoicePlayback() {
+    if (!this.speechOutputSupported || !window.speechSynthesis) return;
+
+    window.speechSynthesis.cancel();
+    this.speaking = false;
+    this.speakingMessageId = null;
+    this.activeUtterance = null;
+    this.voiceState.speaking = false;
+    this.voiceState.speakingMessageId = null;
+    this.setVoiceStatus('Voice playback stopped.');
+    this.dispatchVoiceEvent('xv7:voice-speaking-stop', {});
+    this.renderVoiceDiagnostics();
+    this.updateReadAloudButtons();
+  }
+
+  async playVoiceSample() {
+    const success = this.startSpeechPlayback('Hello Otis. I am Xoduz. This is my selected voice.', {
+      startStatus: 'Testing voice output...',
+      stopStatus: 'Test voice finished.',
+      failStatus: 'Browser blocked voice playback. Try clicking Test Voice again.',
+      messageId: 'test-voice',
+    });
+
+    if (!success && this.voiceSettings.muted) {
+      this.setVoiceStatus('Voice output is muted.');
+    }
   }
 
   mergeTranscript(existingValue, transcript) {
@@ -1046,6 +1508,55 @@ class Xv7UI {
   setVoiceStatus(message) {
     if (!this.els.voiceStatus) return;
     this.els.voiceStatus.textContent = message || '';
+  }
+
+  renderVoiceDiagnostics() {
+    if (this.els.voiceDiagInput) {
+      this.els.voiceDiagInput.textContent = this.voiceState.inputSupported ? 'supported' : 'unsupported';
+    }
+    if (this.els.voiceDiagMicState) {
+      let micState = 'idle';
+      if (!this.voiceState.inputSupported) {
+        micState = 'unsupported';
+      } else if (this.voiceState.permissionDenied) {
+        micState = 'denied';
+      } else if (this.voiceState.listening) {
+        micState = 'listening';
+      }
+      this.els.voiceDiagMicState.textContent = micState;
+    }
+    if (this.els.voiceDiagOutput) {
+      this.els.voiceDiagOutput.textContent = this.voiceState.outputSupported ? 'yes' : 'no';
+    }
+    if (this.els.voiceDiagVoiceCount) {
+      this.els.voiceDiagVoiceCount.textContent = String(this.availableVoices.length);
+    }
+    if (this.els.voiceDiagSelected) {
+      const selected = this.availableVoices.find((voice) => voice.name === this.voiceSettings.voiceName) || this.choosePreferredVoice(this.availableVoices);
+      this.els.voiceDiagSelected.textContent = selected?.name || 'Browser default';
+    }
+    if (this.els.voiceDiagVolume) {
+      this.els.voiceDiagVolume.textContent = this.voiceSettings.volume.toFixed(1);
+    }
+    if (this.els.voiceDiagRate) {
+      this.els.voiceDiagRate.textContent = this.voiceSettings.rate.toFixed(1);
+    }
+    if (this.els.voiceDiagPitch) {
+      this.els.voiceDiagPitch.textContent = this.voiceSettings.pitch.toFixed(1);
+    }
+    if (this.els.voiceDiagSpeaking) {
+      this.els.voiceDiagSpeaking.textContent = this.voiceState.speaking ? 'yes' : 'no';
+    }
+    if (this.els.voiceSettingsStatus) {
+      this.els.voiceSettingsStatus.textContent = this.availableVoices.length
+        ? this.voiceAvailabilityNote
+        : 'No browser voices are available.';
+    }
+    this.syncVoiceSettingsToControls();
+  }
+
+  dispatchVoiceEvent(name, detail = {}) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
   renderReadAloudButton(button, messageId) {
@@ -1084,36 +1595,16 @@ class Xv7UI {
     }
 
     if (this.speaking && this.speakingMessageId === messageId) {
-      window.speechSynthesis.cancel();
-      this.speaking = false;
-      this.speakingMessageId = null;
-      this.activeUtterance = null;
-      this.updateReadAloudButtons();
+      this.stopVoicePlayback();
       return;
     }
 
-    window.speechSynthesis.cancel();
-
-    const utterance = new window.SpeechSynthesisUtterance(visibleText);
-    utterance.onend = () => {
-      this.speaking = false;
-      this.speakingMessageId = null;
-      this.activeUtterance = null;
-      this.updateReadAloudButtons();
-    };
-    utterance.onerror = () => {
-      this.speaking = false;
-      this.speakingMessageId = null;
-      this.activeUtterance = null;
-      this.updateReadAloudButtons();
-      this.showAlert('Read aloud failed to start.', true, 1800);
-    };
-
-    this.speaking = true;
-    this.speakingMessageId = messageId;
-    this.activeUtterance = utterance;
-    this.updateReadAloudButtons();
-    window.speechSynthesis.speak(utterance);
+    this.startSpeechPlayback(visibleText, {
+      messageId,
+      startStatus: 'Reading response aloud...',
+      stopStatus: 'Read-aloud stopped.',
+      failStatus: 'Browser blocked voice playback. Try clicking Test Voice again.',
+    });
   }
 
   async copyEntireChat() {
@@ -1451,7 +1942,7 @@ class Xv7UI {
 window.addEventListener('DOMContentLoaded', () => {
   // Global entrypoint for future module extension (streaming, avatars, sockets).
   if (!window.__XV7_DISABLE_AUTO_INIT) {
-    new Xv7UI();
+    window.__XV7_UI_INSTANCE = new Xv7UI();
   }
 });
 
