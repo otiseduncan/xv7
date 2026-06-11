@@ -31,7 +31,7 @@ a {
 /* ─── Layout ──────────────────────────────── */
 
 .sidebar-compact {
-  width: 220px;
+  width: 440px;
 }
 
 .app-footer {
@@ -157,6 +157,193 @@ details[open] > .diag-section-title::before {
   width: 0.9rem;
   height: 0.9rem;
   accent-color: var(--color-primary);
+}
+
+/* ─── Avatar card ─────────────────────────── */
+
+.avatar-card {
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+  background: linear-gradient(155deg, rgba(8, 17, 31, 0.92), rgba(7, 27, 51, 0.7));
+  box-shadow: inset 0 0 0 1px rgba(77, 184, 255, 0.08);
+}
+
+.avatar-toggle {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-accent);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+}
+
+.avatar-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.avatar-card-body {
+  padding: 0.65rem 0.7rem 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.avatar-card.collapsed .avatar-card-body {
+  display: none;
+}
+
+.avatar-shell {
+  position: relative;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(0, 163, 255, 0.45);
+  background: radial-gradient(circle at 32% 24%, rgba(59, 191, 255, 0.22), rgba(6, 16, 30, 0.96));
+  min-height: 184px;
+  overflow: hidden;
+}
+
+.avatar-video {
+  width: 100%;
+  height: 100%;
+  min-height: 184px;
+  object-fit: cover;
+  opacity: 0.92;
+}
+
+.avatar-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.avatar-fallback-orb {
+  width: 5.2rem;
+  height: 5.2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 192, 255, 0.8);
+  background: radial-gradient(circle at 32% 28%, rgba(96, 192, 255, 0.9), rgba(0, 55, 120, 0.45));
+  box-shadow: 0 0 18px rgba(59, 191, 255, 0.45);
+}
+
+.avatar-signal-bars {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.5rem;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.15rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.avatar-signal-bars i {
+  display: block;
+  width: 0.18rem;
+  border-radius: 999px;
+  background: rgba(96, 192, 255, 0.95);
+  height: 0.35rem;
+}
+
+.avatar-signal-bars i:nth-child(2) {
+  height: 0.62rem;
+}
+
+.avatar-signal-bars i:nth-child(3) {
+  height: 0.9rem;
+}
+
+.avatar-state-text {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+}
+
+.avatar-shell.state-listening {
+  border-color: rgba(77, 184, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(77, 184, 255, 0.35), 0 0 20px rgba(0, 163, 255, 0.33);
+  animation: avatar-pulse 1.25s ease-in-out infinite;
+}
+
+.avatar-shell.state-captured {
+  border-color: rgba(122, 214, 255, 0.88);
+  box-shadow: 0 0 0 1px rgba(122, 214, 255, 0.28), 0 0 16px rgba(122, 214, 255, 0.25);
+}
+
+.avatar-shell.state-thinking {
+  border-color: rgba(77, 184, 255, 0.84);
+}
+
+.avatar-shell.state-thinking .avatar-fallback-orb {
+  animation: avatar-spin 2.2s linear infinite;
+}
+
+.avatar-shell.state-speaking {
+  border-color: rgba(96, 192, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(96, 192, 255, 0.4), 0 0 22px rgba(0, 163, 255, 0.35);
+}
+
+.avatar-shell.state-speaking .avatar-signal-bars {
+  opacity: 1;
+}
+
+.avatar-shell.state-speaking .avatar-signal-bars i {
+  animation: avatar-bars 0.72s ease-in-out infinite alternate;
+}
+
+.avatar-shell.state-error {
+  border-color: rgba(255, 107, 107, 0.75);
+  box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.26), 0 0 18px rgba(255, 107, 107, 0.22);
+}
+
+.avatar-shell.state-error .avatar-fallback-orb {
+  border-color: rgba(255, 107, 107, 0.82);
+  background: radial-gradient(circle at 32% 28%, rgba(255, 140, 140, 0.85), rgba(104, 12, 12, 0.45));
+}
+
+@keyframes avatar-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.016);
+  }
+}
+
+@keyframes avatar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes avatar-bars {
+  from {
+    transform: scaleY(0.55);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-shell,
+  .avatar-fallback-orb,
+  .avatar-signal-bars i {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* ─── Operator summary chip ────────────────── */

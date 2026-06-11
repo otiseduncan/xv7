@@ -95,10 +95,12 @@ def test_verified_facts_answer_uses_verified_status_only(monkeypatch, tmp_path: 
     )
 
     assert response.status_code == 200
-    answer = response.json()["messages"][-1]["content"]
+    payload = response.json()
+    answer = payload["messages"][-1]["content"]
     assert "Verified facts:" in answer
-    assert "Context receipt: Verified Status XV7-VERIFIED-0001." in answer
+    assert "Context receipt:" not in answer
     assert "System Prompt" not in answer
+    assert payload.get("metadata", {}).get("context_receipt", {}).get("context_receipts")
 
 
 def test_every_contract_answer_has_compact_receipt(monkeypatch, tmp_path: Path) -> None:
@@ -121,8 +123,13 @@ def test_every_contract_answer_has_compact_receipt(monkeypatch, tmp_path: Path) 
             json={"raw_text": prompt},
         )
         assert response.status_code == 200
-        answer = response.json()["messages"][-1]["content"]
-        assert "Context receipt:" in answer
+        payload = response.json()
+        answer = payload["messages"][-1]["content"]
+        assert "Context receipt:" not in answer
+        assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
+        assert isinstance(assistant_payload, dict)
+        has_receipt_metadata = bool(assistant_payload.get("context_receipt")) or bool(assistant_payload.get("memory_receipts"))
+        assert has_receipt_metadata
 
 
 def test_model_question_requires_proof_in_chat_path(monkeypatch, tmp_path: Path) -> None:
@@ -138,7 +145,7 @@ def test_model_question_requires_proof_in_chat_path(monkeypatch, tmp_path: Path)
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"]
-    assert "Context receipt:" in answer
+    assert "Context receipt:" not in answer
     assert "brain/policy layer" in answer
     assert "xv7-brain-records" not in answer
 
@@ -164,7 +171,7 @@ def test_memory_recall_uses_memory_records_only(monkeypatch, tmp_path: Path) -> 
     assert "Remembered items (Memory records only):" in answer
     assert "Verified facts:" not in answer
     assert "Knowledge facts:" not in answer
-    assert "Context receipt: Memory" in answer
+    assert "Context receipt:" not in answer
 
 
 def test_verified_vs_remembered_separation_in_chat_path(monkeypatch, tmp_path: Path) -> None:
@@ -186,7 +193,7 @@ def test_verified_vs_remembered_separation_in_chat_path(monkeypatch, tmp_path: P
     assert separation.status_code == 200
     answer = separation.json()["messages"][-1]["content"]
     assert "not verified status" in answer
-    assert "Context receipt: Memory" in answer
+    assert "Context receipt:" not in answer
 
 
 def test_forget_that_is_ambiguous_does_not_delete(monkeypatch, tmp_path: Path) -> None:
@@ -242,3 +249,52 @@ def test_structured_context_receipt_has_layer_by_prompt(monkeypatch, tmp_path: P
         assert isinstance(structured, list)
         assert len(structured) >= 1
         assert structured[0].get("layer") == expected_layer
+
+
+def test_identity_creator_purpose_prompts_are_deterministic(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    cases = {
+        "what is your name": "My name is Xoduz.",
+        "who are you": "I am Xoduz, the XV7 assistant.",
+        "how do you pronounce your name": "Xoduz is pronounced Exodus.",
+        "how do you spell your name": "X-O-D-U-Z.",
+        "is your name spelled exodus": "No. My name is spelled X-O-D-U-Z. It is pronounced Exodus.",
+        "is your name spelled e-x-o-d-u-s": "No. That is the standard spelling of the word Exodus, but my name is Xoduz, spelled X-O-D-U-Z, and pronounced Exodus.",
+        "who created you": "I was created by Otis Duncan for the XV7 project under Syfernetics.",
+    }
+
+    for prompt, expected in cases.items():
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        answer = payload["messages"][-1]["content"]
+        assert answer == expected
+        lowered = answer.lower()
+        assert "context does not specify" not in lowered
+        assert "context receipt:" not in lowered
+        assert "operator receipt:" not in lowered
+        assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("context_receipt")
+
+
+def test_why_built_and_purpose_answers_are_present(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    for prompt in ("why were you built", "what is your purpose"):
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+        answer = response.json()["messages"][-1]["content"]
+        lowered = answer.lower()
+        assert "otis" in lowered
+        assert "context does not specify" not in lowered
+        assert "planning" in lowered or "purpose" in lowered

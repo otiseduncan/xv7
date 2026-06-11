@@ -99,6 +99,27 @@ class Xv7UI {
   /** @type {boolean} */
   diagnosticsDrawerOpen = false;
 
+  /** @type {'idle'|'listening'|'captured'|'thinking'|'speaking'|'error'} */
+  avatarState = 'idle';
+
+  /** @type {string} */
+  avatarLastEvent = 'init';
+
+  /** @type {boolean} */
+  avatarClipLoaded = false;
+
+  /** @type {number | null} */
+  avatarResetTimer = null;
+
+  avatarClips = {
+    idle: './avatar/xoduz-idle.mp4',
+    listening: './avatar/xoduz-idle.mp4',
+    captured: './avatar/xoduz-idle.mp4',
+    thinking: './avatar/xoduz-thinking.mp4',
+    speaking: './avatar/xoduz-speaking.mp4',
+    error: './avatar/xoduz-thinking.mp4',
+  };
+
   voiceState = {
     inputSupported: false,
     listening: false,
@@ -142,6 +163,19 @@ class Xv7UI {
       sidebarVoiceMuteState: document.getElementById('sidebarVoiceMuteState'),
       voiceTestButton: document.getElementById('voiceTestButton'),
       voiceStopButton: document.getElementById('voiceStopButton'),
+      avatarCard: document.getElementById('avatarCard'),
+      avatarToggleButton: document.getElementById('avatarToggleButton'),
+      avatarCardBody: document.getElementById('avatarCardBody'),
+      avatarShell: document.getElementById('avatarShell'),
+      avatarVideo: document.getElementById('avatarVideo'),
+      avatarFallback: document.getElementById('avatarFallback'),
+      avatarStateText: document.getElementById('avatarStateText'),
+      avatarVoiceLabel: document.getElementById('avatarVoiceLabel'),
+      avatarDiagState: document.getElementById('avatarDiagState'),
+      avatarDiagClip: document.getElementById('avatarDiagClip'),
+      avatarDiagLoaded: document.getElementById('avatarDiagLoaded'),
+      avatarDiagVisible: document.getElementById('avatarDiagVisible'),
+      avatarDiagEvent: document.getElementById('avatarDiagEvent'),
       voiceDiagInput: document.getElementById('voiceDiagInput'),
       voiceDiagMicState: document.getElementById('voiceDiagMicState'),
       voiceDiagOutput: document.getElementById('voiceDiagOutput'),
@@ -322,6 +356,50 @@ class Xv7UI {
         this.stopVoicePlayback();
       });
     }
+
+    if (this.els.avatarToggleButton) {
+      this.els.avatarToggleButton.addEventListener('click', () => {
+        const card = this.els.avatarCard;
+        if (!card) return;
+        const collapsed = card.classList.toggle('collapsed');
+        this.els.avatarToggleButton.setAttribute('aria-expanded', String(!collapsed));
+        this.els.avatarToggleButton.textContent = collapsed ? 'Avatar ▸' : 'Avatar ▾';
+        this.renderAvatarDiagnostics();
+      });
+    }
+
+    if (this.els.avatarVideo) {
+      this.els.avatarVideo.addEventListener('loadeddata', () => {
+        this.avatarClipLoaded = true;
+        this.renderAvatarDiagnostics();
+      });
+      this.els.avatarVideo.addEventListener('error', () => {
+        this.avatarClipLoaded = false;
+        this.renderAvatarDiagnostics();
+      });
+    }
+
+    window.addEventListener('xv7:voice-listening-start', () => {
+      this.setAvatarState('listening', 'voice-listening-start');
+    });
+    window.addEventListener('xv7:voice-listening-stop', () => {
+      this.setAvatarState(this.transcriptPending ? 'captured' : 'idle', 'voice-listening-stop');
+      if (this.transcriptPending) this.scheduleAvatarReset('idle', 1200);
+    });
+    window.addEventListener('xv7:voice-transcript-captured', () => {
+      this.setAvatarState('captured', 'voice-transcript-captured');
+      this.scheduleAvatarReset('idle', 1300);
+    });
+    window.addEventListener('xv7:voice-speaking-start', () => {
+      this.setAvatarState('speaking', 'voice-speaking-start');
+    });
+    window.addEventListener('xv7:voice-speaking-stop', () => {
+      this.setAvatarState('idle', 'voice-speaking-stop');
+    });
+    window.addEventListener('xv7:voice-error', () => {
+      this.setAvatarState('error', 'voice-error');
+      this.scheduleAvatarReset('idle', 1800);
+    });
   }
 
   async initialize() {
@@ -350,6 +428,7 @@ class Xv7UI {
     this.setupVoiceOutput();
     this.refreshVoiceVoices();
     this.renderVoiceDiagnostics();
+    this.initializeAvatar();
   }
 
   async refreshModelProfileControl() {
@@ -566,6 +645,8 @@ class Xv7UI {
     const raw = this.els.promptInput.value.trim();
     if (!raw) return;
 
+    this.setAvatarState('thinking', 'message-sent');
+
     this.showAlert('', false);
     this.lockInput(true);
     this.setHardwareLoad('Inference', 74);
@@ -629,6 +710,8 @@ class Xv7UI {
           this.inferAssistantTimestamp(assistantMeta),
         );
 
+        this.setAvatarState('idle', 'assistant-response-received');
+
         const spokenText = String(assistantText || 'No assistant content returned.').trim();
         if (spokenText) {
           this.startSpeechPlayback(spokenText, {
@@ -643,6 +726,18 @@ class Xv7UI {
         this.renderOperatorActivity(data?.metadata?.operator_action_history);
         this.updateStatusFromHistory(data?.metadata?.operator_action_history);
 
+        const operatorHistory = Array.isArray(data?.metadata?.operator_action_history)
+          ? data.metadata.operator_action_history
+          : [];
+        const hasOperatorFailure = operatorHistory.some((item) => {
+          const status = String(item?.status || '').toLowerCase();
+          return status === 'failed' || status === 'denied';
+        });
+        if (hasOperatorFailure) {
+          this.setAvatarState('error', 'operator-action-failed');
+          this.scheduleAvatarReset('idle', 1700);
+        }
+
         this.memoryLogCount = messages.length;
         this.updateSessionTelemetry();
         this.renderRetrievalJournal(data);
@@ -654,6 +749,8 @@ class Xv7UI {
     } catch (error) {
       this.setHardwareLoad('Recovery', 24);
       this.showAlert(this.humanizeError(error), true);
+      this.setAvatarState('error', 'message-error');
+      this.scheduleAvatarReset('idle', 1800);
     } finally {
       this.lockInput(false);
     }
@@ -1007,6 +1104,65 @@ class Xv7UI {
    */
   stripReasoningTokens(text) {
     return text.replace(/<\|think\|>[\s\S]*?<\/\|think\|>/g, '').trim();
+  }
+
+  normalizeSpeechText(text) {
+    const raw = this.stripReasoningTokens(String(text || ''));
+    if (!raw) return '';
+
+    const blockedPrefixes = [
+      'operator receipt:',
+      'context receipt:',
+      'memory receipt:',
+      'model receipt:',
+      'receipt:',
+      'system:',
+      'memory:',
+      'knowledge:',
+      'focus:',
+      'verified:',
+      'model:',
+      'sources:',
+      'diagnostics:',
+      'metadata:',
+    ];
+
+    const withoutFences = raw
+      .replace(/```[a-z0-9_-]*\s*/gi, '\n')
+      .replace(/```/g, '\n');
+
+    const spokenLines = withoutFences
+      .split('\n')
+      .map((line) => line.trim())
+      .map((line) => line.replace(/^#{1,6}\s+/, ''))
+      .map((line) => line.replace(/`([^`]*)`/g, '$1'))
+      .map((line) => line.replace(/\*\*|__|\*|_/g, ''))
+      .map((line) => {
+        const bullet = line.match(/^[-*•]\s+(.+)$/);
+        if (!bullet) return line;
+        const content = bullet[1].trim();
+        if (!content) return '';
+        return /[.!?;:]$/.test(content) ? content : `${content}.`;
+      })
+      .filter((line) => {
+        if (!line) return false;
+        const lowered = line.toLowerCase();
+        if (blockedPrefixes.some((prefix) => lowered.startsWith(prefix))) return false;
+        if (/\bxv7-(system|memory|knowledge|focus|verified)-\d+\b/i.test(line)) return false;
+        if (/\bqwen\d*:[a-z0-9_.-]+\b/i.test(line)) return false;
+        return true;
+      });
+
+    const normalized = spokenLines
+      .join(' ')
+      .replace(/^\s*Xoduz\s+is\s+pronounced\s+Exodus\.?\s*$/i, 'Exodus.')
+      .replace(/\bX-O-D-U-Z\b/g, 'X O D U Z')
+      .replace(/\bXoduz\b/gi, 'Exodus')
+      .replace(/\bXV\s*-?\s*7\b/gi, 'X V Seven')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return normalized;
   }
 
   updateSessionTelemetry() {
@@ -1364,6 +1520,108 @@ class Xv7UI {
     if (this.els.sidebarVoiceMuteState) {
       this.els.sidebarVoiceMuteState.textContent = this.voiceSettings.muted ? 'Muted' : 'On';
     }
+    if (this.els.avatarVoiceLabel) {
+      const selected = this.availableVoices.find((voice) => voice.name === this.voiceSettings.voiceName) || this.choosePreferredVoice(this.availableVoices);
+      this.els.avatarVoiceLabel.textContent = `Voice: ${selected?.name || 'Browser default'}`;
+    }
+  }
+
+  initializeAvatar() {
+    if (!this.els.avatarVideo) return;
+    this.applyAvatarClipForState(this.avatarState);
+    this.renderAvatarStateUI();
+    this.renderAvatarDiagnostics();
+  }
+
+  scheduleAvatarReset(nextState = 'idle', delayMs = 1400) {
+    if (this.avatarResetTimer) {
+      window.clearTimeout(this.avatarResetTimer);
+    }
+    this.avatarResetTimer = window.setTimeout(() => {
+      this.setAvatarState(nextState, 'state-timeout');
+      this.avatarResetTimer = null;
+    }, delayMs);
+  }
+
+  setAvatarState(nextState, sourceEvent = '') {
+    const allowed = ['idle', 'listening', 'captured', 'thinking', 'speaking', 'error'];
+    const normalized = allowed.includes(nextState) ? nextState : 'idle';
+    this.avatarState = normalized;
+    this.avatarLastEvent = sourceEvent || normalized;
+
+    if (normalized === 'speaking' || normalized === 'listening') {
+      if (this.avatarResetTimer) {
+        window.clearTimeout(this.avatarResetTimer);
+        this.avatarResetTimer = null;
+      }
+    }
+
+    this.applyAvatarClipForState(normalized);
+    this.renderAvatarStateUI();
+    this.renderAvatarDiagnostics();
+  }
+
+  applyAvatarClipForState(stateName) {
+    const clip = this.avatarClips[stateName] || this.avatarClips.idle;
+    const video = this.els.avatarVideo;
+    if (!video || !clip) {
+      this.avatarClipLoaded = false;
+      return;
+    }
+
+    const currentSrc = video.getAttribute('src') || '';
+    if (currentSrc !== clip) {
+      this.avatarClipLoaded = false;
+      video.setAttribute('src', clip);
+      video.load();
+    }
+
+    const playResult = video.play();
+    if (playResult && typeof playResult.catch === 'function') {
+      playResult.catch(() => {
+        this.avatarClipLoaded = false;
+        this.renderAvatarDiagnostics();
+      });
+    }
+  }
+
+  avatarStateLabel(stateName) {
+    const labels = {
+      idle: 'Idle',
+      listening: 'Listening',
+      captured: 'Captured',
+      thinking: 'Thinking',
+      speaking: 'Speaking',
+      error: 'Voice error',
+    };
+    return labels[stateName] || 'Idle';
+  }
+
+  renderAvatarStateUI() {
+    if (this.els.avatarShell) {
+      this.els.avatarShell.classList.remove('state-idle', 'state-listening', 'state-captured', 'state-thinking', 'state-speaking', 'state-error');
+      this.els.avatarShell.classList.add(`state-${this.avatarState}`);
+      this.els.avatarShell.setAttribute('aria-label', `Xoduz avatar state ${this.avatarStateLabel(this.avatarState)}`);
+    }
+    if (this.els.avatarStateText) {
+      this.els.avatarStateText.textContent = this.avatarStateLabel(this.avatarState);
+    }
+  }
+
+  renderAvatarDiagnostics() {
+    const clipPath = this.avatarClips[this.avatarState] || this.avatarClips.idle || '';
+    const clipName = clipPath.split('/').pop() || 'fallback';
+    const visible = this.els.avatarCard ? !this.els.avatarCard.classList.contains('collapsed') : false;
+
+    if (this.els.avatarDiagState) this.els.avatarDiagState.textContent = this.avatarState;
+    if (this.els.avatarDiagClip) this.els.avatarDiagClip.textContent = clipName;
+    if (this.els.avatarDiagLoaded) this.els.avatarDiagLoaded.textContent = this.avatarClipLoaded ? 'yes' : 'no';
+    if (this.els.avatarDiagVisible) this.els.avatarDiagVisible.textContent = visible ? 'yes' : 'no';
+    if (this.els.avatarDiagEvent) this.els.avatarDiagEvent.textContent = this.avatarLastEvent || 'init';
+
+    if (this.els.avatarFallback) {
+      this.els.avatarFallback.classList.toggle('hidden', this.avatarClipLoaded);
+    }
   }
 
   setVoiceVolume(value) {
@@ -1381,7 +1639,10 @@ class Xv7UI {
   buildSpeechUtterance(text) {
     if (!window.SpeechSynthesisUtterance) return null;
 
-    const utterance = new window.SpeechSynthesisUtterance(text);
+    const spokenText = this.normalizeSpeechText(text);
+    if (!spokenText) return null;
+
+    const utterance = new window.SpeechSynthesisUtterance(spokenText);
     const selectedVoice = this.availableVoices.find((voice) => voice.name === this.voiceSettings.voiceName) || this.choosePreferredVoice(this.availableVoices);
     if (selectedVoice) {
       utterance.voice = selectedVoice;
@@ -1553,6 +1814,7 @@ class Xv7UI {
         : 'No browser voices are available.';
     }
     this.syncVoiceSettingsToControls();
+    this.renderAvatarDiagnostics();
   }
 
   dispatchVoiceEvent(name, detail = {}) {
@@ -1619,7 +1881,7 @@ class Xv7UI {
       if (Array.isArray(entry.receiptSummary) && entry.receiptSummary.length) {
         entry.receiptSummary.forEach((receiptLine) => {
           lines.push('');
-          lines.push(`Operator receipt:`);
+          lines.push(`Receipt:`);
           lines.push(receiptLine);
         });
       }

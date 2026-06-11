@@ -127,7 +127,8 @@ def test_repo_check_claim_requires_live_proof_and_flips_after_success(
     assert response_check.status_code == 200
     payload_check = response_check.json()
     answer_check = payload_check["messages"][-1]["content"]
-    assert "Operator receipt:" in answer_check
+    assert "Operator receipt:" not in answer_check
+    assert payload_check.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts")
     assert payload_check["metadata"].get("live_repo_check") is True
 
     tool_results = payload_check["metadata"].get("tool_results", [])
@@ -176,12 +177,14 @@ def test_failed_operator_action_is_honest_and_includes_receipt(
     )
 
     assert response.status_code == 200
-    answer = response.json()["messages"][-1]["content"]
+    payload = response.json()
+    answer = payload["messages"][-1]["content"]
     assert "failed" in answer.lower()
     assert "git not available" in answer.lower()
-    assert "Operator receipt:" in answer
+    assert "Operator receipt:" not in answer
+    assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts")
 
-    metadata = response.json().get("metadata", {})
+    metadata = payload.get("metadata", {})
     assert metadata.get("live_repo_check") is not True
 
 
@@ -233,7 +236,7 @@ def test_are_containers_running_does_not_fake_proof_when_unavailable(
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"]
     assert "cannot be proven" in answer.lower()
-    assert "Operator receipt:" in answer
+    assert "Operator receipt:" not in answer
 
 
 def test_operator_tools_available_includes_receipt(
@@ -286,7 +289,7 @@ def test_operator_tools_available_includes_receipt(
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"]
     assert "operator environment" in answer.lower()
-    assert "Operator receipt:" in answer
+    assert "Operator receipt:" not in answer
 
 
 def test_working_tree_clean_prompt_routes_to_repo_status_not_mutation_deny(
@@ -331,4 +334,4 @@ def test_working_tree_clean_prompt_routes_to_repo_status_not_mutation_deny(
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"]
     assert "denied" not in answer.lower()
-    assert "Operator receipt:" in answer
+    assert "Operator receipt:" not in answer

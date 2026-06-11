@@ -12,6 +12,7 @@ def test_seed_brain_records_load_and_include_required_ids() -> None:
     assert "XV7-SYSTEM-0001" in ids
     assert "XV7-FOCUS-0003" in ids
     assert "XV7-KNOWLEDGE-0002" in ids
+    assert "XV7-KNOWLEDGE-0003" in ids
     assert "XV7-MEMORY-0002" in ids
     assert "XV7-VERIFIED-0001" in ids
 

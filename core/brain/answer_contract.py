@@ -102,15 +102,88 @@ class AnswerContract:
         verified = self._find_layer_record(records_by_layer, BrainLayer.VERIFIED_STATUS)
 
         if normalized in {
-            "who are you?",
-            "who are you",
             "what is your name?",
             "what is your name",
         }:
-            if system is None:
-                return "Missing required record: system_prompt."
-            identity = self._facts(system)
-            return identity[0] if identity else system.summary
+            return "My name is Xoduz."
+
+        if normalized in {
+            "who are you?",
+            "who are you",
+        }:
+            return "I am Xoduz, the XV7 assistant."
+
+        if normalized in {
+            "how do you pronounce your name?",
+            "how do you pronounce your name",
+            "how is your name pronounced?",
+            "how is your name pronounced",
+        }:
+            return "Xoduz is pronounced Exodus."
+
+        if normalized in {
+            "how do you spell your name?",
+            "how do you spell your name",
+            "how is your name spelled?",
+            "how is your name spelled",
+        }:
+            return "X-O-D-U-Z."
+
+        if normalized in {
+            "is your name spelled exodus?",
+            "is your name spelled exodus",
+        }:
+            return "No. My name is spelled X-O-D-U-Z. It is pronounced Exodus."
+
+        if normalized in {
+            "is your name spelled e-x-o-d-u-s?",
+            "is your name spelled e-x-o-d-u-s",
+        }:
+            return (
+                "No. That is the standard spelling of the word Exodus, but my name is Xoduz, "
+                "spelled X-O-D-U-Z, and pronounced Exodus."
+            )
+
+        if normalized in {
+            "what does xv7 mean?",
+            "what does xv7 mean",
+            "what project are you?",
+            "what project are you",
+            "what project are you part of?",
+            "what project are you part of",
+        }:
+            return "I am Xoduz, the XV7 assistant for the XV7 project."
+
+        if normalized in {
+            "who created you?",
+            "who created you",
+        }:
+            return "I was created by Otis Duncan for the XV7 project under Syfernetics."
+
+        if normalized in {
+            "why were you built?",
+            "why were you built",
+        }:
+            return (
+                "I was built to be Otis Duncan's AI-heavy app-development assistant and operator partner "
+                "— helping with planning, architecture, coding prompts, testing, debugging, documentation, "
+                "UI review, and project continuity."
+            )
+
+        if normalized in {
+            "what is your purpose?",
+            "what is your purpose",
+        }:
+            return (
+                "My purpose is to help Otis turn his ideas, direction, and creativity into working software "
+                "by handling the heavy technical legwork while staying honest, testable, and proof-based."
+            )
+
+        if normalized in {
+            "who is otis?",
+            "who is otis",
+        }:
+            return "Otis Duncan is my creator/operator and the human directing XV7."
 
         if normalized in {"what is my name?", "what is my name"}:
             if memory is None:
@@ -265,6 +338,16 @@ class AnswerContract:
             return (
                 "Yes. I can help with app planning, architecture, implementation prompts for VS Code/Copilot, "
                 "task slicing, acceptance tests, and safe rollout guidance."
+            )
+
+        if normalized in {
+            "give me three bullet points about what you can help with.",
+            "give me three bullet points about what you can help with",
+        }:
+            return (
+                "- Planning and architecture for app ideas.\n"
+                "- Implementation prompts for VS Code/Copilot with testable acceptance criteria.\n"
+                "- Debugging guidance from logs, failures, and runtime behavior."
             )
 
         if normalized in {

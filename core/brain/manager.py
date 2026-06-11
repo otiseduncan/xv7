@@ -43,8 +43,39 @@ class BrainContextManager:
             "who are you",
             "what is your name?",
             "what is your name",
+            "how do you pronounce your name?",
+            "how do you pronounce your name",
+            "how is your name pronounced?",
+            "how is your name pronounced",
+            "how do you spell your name?",
+            "how do you spell your name",
+            "how is your name spelled?",
+            "how is your name spelled",
+            "what does xv7 mean?",
+            "what does xv7 mean",
+            "what project are you?",
+            "what project are you",
+            "what project are you part of?",
+            "what project are you part of",
+            "is your name spelled exodus?",
+            "is your name spelled exodus",
+            "is your name spelled e-x-o-d-u-s?",
+            "is your name spelled e-x-o-d-u-s",
         }:
             return [BrainLayer.SYSTEM_PROMPT]
+
+        if normalized in {
+            "who created you?",
+            "who created you",
+            "why were you built?",
+            "why were you built",
+            "what is your purpose?",
+            "what is your purpose",
+        }:
+            return [BrainLayer.KNOWLEDGE]
+
+        if normalized in {"who is otis?", "who is otis"}:
+            return [BrainLayer.MEMORY]
 
         if normalized in {"what are we working on?", "what are we working on"}:
             return [BrainLayer.ACTIVE_FOCUS]

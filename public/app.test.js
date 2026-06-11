@@ -37,15 +37,36 @@ function buildDom() {
     <textarea id="promptInput"></textarea>
     <button id="micButton"></button>
     <button id="sendButton"></button>
+    <section id="avatarCard" class="avatar-card">
+      <button id="avatarToggleButton" aria-expanded="true"></button>
+      <div id="avatarCardBody"></div>
+      <div id="avatarShell"></div>
+      <video id="avatarVideo"></video>
+      <div id="avatarFallback"></div>
+      <p id="avatarStateText"></p>
+      <p id="avatarVoiceLabel"></p>
+    </section>
     <div id="voiceStatus"></div>
     <p id="voiceSettingsStatus"></p>
     <select id="voiceSelect"></select>
     <input id="voiceVolume" type="range" />
+    <input id="sidebarVoiceVolume" type="range" />
+    <span id="sidebarVoiceVolumeValue"></span>
     <input id="voiceRate" type="range" />
     <input id="voicePitch" type="range" />
     <input id="voiceMute" type="checkbox" />
+    <button id="sidebarVoiceMuteButton"></button>
+    <span id="sidebarVoiceMuteIconOn"></span>
+    <span id="sidebarVoiceMuteIconOff"></span>
+    <span id="sidebarVoiceMuteLabel"></span>
+    <span id="sidebarVoiceMuteState"></span>
     <button id="voiceTestButton"></button>
     <button id="voiceStopButton"></button>
+    <span id="avatarDiagState"></span>
+    <span id="avatarDiagClip"></span>
+    <span id="avatarDiagLoaded"></span>
+    <span id="avatarDiagVisible"></span>
+    <span id="avatarDiagEvent"></span>
     <span id="voiceDiagInput"></span>
     <span id="voiceDiagMicState"></span>
     <span id="voiceDiagOutput"></span>
@@ -317,6 +338,19 @@ function createRuntimeFetchMock(options = {}) {
         actionHistory = operatorReceipts;
         answer = 'B7 is read-only right now. I denied that request.';
       } else if (prompt.includes('what is your name')) {
+        answer = 'My name is Xoduz.';
+        contextReceipt = {
+          compact: 'Context receipt: System Prompt XV7-SYSTEM-0001.',
+          context_receipts: [
+            {
+              record_id: 'XV7-SYSTEM-0001',
+              layer: 'system_prompt',
+              title: 'Xoduz identity and behavior rules',
+              receipt_label: 'System Prompt XV7-SYSTEM-0001',
+            },
+          ],
+        };
+      } else if (prompt.includes('who are you')) {
         answer = 'I am Xoduz, the XV7 assistant.';
         contextReceipt = {
           compact: 'Context receipt: System Prompt XV7-SYSTEM-0001.',
@@ -432,6 +466,18 @@ function buildSpeechSynthesisMock(voices = []) {
 describe('ModelProfileControl', () => {
   beforeEach(() => {
     buildDom();
+    if (!HTMLMediaElement.prototype.play || !('mock' in HTMLMediaElement.prototype.play)) {
+      Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+        configurable: true,
+        value: vi.fn().mockResolvedValue(undefined),
+      });
+    }
+    if (!HTMLMediaElement.prototype.load || !('mock' in HTMLMediaElement.prototype.load)) {
+      Object.defineProperty(HTMLMediaElement.prototype, 'load', {
+        configurable: true,
+        value: vi.fn(),
+      });
+    }
     window.__XV7_DISABLE_AUTO_INIT = true;
     navigator.clipboard = {
       writeText: vi.fn().mockResolvedValue(undefined),
@@ -942,12 +988,15 @@ describe('ModelProfileControl', () => {
 
     const audioButtons = [...document.querySelectorAll('.message-audio-button')];
     expect(audioButtons.length).toBeGreaterThan(0);
-    expect(audioButtons[0].getAttribute('aria-label')).toBe('Read assistant response aloud');
+    expect(audioButtons[0].getAttribute('aria-label')).toBe('Stop reading aloud');
 
-    audioButtons[0].click();
     expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
     expect(window.speechSynthesis.speak.mock.calls[0][0].text).toContain('The repo is on main. The working tree is not clean.');
     expect(window.speechSynthesis.speak.mock.calls[0][0].text).not.toContain('Operator:');
+
+    audioButtons[0].click();
+    await flushAsync();
+    expect(audioButtons[0].getAttribute('aria-label')).toBe('Read assistant response aloud');
   });
 
   it('read-aloud toggle stops active speech', async () => {
@@ -972,11 +1021,142 @@ describe('ModelProfileControl', () => {
     const audioButton = document.querySelector('.message-audio-button');
     audioButton.click();
     await flushAsync();
-    audioButton.click();
-    await flushAsync();
 
     expect(window.speechSynthesis.cancel).toHaveBeenCalled();
     expect(audioButton.getAttribute('aria-label')).toBe('Read assistant response aloud');
+  });
+
+  it('read-aloud normalizes legacy Xoduz text to Exodus for speech only', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const article = ui.appendMessageCard('assistant', 'My name is Xoduz — pronounced Exodus.', null, {}, ui.nowIso());
+    await ui.toggleReadAloud(article);
+
+    const utterance = window.speechSynthesis.speak.mock.calls.at(-1)[0];
+    expect(utterance.text).toContain('Exodus');
+    expect(utterance.text).not.toContain('Xoduz');
+    expect(article.querySelector('.chat-visible-text').textContent).toContain('Xoduz');
+  });
+
+  it('read-aloud strips receipt/debug content from spoken output', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const contaminated = [
+      'My name is Xoduz — pronounced Exodus.',
+      'Operator receipt: repo_status OP-1 success.',
+      'Context receipt: System Prompt XV7-SYSTEM-0001.',
+      'Knowledge: XV7-KNOWLEDGE-0002',
+      'Model: qwen3:8b',
+    ].join('\n');
+
+    const article = ui.appendMessageCard('assistant', contaminated, null, {}, ui.nowIso());
+    await ui.toggleReadAloud(article);
+
+    const utterance = window.speechSynthesis.speak.mock.calls.at(-1)[0];
+    const spoken = utterance.text;
+    expect(spoken).toContain('Exodus');
+    expect(spoken).not.toContain('Operator receipt');
+    expect(spoken).not.toContain('Context receipt');
+    expect(spoken).not.toContain('System Prompt');
+    expect(spoken).not.toContain('XV7-SYSTEM');
+    expect(spoken).not.toContain('XV7-KNOWLEDGE');
+    expect(spoken).not.toContain('qwen3');
+  });
+
+  it('normalizeSpeechText converts XV7 and XV-7 to X V Seven', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const spoken = ui.normalizeSpeechText('I am Xoduz, the XV7 assistant in XV-7 mode.');
+    expect(spoken).toContain('X V Seven assistant');
+    expect(spoken).toContain('X V Seven mode');
+    expect(spoken).not.toContain('XV7');
+    expect(spoken).not.toContain('XV-7');
+  });
+
+  it('normalizeSpeechText strips markdown, bullets, code fences, backticks, and receipt/meta lines', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const raw = [
+      '### **Backend**',
+      '- Planning',
+      '- Architecture',
+      '- Testing',
+      '```json',
+      '{"hidden":true}',
+      '```',
+      'Use `npm test` now.',
+      'Operator receipt: repo_status OP-1 success.',
+      'System: XV7-SYSTEM-0001',
+      'Knowledge: XV7-KNOWLEDGE-0002',
+      'Model: qwen3:8b',
+    ].join('\n');
+
+    const spoken = ui.normalizeSpeechText(raw);
+    expect(spoken).toContain('Backend');
+    expect(spoken).toContain('Planning.');
+    expect(spoken).toContain('Architecture.');
+    expect(spoken).toContain('Testing.');
+    expect(spoken).toContain('Use npm test now.');
+    expect(spoken).not.toContain('###');
+    expect(spoken).not.toContain('**');
+    expect(spoken).not.toContain('```');
+    expect(spoken).not.toContain('`');
+    expect(spoken).not.toContain('Operator receipt');
+    expect(spoken).not.toContain('XV7-SYSTEM');
+    expect(spoken).not.toContain('XV7-KNOWLEDGE');
+    expect(spoken).not.toContain('qwen3:8b');
+  });
+
+  it('name answer read-aloud stays natural and does not speak pronounced explanation', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Jenny Online (Natural)', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'What is your name?';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const visible = [...document.querySelectorAll('.chat-visible-text')].at(-1).textContent;
+    expect(visible).toBe('My name is Xoduz.');
+
+    const utterance = window.speechSynthesis.speak.mock.calls.at(-1)[0];
+    expect(utterance.text).toBe('My name is Exodus.');
+    expect(utterance.text.toLowerCase()).not.toContain('pronounced');
   });
 
   it('starting read-aloud cancels previous speech first', async () => {
@@ -1027,11 +1207,9 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const audioButton = document.querySelector('.message-audio-button');
-    audioButton.click();
-    await flushAsync();
-
-    ui.activeUtterance.onend();
+    const utterance = window.speechSynthesis.speak.mock.calls.at(-1)[0];
+    expect(utterance).toBeTruthy();
+    utterance.onend();
     await flushAsync();
 
     expect(ui.voiceState.speaking).toBe(false);
@@ -1056,15 +1234,13 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const audioButton = document.querySelector('.message-audio-button');
-    audioButton.click();
-    await flushAsync();
-
-    ui.activeUtterance.onerror();
+    const utterance = window.speechSynthesis.speak.mock.calls.at(-1)[0];
+    expect(utterance).toBeTruthy();
+    utterance.onerror();
     await flushAsync();
 
     expect(ui.voiceState.speaking).toBe(false);
-    expect(ui.voiceState.lastVoiceError).toContain('Browser blocked voice playback. Try clicking Test Voice again.');
+    expect(ui.voiceState.lastVoiceError).toContain('Browser blocked voice playback. Try clicking Read again.');
   });
 
   it('custom voice events fire for listening start stop and transcript captured', async () => {
@@ -1129,10 +1305,9 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const audioButton = document.querySelector('.message-audio-button');
-    audioButton.click();
-    await flushAsync();
-    ui.activeUtterance.onend();
+    const utterance = window.speechSynthesis.speak.mock.calls.at(-1)[0];
+    expect(utterance).toBeTruthy();
+    utterance.onend();
     await flushAsync();
 
     expect(speakingStart).toHaveBeenCalled();
@@ -1261,7 +1436,7 @@ describe('ModelProfileControl', () => {
 
     expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
     const utterance = window.speechSynthesis.speak.mock.calls[0][0];
-    expect(utterance.text).toBe('Hello Otis. I am Xoduz. This is my selected voice.');
+    expect(utterance.text).toBe('Hello Otis. I am Exodus. This is my selected voice.');
     expect(utterance.voice.name).toBe('Microsoft Jenny Desktop');
     expect(utterance.volume).toBeCloseTo(0.6, 1);
     expect(utterance.rate).toBeCloseTo(1.4, 1);
@@ -1334,7 +1509,7 @@ describe('ModelProfileControl', () => {
     const copiedText = navigator.clipboard.writeText.mock.calls[0][0];
     expect(copiedText).toContain('User:');
     expect(copiedText).toContain('Xoduz:');
-    expect(copiedText).toContain('Operator receipt:');
+    expect(copiedText).toContain('Receipt:');
     expect(copiedText).not.toContain('{"');
     expect(document.getElementById('copyToast').textContent).toContain('Chat copied.');
   });
@@ -1513,5 +1688,117 @@ describe('ModelProfileControl', () => {
       (node.textContent || '').startsWith('Model:'),
     );
     expect(modelChip).toBeTruthy();
+  });
+
+  it('renders avatar card with Xoduz label and idle default state', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('avatarCard')).toBeTruthy();
+    expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
+    expect(document.getElementById('avatarDiagState').textContent).toBe('idle');
+    expect(document.getElementById('avatarDiagClip').textContent).toContain('xoduz-idle.mp4');
+  });
+
+  it('listening/captured/speaking voice events update avatar state and speaking stop returns idle', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    window.dispatchEvent(new CustomEvent('xv7:voice-listening-start'));
+    expect(document.getElementById('avatarStateText').textContent).toBe('Listening');
+
+    window.dispatchEvent(new CustomEvent('xv7:voice-transcript-captured', { detail: { transcript: 'hello' } }));
+    expect(document.getElementById('avatarStateText').textContent).toBe('Captured');
+
+    window.dispatchEvent(new CustomEvent('xv7:voice-speaking-start', { detail: { messageId: 'm1' } }));
+    expect(document.getElementById('avatarStateText').textContent).toBe('Speaking');
+
+    window.dispatchEvent(new CustomEvent('xv7:voice-speaking-stop', { detail: { messageId: 'm1' } }));
+    expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
+  });
+
+  it('send message sets avatar to thinking and returns to idle after assistant response', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    expect(document.getElementById('avatarStateText').textContent).toBe('Thinking');
+
+    await flushAsync();
+    expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
+  });
+
+  it('voice error switches avatar to error then resets to idle', async () => {
+    vi.useFakeTimers();
+    try {
+      global.fetch = createRuntimeFetchMock();
+
+      new Xv7UI();
+
+      window.dispatchEvent(new CustomEvent('xv7:voice-error', { detail: { error: 'not-allowed' } }));
+      expect(document.getElementById('avatarStateText').textContent).toBe('Voice error');
+
+      vi.advanceTimersByTime(2000);
+      expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('avatar collapse toggle works and updates diagnostics visibility', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const toggle = document.getElementById('avatarToggleButton');
+    const card = document.getElementById('avatarCard');
+
+    toggle.click();
+    expect(card.classList.contains('collapsed')).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.getElementById('avatarDiagVisible').textContent).toBe('no');
+
+    toggle.click();
+    expect(card.classList.contains('collapsed')).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('avatarDiagVisible').textContent).toBe('yes');
+  });
+
+  it('missing avatar clip falls back safely and diagnostics show not loaded', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.avatarClips.idle = './avatar/does-not-exist.mp4';
+    ui.setAvatarState('idle', 'test-missing-clip');
+    document.getElementById('avatarVideo').dispatchEvent(new Event('error'));
+
+    expect(document.getElementById('avatarDiagLoaded').textContent).toBe('no');
+    expect(document.getElementById('avatarFallback').classList.contains('hidden')).toBe(false);
+  });
+
+  it('avatar diagnostics are populated and voice label is synced', async () => {
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft Susan - English (United Kingdom)', lang: 'en-GB', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('avatarDiagEvent').textContent.length).toBeGreaterThan(0);
+    expect(document.getElementById('avatarDiagClip').textContent.length).toBeGreaterThan(0);
+    expect(document.getElementById('avatarVoiceLabel').textContent).toContain('Voice:');
   });
 });

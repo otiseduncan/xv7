@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -116,6 +117,35 @@ def build_assistant_payload(
         "warnings": warnings or [],
         "action_history_refs": action_history_refs or [],
     }
+
+
+def sanitize_visible_answer_text(text: str) -> str:
+    """Remove receipt/debug lines from user-visible assistant text."""
+    if not text:
+        return ""
+
+    text = re.sub(r"\*\*sources\*\*\s*:\s*.*$", "", str(text), flags=re.IGNORECASE)
+    text = re.sub(r"\bsources\s*:\s*.*$", "", text, flags=re.IGNORECASE)
+
+    blocked_prefixes = (
+        "operator receipt:",
+        "context receipt:",
+        "memory receipt:",
+        "model receipt:",
+        "sources:",
+        "**sources**:",
+        "- *xv7-",
+        "- xv7-",
+    )
+    cleaned_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        lowered = line.lower()
+        if lowered.startswith(blocked_prefixes):
+            continue
+        cleaned_lines.append(raw_line)
+
+    return "\n".join(cleaned_lines).strip()
 
 
 async def ensure_session_facts_table() -> None:
@@ -424,9 +454,8 @@ async def add_session_message(
         session_metadata=session_state.metadata,
     )
     if operator_action is not None:
-        visible_text = operator_action.answer.strip()
-        operator_receipt = operator_action.result.receipt()
-        assistant_output = f"{visible_text}\n\n{operator_receipt}"
+        visible_text = sanitize_visible_answer_text(operator_action.answer.strip())
+        assistant_output = visible_text
         structured_receipt = operator_action.result.structured_receipt()
 
         current_history = get_history(session_state.metadata)
@@ -508,10 +537,8 @@ async def add_session_message(
         session_metadata=session_state.metadata,
     )
     if memory_action is not None:
-        visible_text = memory_action.answer.strip()
+        visible_text = sanitize_visible_answer_text(memory_action.answer.strip())
         assistant_output = visible_text
-        if memory_action.receipt:
-            assistant_output = f"{assistant_output}\n\n{memory_action.receipt}"
 
         policy_provenance = {
             "answer_source": "brain_policy",
@@ -573,10 +600,8 @@ async def add_session_message(
         session_metadata=session_state.metadata,
     )
     if brain_answer is not None:
-        visible_text = brain_answer.strip()
+        visible_text = sanitize_visible_answer_text(brain_answer.strip())
         assistant_output = visible_text
-        if compact_receipt:
-            assistant_output = f"{assistant_output}\n\n{compact_receipt}"
 
         policy_provenance = {
             "answer_source": "brain_policy",
@@ -657,10 +682,8 @@ async def add_session_message(
         inference_state
     )
 
-    visible_text = raw_response.strip()
+    visible_text = sanitize_visible_answer_text(raw_response.strip())
     assistant_output = visible_text
-    if compact_receipt:
-        assistant_output = f"{assistant_output}\n\n{compact_receipt}"
 
     updated_state = await memory_manager.add_message(
         session_id=session_id,

@@ -143,3 +143,115 @@ def test_operator_readiness_model_proof_answer_is_cautious() -> None:
     assert answer is not None
     assert "qwen3:14b" in answer
     assert "not necessarily this exact response" in answer
+
+
+def test_identity_answers_are_deterministic_and_pronunciation_safe() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    name = contract.try_answer(
+        "What is your name?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    pronounce = contract.try_answer(
+        "How do you pronounce your name?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    spell = contract.try_answer(
+        "How do you spell your name?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    who = contract.try_answer(
+        "Who are you?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+
+    assert name == "My name is Xoduz."
+    assert "pronounced" not in name.lower()
+    assert pronounce == "Xoduz is pronounced Exodus."
+    assert spell == "X-O-D-U-Z."
+    assert who == "I am Xoduz, the XV7 assistant."
+
+
+def test_spelling_correction_prompts_are_deterministic() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    plain = contract.try_answer(
+        "Is your name spelled Exodus",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    explicit = contract.try_answer(
+        "Is your name spelled E-X-O-D-U-S",
+        records_by_layer=records,
+        session_metadata={},
+    )
+
+    assert plain == "No. My name is spelled X-O-D-U-Z. It is pronounced Exodus."
+    assert explicit == (
+        "No. That is the standard spelling of the word Exodus, but my name is Xoduz, "
+        "spelled X-O-D-U-Z, and pronounced Exodus."
+    )
+
+
+def test_creator_and_purpose_answers_are_deterministic() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    creator = contract.try_answer(
+        "Who created you?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    built = contract.try_answer(
+        "Why were you built?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    purpose = contract.try_answer(
+        "What is your purpose?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    who_is_otis = contract.try_answer(
+        "Who is Otis?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+
+    assert creator == "I was created by Otis Duncan for the XV7 project under Syfernetics."
+    assert "Otis Duncan" in built
+    assert "app-development assistant and operator partner" in built
+    assert "help Otis turn his ideas" in purpose
+    assert who_is_otis == "Otis Duncan is my creator/operator and the human directing XV7."
+
+
+def test_identity_contract_answers_do_not_include_receipt_text() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    for prompt in (
+        "What is your name?",
+        "Who are you?",
+        "How do you pronounce your name?",
+        "How do you spell your name?",
+        "Is your name spelled Exodus?",
+        "Is your name spelled E-X-O-D-U-S?",
+        "Who created you?",
+        "Why were you built?",
+        "What is your purpose?",
+    ):
+        answer = contract.try_answer(
+            prompt,
+            records_by_layer=records,
+            session_metadata={},
+        )
+        assert answer is not None
+        lowered = answer.lower()
+        assert "context receipt:" not in lowered
+        assert "operator receipt:" not in lowered

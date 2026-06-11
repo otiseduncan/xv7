@@ -86,7 +86,7 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
     cases = [
         (
             "Who are you?",
-            "I am Xoduz",
+            "I am Xoduz, the XV7 assistant.",
             "System Prompt XV7-SYSTEM-0001",
             "system_prompt",
             ["Active Focus", "Memory", "Verified Status"],
@@ -125,14 +125,14 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
         payload = response.json()
         answer = payload["messages"][-1]["content"]
         assert expected in answer
-        assert "Context receipt:" in answer
-        assert required_receipt_fragment in answer
+        assert "Context receipt:" not in answer
         for disallowed in unexpected_layer_labels:
             assert disallowed not in answer
 
         context_receipt = payload["metadata"].get("context_receipt", {})
         assert "record_ids" in context_receipt
         assert len(context_receipt["record_ids"]) >= 1
+        assert required_receipt_fragment.split()[-1] in context_receipt.get("record_ids", [])
         structured = context_receipt.get("context_receipts", [])
         assert isinstance(structured, list)
         assert len(structured) >= 1

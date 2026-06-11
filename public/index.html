@@ -168,6 +168,19 @@
           </div>
         </details>
 
+        <details class="diag-section">
+          <summary class="diag-section-title">Avatar Diagnostics</summary>
+          <div class="diag-section-body">
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">Avatar state</span><span id="avatarDiagState" class="font-mono text-xv7-accentText">idle</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Active clip</span><span id="avatarDiagClip" class="max-w-[150px] truncate font-mono text-xv7-accentText">xoduz-idle.mp4</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Clip loaded</span><span id="avatarDiagLoaded" class="font-mono text-xv7-accentText">no</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Avatar visible</span><span id="avatarDiagVisible" class="font-mono text-xv7-accentText">yes</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Last avatar event</span><span id="avatarDiagEvent" class="max-w-[150px] truncate font-mono text-xv7-accentText">init</span></li>
+            </ul>
+          </div>
+        </details>
+
         <details open class="diag-section">
           <summary class="diag-section-title">Voice Settings</summary>
           <div class="diag-section-body space-y-3">
@@ -225,6 +238,24 @@
           </header>
 
           <div class="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            <section id="avatarCard" class="avatar-card" aria-label="Xoduz avatar card">
+              <button id="avatarToggleButton" type="button" class="avatar-toggle" aria-expanded="true" aria-controls="avatarCardBody">Avatar ▾</button>
+              <div id="avatarCardBody" class="avatar-card-body">
+                <div id="avatarShell" class="avatar-shell state-idle" aria-live="polite" aria-label="Xoduz avatar state Idle">
+                  <video id="avatarVideo" class="avatar-video" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+                  <div id="avatarFallback" class="avatar-fallback">
+                    <span class="avatar-fallback-orb"></span>
+                  </div>
+                  <span class="avatar-signal-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+                </div>
+                <div class="space-y-1">
+                  <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-xv7-accentText">Xoduz</p>
+                  <p id="avatarStateText" class="avatar-state-text">Idle</p>
+                  <p id="avatarVoiceLabel" class="text-[11px] text-slate-500">Voice: browser default</p>
+                </div>
+              </div>
+            </section>
+
             <section class="space-y-2">
               <label for="personaSelect" class="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Persona</label>
               <select id="personaSelect" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-xv7-glow">
@@ -329,6 +360,6 @@
       <footer id="appFooter" class="app-footer border-t border-xv7-line bg-xv7-panel/80" aria-hidden="true"></footer>
     </div>
 
-    <script type="module" src="./app.js?v=20260611-1"></script>
+    <script type="module" src="./app.js?v=20260611-2"></script>
   </body>
 </html>
