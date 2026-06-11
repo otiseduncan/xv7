@@ -33,6 +33,12 @@ def _probe_url(url: str, *, timeout: int = 6) -> tuple[bool, int | None, str | N
         return False, None, str(exc)
 
 
+def _docker_socket_usable(socket_path: Path) -> bool:
+    if not socket_path.exists() or not socket_path.is_socket():
+        return False
+    return os.access(socket_path, os.R_OK | os.W_OK)
+
+
 def _checked_from() -> str:
     if os.getenv("XV7_OPERATOR_CHECKED_FROM") in {"container", "host", "unknown"}:
         return str(os.getenv("XV7_OPERATOR_CHECKED_FROM"))
@@ -172,7 +178,7 @@ def docker_compose_ps(*, action_id: str, repo_root: Path) -> OperatorActionResul
     started = datetime.now(UTC)
     docker_cli_path = shutil.which("docker")
     docker_socket_path = Path("/var/run/docker.sock")
-    socket_available = docker_socket_path.exists()
+    socket_available = _docker_socket_usable(docker_socket_path)
 
     if not docker_cli_path or not socket_available:
         completed = datetime.now(UTC)
