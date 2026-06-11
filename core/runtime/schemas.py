@@ -25,6 +25,7 @@ class ConversationMessage(BaseModel):
     role: MessageRole
     content: str = Field(min_length=1)
     reasoning_content: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("reasoning_content")
     @classmethod

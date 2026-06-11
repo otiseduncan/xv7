@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from core.operator.history import get_history, latest_action, latest_action_by_name
 from core.operator.registry import build_operator_registry, run_action
 from core.operator.schema import OperatorActionResult, OperatorSafety
 
@@ -26,11 +28,26 @@ MUTATION_PATTERNS = (
     "create file",
 )
 
+NON_MUTATION_WRITING_PATTERNS = (
+    "implementation prompt",
+    "implementation prompts",
+    "vs code prompt",
+    "copilot prompt",
+    "write a prompt",
+    "write prompt",
+    "app planning",
+    "design architecture",
+    "test planning",
+    "debugging guidance",
+    "documentation help",
+)
+
 
 @dataclass
 class OperatorExecution:
     result: OperatorActionResult
     answer: str
+    record_history: bool = True
 
 
 class OperatorManager:
@@ -72,6 +89,109 @@ class OperatorManager:
         if len(original) <= 5:
             return ""
         return original[5:].strip().strip(".")
+
+    def _history_lookup_result(self) -> OperatorActionResult:
+        now = datetime.now(UTC)
+        action_id = self._next_action_id()
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name="operator_history_lookup",
+            status="success",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="read-only operator action history lookup",
+            target=str(self.repo_root),
+            stdout_summary="history lookup",
+            stderr_summary="",
+            exit_code=None,
+            data={},
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"operator_history_lookup {action_id}",
+        )
+
+    def _history_answer(self, normalized: str, session_metadata: dict[str, Any]) -> OperatorExecution | None:
+        if normalized in {"did you check the repo?", "did you check the repo"}:
+            history = get_history(session_metadata)
+            if not history:
+                # Preserve legacy behavior: allow answer-contract path until any operator action exists.
+                return None
+            last_repo = latest_action_by_name(session_metadata, "repo_status")
+            if last_repo is None:
+                answer = "No live repo check has run in this session."
+            else:
+                status = str(last_repo.get("status", "unknown"))
+                if status == "success":
+                    answer = "Yes. I successfully checked the repo in this session."
+                elif status == "failed":
+                    answer = (
+                        "I attempted a repo check, but it failed. "
+                        "The failed operator receipt is available."
+                    )
+                else:
+                    answer = "I attempted a repo check, but it did not succeed."
+            return OperatorExecution(
+                result=self._history_lookup_result(),
+                answer=answer,
+                record_history=False,
+            )
+
+        if normalized in {"what did you just check?", "what did you just check"}:
+            latest = latest_action(session_metadata)
+            if latest is None:
+                answer = "No operator actions have run in this session yet."
+            else:
+                answer = (
+                    "Latest operator action: "
+                    f"{latest.get('action_name', 'unknown')} "
+                    f"({latest.get('status', 'unknown')}) on {latest.get('target', 'unknown')}."
+                )
+            return OperatorExecution(
+                result=self._history_lookup_result(),
+                answer=answer,
+                record_history=False,
+            )
+
+        if normalized in {"show the last operator receipt.", "show the last operator receipt"}:
+            latest = latest_action(session_metadata)
+            if latest is None:
+                answer = "No operator receipt is available yet for this session."
+            else:
+                answer = (
+                    "Last operator receipt summary: "
+                    f"{latest.get('receipt_label', latest.get('action_name', 'unknown'))}; "
+                    f"status={latest.get('status', 'unknown')}; "
+                    f"target={latest.get('target', 'unknown')}."
+                )
+            return OperatorExecution(
+                result=self._history_lookup_result(),
+                answer=answer,
+                record_history=False,
+            )
+
+        if normalized in {"what operator actions have run?", "what operator actions have run"}:
+            history = get_history(session_metadata)
+            if not history:
+                answer = "No operator actions have run in this session yet."
+            else:
+                recent = history[-5:]
+                lines = ["Recent operator actions:"]
+                for item in recent:
+                    lines.append(
+                        f"- {item.get('action_name', 'unknown')} {item.get('status', 'unknown')} "
+                        f"on {item.get('target', 'unknown')} ({item.get('action_id', 'n/a')})"
+                    )
+                answer = "\n".join(lines)
+            return OperatorExecution(
+                result=self._history_lookup_result(),
+                answer=answer,
+                record_history=False,
+            )
+
+        return None
+
+    @staticmethod
+    def _is_non_mutation_writing_request(normalized: str) -> bool:
+        return any(token in normalized for token in NON_MUTATION_WRITING_PATTERNS)
 
     def _match_action(self, question: str, normalized: str) -> tuple[str, str | None] | None:
         if normalized in {"check the repo.", "check the repo", "what is git status?", "what is git status"}:
@@ -202,9 +322,23 @@ class OperatorManager:
             )
         return "Operator action completed."
 
-    def try_handle_chat(self, question: str) -> OperatorExecution | None:
+    def try_handle_chat(
+        self,
+        question: str,
+        *,
+        session_metadata: dict[str, Any] | None = None,
+    ) -> OperatorExecution | None:
+        metadata = session_metadata or {}
         normalized = self._normalize(question)
-        if any(token in normalized for token in MUTATION_PATTERNS):
+
+        history_answer = self._history_answer(normalized, metadata)
+        if history_answer is not None:
+            return history_answer
+
+        if (
+            any(token in normalized for token in MUTATION_PATTERNS)
+            and not self._is_non_mutation_writing_request(normalized)
+        ):
             denied = self._denied_result(
                 question,
                 "B7 is read-only; mutation requests are denied and no action was run.",
@@ -214,6 +348,7 @@ class OperatorManager:
                 answer=(
                     "B7 is read-only right now. I denied that request and did not run any mutation action."
                 ),
+                record_history=True,
             )
 
         matched = self._match_action(question, normalized)
@@ -227,4 +362,8 @@ class OperatorManager:
             repo_root=self.repo_root,
             target=target,
         )
-        return OperatorExecution(result=result, answer=self._build_answer(action_name, result))
+        return OperatorExecution(
+            result=result,
+            answer=self._build_answer(action_name, result),
+            record_history=True,
+        )

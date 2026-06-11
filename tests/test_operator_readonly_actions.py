@@ -90,6 +90,38 @@ def test_operator_manager_denies_mutation_request() -> None:
     assert "read-only" in handled.answer.lower()
 
 
+def test_operator_manager_allows_prompt_writing_requests() -> None:
+    manager = OperatorManager(repo_root=Path.cwd())
+    handled = manager.try_handle_chat(
+        "Can you help write implementation prompts for VS Code/Copilot?"
+    )
+
+    assert handled is None
+
+
+def test_operator_manager_allows_vs_code_prompt_generation_request() -> None:
+    manager = OperatorManager(repo_root=Path.cwd())
+    handled = manager.try_handle_chat("Write a VS Code prompt for B8.2")
+
+    assert handled is None
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Commit the changes",
+        "Restart Docker",
+        "Delete a file",
+    ],
+)
+def test_operator_manager_keeps_mutation_denials(prompt: str) -> None:
+    manager = OperatorManager(repo_root=Path.cwd())
+    handled = manager.try_handle_chat(prompt)
+
+    assert handled is not None
+    assert handled.result.status == "denied"
+
+
 def test_runtime_health_operation_is_get_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("core.operator.actions.runtime._get_json", _ok_json)
     monkeypatch.setattr(

@@ -45,6 +45,12 @@ class BrainContextManager:
             return [BrainLayer.ACTIVE_FOCUS]
 
         if normalized in {
+            "what are we working on right now?",
+            "what are we working on right now",
+        }:
+            return [BrainLayer.ACTIVE_FOCUS]
+
+        if normalized in {
             "what do you know is verified?",
             "what do you know is verified",
             "what repo/status are we on?",
@@ -60,6 +66,93 @@ class BrainContextManager:
 
         if normalized in {"what do you remember?", "what do you remember"}:
             return [BrainLayer.MEMORY]
+
+        if normalized in {
+            "what do you remember about me?",
+            "what do you remember about me",
+            "what do you remember about xv7?",
+            "what do you remember about xv7",
+            "what do you remember about my preferences?",
+            "what do you remember about my preferences",
+            "is that memory, knowledge, or verified status?",
+            "is that memory, knowledge, or verified status",
+            "is that memory verified or just remembered?",
+            "is that memory verified or remembered?",
+            "is that verified or just remembered?",
+            "is that verified or remembered?",
+            "are launch proofs memory?",
+            "are launch proofs memory",
+            "what is my name?",
+            "what is my name",
+        }:
+            return [BrainLayer.MEMORY]
+
+        if normalized.startswith("search memory for"):
+            return [BrainLayer.MEMORY]
+
+        if normalized.startswith("remember this"):
+            return [BrainLayer.MEMORY]
+
+        if normalized.startswith("forget "):
+            return [BrainLayer.MEMORY]
+
+        if normalized.startswith("update "):
+            return [BrainLayer.MEMORY]
+
+        if normalized.startswith("approve the pending"):
+            return [BrainLayer.MEMORY]
+
+        if normalized in {
+            "do you have any pending memories?",
+            "do you have any pending memories",
+            "what pending memory is waiting for approval?",
+            "what pending memory is waiting for approval",
+            "what active memories do you have now?",
+            "what active memories do you have now",
+            "is that memory active yet?",
+            "is that memory active yet",
+            "show the receipt memory status.",
+            "show the receipt memory status",
+            "did you delete the old receipt memory or supersede it?",
+            "did you delete the old receipt memory or supersede it",
+            "what memory records shaped that answer?",
+            "what memory records shaped that answer",
+        }:
+            return [BrainLayer.MEMORY]
+
+        if normalized in {
+            "what do you know about xv7 architecture?",
+            "what do you know about xv7 architecture",
+            "answer from knowledge only: what is xv7’s architecture?",
+            "answer from knowledge only: what is xv7's architecture?",
+            "answer from knowledge only: what is xv7 architecture?",
+            "if we are planning an app, can you help me do that?",
+            "if we are planning an app, can you help me do that",
+            "can you help design the architecture?",
+            "can you help design the architecture",
+            "can you help write implementation prompts for vs code/copilot?",
+            "can you help write implementation prompts for vs code/copilot",
+            "write a vs code prompt for b8.2",
+            "do you have a microphone button?",
+            "do you have a microphone button",
+            "does the mic auto-send?",
+            "does the mic auto-send",
+            "do you have copy chat?",
+            "do you have copy chat",
+            "can i copy individual prompts?",
+            "can i copy individual prompts",
+            "what color theme are we using?",
+            "what color theme are we using",
+            "can you scan my local system?",
+            "can you scan my local system",
+        }:
+            return [BrainLayer.KNOWLEDGE]
+
+        if normalized in {
+            "answer from verified status only: what is proven?",
+            "answer from verified status only: what is proven",
+        }:
+            return [BrainLayer.VERIFIED_STATUS]
 
         if normalized in {"are we beta ready?", "are we beta ready"}:
             return [BrainLayer.VERIFIED_STATUS, BrainLayer.ACTIVE_FOCUS]

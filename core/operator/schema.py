@@ -42,3 +42,31 @@ class OperatorActionResult(BaseModel):
             f"Operator receipt: {self.action_name} {self.action_id} {self.status}; "
             f"read_only=true; target={self.target}; exit_code={exit_code}."
         )
+
+    def structured_receipt(self) -> dict[str, Any]:
+        limitation = ""
+        if self.stderr_summary:
+            lowered = self.stderr_summary.lower()
+            if "limitation" in lowered or "cannot be proven" in lowered or "unavailable" in lowered:
+                limitation = self.stderr_summary
+
+        data_preview = dict(self.data)
+        if "status_lines" in data_preview and isinstance(data_preview["status_lines"], list):
+            data_preview["status_lines"] = data_preview["status_lines"][:10]
+
+        return {
+            "action_id": self.action_id,
+            "action_name": self.action_name,
+            "status": self.status,
+            "mode": self.mode,
+            "target": self.target,
+            "receipt_label": self.receipt_label,
+            "read_only": self.safety.read_only,
+            "started_at": self.started_at.isoformat(),
+            "completed_at": self.completed_at.isoformat(),
+            "exit_code": self.exit_code,
+            "safety": self.safety.model_dump(mode="json"),
+            "summary": self.stdout_summary or self.stderr_summary,
+            "limitation": limitation,
+            "data_preview": data_preview,
+        }

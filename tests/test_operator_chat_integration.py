@@ -140,7 +140,7 @@ def test_repo_check_claim_requires_live_proof_and_flips_after_success(
         json={"raw_text": "Did you check the repo?"},
     )
     assert response_after.status_code == 200
-    assert "have proof of a live repo check" in response_after.json()["messages"][-1][
+    assert "successfully checked the repo in this session" in response_after.json()["messages"][-1][
         "content"
     ].lower()
 

@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>xv7 Cognitive Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,11 +24,14 @@
             },
             colors: {
               xv7: {
-                ink: '#0A111F',
-                panel: '#111B2D',
-                panelSoft: '#17243A',
-                line: '#243755',
-                glow: '#52D1B3',
+                ink: '#050812',
+                panel: '#08111F',
+                panelSoft: '#0A1628',
+                line: '#007BFF',
+                deep: '#031A33',
+                primary: '#00A3FF',
+                glow: '#4DB8FF',
+                accentText: '#60C0FF',
                 amber: '#F4B860',
                 danger: '#FF5D5D',
               },
@@ -40,183 +44,191 @@
       };
     </script>
   </head>
-  <body class="min-h-screen bg-xv7-ink font-display text-slate-100 antialiased">
+  <body class="h-screen overflow-hidden bg-xv7-ink font-display text-slate-100 antialiased">
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-teal-400/20 blur-3xl"></div>
-      <div class="absolute top-1/3 -right-20 h-80 w-80 rounded-full bg-sky-400/20 blur-3xl"></div>
-      <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_45%)]"></div>
+      <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-xv7-primary/15 blur-3xl"></div>
+      <div class="absolute top-1/3 -right-20 h-80 w-80 rounded-full bg-xv7-glow/10 blur-3xl"></div>
     </div>
 
-    <div class="mx-auto flex h-screen max-w-[1600px] flex-col gap-4 p-4 lg:flex-row">
-      <aside class="flex w-full shrink-0 flex-col gap-4 rounded-2xl border border-xv7-line bg-xv7-panel/90 p-4 shadow-xv7 backdrop-blur lg:w-[340px]">
-        <header class="space-y-2 border-b border-xv7-line pb-4">
-          <p class="font-mono text-xs uppercase tracking-[0.2em] text-teal-300/80">xv7 Orchestration</p>
-          <h1 class="text-2xl font-bold leading-tight">Control Matrix</h1>
-          <p class="text-sm text-slate-300">Switch personas and monitor live cognitive state.</p>
-        </header>
+    <aside id="diagnosticsDrawer" class="diagnostics-drawer" aria-label="Diagnostics panel">
+      <div class="flex items-center justify-between border-b border-xv7-line px-4 py-3">
+        <h2 class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-xv7-accentText">Diagnostics</h2>
+        <button id="diagnosticsCloseButton" aria-label="Close diagnostics" class="xv7-control-button px-2 py-1 text-lg leading-none">×</button>
+      </div>
 
-        <section class="space-y-3">
-          <label for="personaSelect" class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Active Persona</label>
-          <select
-            id="personaSelect"
-            class="w-full rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-teal-300"
-          >
-            <option value="default">default</option>
-            <option value="coding">coding</option>
-            <option value="creative">creative</option>
-          </select>
-          <p id="personaHint" class="text-xs text-slate-400">Persona profile and prompt strategy load dynamically from core.</p>
-        </section>
-
-        <section class="space-y-3 rounded-xl border border-xv7-line bg-xv7-panelSoft p-4">
-          <h2 class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Session Telemetry</h2>
-          <dl class="space-y-2 text-sm">
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Session ID</dt>
-              <dd id="sessionIdValue" class="max-w-[180px] truncate font-mono text-xs text-teal-200">not initialized</dd>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Vector Memory Logs</dt>
-              <dd id="memoryCountValue" class="font-mono text-teal-200">0</dd>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Hardware Load</dt>
-              <dd id="hardwareLoadValue" class="font-mono text-amber-200">Idle</dd>
-            </div>
-          </dl>
-          <div class="h-2 overflow-hidden rounded-full bg-slate-800">
-            <div id="hardwareLoadBar" class="h-full w-0 rounded-full bg-gradient-to-r from-teal-400 to-amber-300 transition-all duration-700"></div>
+      <div class="diagnostics-scroll space-y-4 overflow-y-auto p-4">
+        <details open class="diag-section">
+          <summary class="diag-section-title">Runtime Status</summary>
+          <div class="diag-section-body">
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">Core API</span><span id="statusCoreApi" class="font-mono status-ok">unknown</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Runtime health</span><span id="statusRuntimeHealth" class="font-mono status-ok">unknown</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Active profile</span><span id="statusActiveProfile" class="font-mono text-xv7-accentText">unknown</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Operator mode</span><span id="statusOperatorMode" class="font-mono text-amber-200">Read-only</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Memory</span><span id="statusMemory" class="font-mono text-xv7-accentText">unknown</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Last action</span><span id="statusLastAction" class="font-mono text-xv7-accentText">none</span></li>
+            </ul>
+            <p id="statusLastChecked" class="mt-2 text-[11px] text-slate-500">last checked never</p>
           </div>
-        </section>
+        </details>
 
-        <section class="space-y-3 rounded-xl border border-xv7-line bg-xv7-panelSoft p-4">
-          <header class="space-y-1">
-            <h2 class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Model Profile Control</h2>
-            <p class="text-xs text-amber-200/90">
-              Runtime override only. This does not edit .env and does not pull/delete models.
-            </p>
-          </header>
-
-          <dl class="space-y-2 text-sm">
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Active Profile</dt>
-              <dd id="modelActiveProfile" class="font-mono text-teal-200">loading</dd>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Profile Source</dt>
-              <dd id="modelProfileSource" class="font-mono text-teal-200">loading</dd>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Ollama Reachable</dt>
-              <dd id="modelOllamaReachable" class="font-mono text-teal-200">loading</dd>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-slate-400">Effective Chat Model</dt>
-              <dd id="modelEffectiveChat" class="max-w-[160px] truncate font-mono text-teal-200">loading</dd>
-            </div>
-          </dl>
-
-          <div class="space-y-2">
-            <label for="modelProfileSelect" class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Select Profile</label>
-            <select
-              id="modelProfileSelect"
-              class="w-full rounded-xl border border-xv7-line bg-xv7-panel px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-teal-300"
-            ></select>
+        <details class="diag-section">
+          <summary class="diag-section-title">Model Profile Details</summary>
+          <div class="diag-section-body space-y-2">
+            <p class="text-[11px] text-amber-200/80">Runtime override only. Does not edit .env or pull/delete models.</p>
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">Active Profile</span><dd id="modelActiveProfile" class="font-mono text-xv7-accentText">loading</dd></li>
+              <li class="flex justify-between"><span class="text-slate-400">Profile Source</span><dd id="modelProfileSource" class="font-mono text-xv7-accentText">loading</dd></li>
+              <li class="flex justify-between"><span class="text-slate-400">Ollama Reachable</span><dd id="modelOllamaReachable" class="font-mono status-ok">loading</dd></li>
+              <li class="flex justify-between"><span class="text-slate-400">Effective Chat</span><dd id="modelEffectiveChat" class="max-w-[130px] truncate font-mono text-xv7-accentText">loading</dd></li>
+            </ul>
+            <p id="modelPanelStatus" class="text-xs text-slate-400">Loading model profile state...</p>
           </div>
+        </details>
 
-          <div class="flex gap-2">
-            <button
-              id="modelApplyButton"
-              class="flex-1 rounded-xl border border-teal-300/60 bg-teal-300/10 px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-teal-100 transition hover:bg-teal-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Apply Runtime Override
-            </button>
-            <button
-              id="modelClearButton"
-              class="flex-1 rounded-xl border border-amber-300/60 bg-amber-300/10 px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-amber-100 transition hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Clear Override
-            </button>
-          </div>
-
-          <div class="rounded-lg border border-xv7-line bg-slate-950/70 p-3">
-            <p class="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Resolved Models</p>
-            <ul class="space-y-1 text-xs text-slate-200">
-              <li>chat: <span id="modelResolvedChat" class="font-mono text-teal-200">-</span></li>
-              <li>reasoning: <span id="modelResolvedReasoning" class="font-mono text-teal-200">-</span></li>
-              <li>code: <span id="modelResolvedCode" class="font-mono text-teal-200">-</span></li>
-              <li>embedding: <span id="modelResolvedEmbedding" class="font-mono text-teal-200">-</span></li>
+        <details class="diag-section">
+          <summary class="diag-section-title">Last Model Use Receipt</summary>
+          <div class="diag-section-body">
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">profile</span><span id="chatReceiptProfile" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">source</span><span id="chatReceiptSource" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">runtime role</span><span id="chatReceiptRole" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">model tag</span><span id="chatReceiptModelTag" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">selection source</span><span id="chatReceiptSelectionSource" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">request id</span><span id="chatReceiptRequestId" class="font-mono text-xv7-accentText">-</span></li>
             </ul>
           </div>
+        </details>
 
-          <div class="rounded-lg border border-xv7-line bg-slate-950/70 p-3">
-            <p class="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Availability</p>
-            <ul class="space-y-1 text-xs text-slate-200">
-              <li>chat: <span id="modelAvailabilityChat" class="font-mono text-teal-200">-</span></li>
-              <li>reasoning: <span id="modelAvailabilityReasoning" class="font-mono text-teal-200">-</span></li>
-              <li>code: <span id="modelAvailabilityCode" class="font-mono text-teal-200">-</span></li>
-              <li>embedding: <span id="modelAvailabilityEmbedding" class="font-mono text-teal-200">-</span></li>
+        <details class="diag-section">
+          <summary class="diag-section-title">Context / Retrieval</summary>
+          <div class="diag-section-body">
+            <ul id="retrievalJournal" class="space-y-2 text-xs text-slate-200">
+              <li class="rounded border border-dashed border-xv7-line px-2 py-1.5 text-slate-500">No retrieval context yet.</li>
             </ul>
           </div>
+        </details>
 
-          <p id="modelPanelStatus" class="text-xs text-slate-300">Loading model profile state...</p>
-        </section>
-
-        <section id="alertBox" class="hidden rounded-xl border border-xv7-danger/70 bg-red-500/10 p-3 text-sm text-red-100"></section>
-      </aside>
-
-      <main class="flex min-h-0 w-full flex-1 flex-col rounded-2xl border border-xv7-line bg-xv7-panel/80 p-4 shadow-xv7 backdrop-blur">
-        <section class="rounded-xl border border-xv7-line bg-xv7-panelSoft p-4">
-          <header class="mb-3 flex items-center justify-between gap-3">
-            <h2 class="text-lg font-semibold">Retrieval Journal</h2>
-            <span class="font-mono text-xs uppercase tracking-[0.16em] text-teal-300/80">Top 3 Memories</span>
-          </header>
-          <ul id="retrievalJournal" class="space-y-2 text-sm text-slate-200">
-            <li class="rounded-lg border border-dashed border-xv7-line bg-slate-900/40 px-3 py-2 text-slate-400">
-              No retrieval context yet. Send a prompt to populate semantic memory traces.
-            </li>
-          </ul>
-        </section>
-
-        <section id="chatTimeline" class="mt-4 flex-1 space-y-3 overflow-y-auto rounded-xl border border-xv7-line bg-[#0f1829] p-4">
-          <article class="rounded-xl border border-dashed border-xv7-line bg-slate-900/40 p-4 text-sm text-slate-300">
-            xv7 interface initialized. Start by sending a message below.
-          </article>
-        </section>
-
-        <section class="mt-4 rounded-xl border border-xv7-line bg-xv7-panelSoft p-3">
-          <label for="promptInput" class="mb-2 block font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Prompt</label>
-          <div class="flex flex-col gap-3 lg:flex-row">
-            <textarea
-              id="promptInput"
-              rows="3"
-              placeholder="Ask xv7 anything..."
-              class="w-full resize-none rounded-xl border border-xv7-line bg-xv7-panel px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-teal-300"
-            ></textarea>
-            <button
-              id="sendButton"
-              class="rounded-xl border border-teal-300/60 bg-teal-300/10 px-6 py-3 font-mono text-sm font-semibold uppercase tracking-[0.18em] text-teal-100 transition hover:bg-teal-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              [ SEND ]
-            </button>
+        <details class="diag-section">
+          <summary class="diag-section-title">Operator Activity</summary>
+          <div class="diag-section-body">
+            <ul id="operatorActivityList" class="space-y-2 text-xs text-slate-200">
+              <li class="rounded border border-dashed border-xv7-line px-2 py-1.5 text-slate-500">No operator actions yet.</li>
+            </ul>
           </div>
-        </section>
+        </details>
 
-        <section class="mt-4 rounded-xl border border-xv7-line bg-xv7-panelSoft p-3">
-          <header class="mb-2 flex items-center justify-between gap-3">
-            <h2 class="font-mono text-xs uppercase tracking-[0.16em] text-slate-300">Last Model Use Receipt</h2>
-            <span class="text-[11px] text-slate-400">Safe runtime proof metadata</span>
+        <details class="diag-section">
+          <summary class="diag-section-title">Resolved Models</summary>
+          <div class="diag-section-body">
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">chat</span><span id="modelResolvedChat" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">reasoning</span><span id="modelResolvedReasoning" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">code</span><span id="modelResolvedCode" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">embedding</span><span id="modelResolvedEmbedding" class="font-mono text-xv7-accentText">-</span></li>
+            </ul>
+            <p class="mt-3 font-mono text-[11px] uppercase tracking-widest text-slate-500">Availability</p>
+            <ul class="mt-1 space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">chat</span><span id="modelAvailabilityChat" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">reasoning</span><span id="modelAvailabilityReasoning" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">code</span><span id="modelAvailabilityCode" class="font-mono text-xv7-accentText">-</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">embedding</span><span id="modelAvailabilityEmbedding" class="font-mono text-xv7-accentText">-</span></li>
+            </ul>
+          </div>
+        </details>
+
+        <details class="diag-section">
+          <summary class="diag-section-title">Session Telemetry</summary>
+          <div class="diag-section-body">
+            <ul class="space-y-1 text-xs">
+              <li class="flex justify-between"><span class="text-slate-400">Session ID</span><span id="sessionIdValue" class="max-w-[140px] truncate font-mono text-xv7-accentText">not initialized</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Vector Memory Logs</span><span id="memoryCountValue" class="font-mono text-xv7-accentText">0</span></li>
+              <li class="flex justify-between"><span class="text-slate-400">Hardware Load</span><span id="hardwareLoadValue" class="font-mono text-amber-200">Idle</span></li>
+            </ul>
+            <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
+              <div id="hardwareLoadBar" class="h-full w-0 rounded-full bg-gradient-to-r from-xv7-primary to-xv7-glow transition-all duration-700"></div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </aside>
+
+    <div id="diagnosticsBackdrop" class="diagnostics-backdrop hidden"></div>
+
+    <div class="app-shell flex h-screen flex-col overflow-hidden">
+      <div class="flex min-h-0 flex-1 overflow-hidden">
+        <aside class="sidebar-compact flex shrink-0 flex-col border-r border-xv7-line bg-xv7-panel">
+          <header class="border-b border-xv7-line px-4 py-4">
+            <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-xv7-accentText/70">xv7 Orchestration</p>
+            <h1 class="mt-1 text-xl font-bold leading-tight">xv7</h1>
           </header>
-          <ul class="space-y-1 text-xs text-slate-200">
-            <li>profile: <span id="chatReceiptProfile" class="font-mono text-teal-200">-</span></li>
-            <li>source: <span id="chatReceiptSource" class="font-mono text-teal-200">-</span></li>
-            <li>runtime role: <span id="chatReceiptRole" class="font-mono text-teal-200">-</span></li>
-            <li>model tag: <span id="chatReceiptModelTag" class="font-mono text-teal-200">-</span></li>
-            <li>selection source: <span id="chatReceiptSelectionSource" class="font-mono text-teal-200">-</span></li>
-            <li>request id: <span id="chatReceiptRequestId" class="font-mono text-teal-200">-</span></li>
-          </ul>
-        </section>
-      </main>
+
+          <div class="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            <section class="space-y-2">
+              <label for="personaSelect" class="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Persona</label>
+              <select id="personaSelect" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-xv7-glow">
+                <option value="default">default</option>
+              </select>
+              <p id="personaHint" class="text-[11px] text-slate-500">Profile loads dynamically from core.</p>
+            </section>
+
+            <section class="space-y-2">
+              <label for="modelProfileSelect" class="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Model Profile</label>
+              <select id="modelProfileSelect" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-xv7-glow"></select>
+              <div class="flex gap-2">
+                <button id="modelApplyButton" class="flex-1 rounded-lg border border-xv7-primary/70 bg-xv7-primary/15 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-xv7-glow transition hover:bg-xv7-primary/25 disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
+                <button id="modelClearButton" class="flex-1 rounded-lg border border-amber-300/60 bg-amber-300/10 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-100 transition hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50">Clear</button>
+              </div>
+            </section>
+
+            <button id="diagnosticsToggleButton" aria-label="Open diagnostics panel" class="mt-auto rounded-lg border border-xv7-line bg-xv7-panelSoft px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-slate-300 transition hover:border-xv7-primary/60 hover:text-xv7-accentText">⬡ Diagnostics</button>
+          </div>
+
+          <section id="alertBox" class="hidden border-t border-xv7-danger/40 bg-red-500/10 px-4 py-3 text-xs text-red-200"></section>
+        </aside>
+
+        <main class="chat-column flex min-w-0 flex-1 flex-col">
+          <div class="status-strip-compact flex items-center gap-3 border-b border-xv7-line bg-xv7-panel/70 px-4 py-2 text-[11px]">
+            <span class="font-mono uppercase tracking-wider text-slate-500">Core</span>
+            <span id="statusCoreApiChip" class="font-mono status-ok">ok</span>
+            <span class="text-slate-700">·</span>
+            <span class="font-mono uppercase tracking-wider text-slate-500">Runtime</span>
+            <span id="statusRuntimeHealthChip" class="font-mono status-ok">ok</span>
+            <span class="text-slate-700">·</span>
+            <span class="font-mono uppercase tracking-wider text-slate-500">Profile</span>
+            <span id="statusActiveProfileChip" class="font-mono text-xv7-accentText">—</span>
+            <span class="text-slate-700">·</span>
+            <span class="font-mono uppercase tracking-wider text-slate-500">Operator</span>
+            <span id="statusOperatorModeChip" class="font-mono text-amber-300">read-only</span>
+            <span class="ml-auto font-mono text-[10px] text-slate-600" id="statusLastCheckedChip">never</span>
+          </div>
+
+          <div id="operatorSummaryChip" class="operator-summary-chip hidden border-b border-xv7-line bg-xv7-panelSoft px-4 py-1.5 text-[11px]"></div>
+
+          <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Conversation</span>
+              <button id="copyChatButton" aria-label="Copy entire chat" class="xv7-control-button">Copy Chat</button>
+            </div>
+
+            <div id="copyToast" class="copy-toast hidden" role="status" aria-live="polite"></div>
+
+            <div id="chatTimeline" class="chat-timeline flex-1 space-y-3 overflow-y-auto rounded-xl border border-xv7-line/50 bg-xv7-panel/40 p-3">
+              <article class="rounded-xl border border-dashed border-xv7-line/60 bg-slate-900/40 p-4 text-sm text-slate-400">xv7 interface initialized. Start by sending a message below.</article>
+            </div>
+          </div>
+
+          <div class="border-t border-xv7-line bg-xv7-panel/70 px-4 py-3">
+            <div class="flex items-end gap-2">
+              <textarea id="promptInput" rows="2" placeholder="Ask xv7 anything… (Enter to send, Shift+Enter for new line)" class="flex-1 resize-none rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-xv7-glow"></textarea>
+              <button id="micButton" type="button" aria-label="Start voice input" class="xv7-control-button self-end" title="Voice input is not supported in this browser.">Mic</button>
+              <button id="sendButton" class="self-end rounded-xl border border-xv7-primary/70 bg-xv7-primary/15 px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-[0.14em] text-xv7-glow transition hover:bg-xv7-primary/25 disabled:cursor-not-allowed disabled:opacity-50">Send</button>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <footer id="appFooter" class="app-footer border-t border-xv7-line bg-xv7-panel/80" aria-hidden="true"></footer>
     </div>
 
     <script type="module" src="./app.js"></script>

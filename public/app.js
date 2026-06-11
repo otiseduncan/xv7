@@ -34,8 +34,34 @@ class Xv7UI {
   /** @type {{models:any|null,active:any|null,effective:any|null}} */
   modelPayload = { models: null, active: null, effective: null };
 
+  /** @type {{coreApi:string,runtimeHealth:string,activeProfile:string,operatorMode:string,memory:string,lastAction:string,lastChecked:string}} */
+  statusSummary = {
+    coreApi: 'unknown',
+    runtimeHealth: 'unknown',
+    activeProfile: 'unknown',
+    operatorMode: 'Read-only',
+    memory: 'unknown',
+    lastAction: 'none',
+    lastChecked: 'never',
+  };
+
   /** @type {string} */
   modelProfileSelection = '';
+
+  /** @type {SpeechRecognition | null} */
+  speechRecognition = null;
+
+  /** @type {boolean} */
+  speechSupported = false;
+
+  /** @type {boolean} */
+  isListening = false;
+
+  /** @type {Array<{role:string,text:string,timestamp:string,receiptSummary:string[]}>} */
+  visibleConversation = [];
+
+  /** @type {boolean} */
+  diagnosticsDrawerOpen = false;
 
   constructor() {
     this.els = {
@@ -50,6 +76,9 @@ class Xv7UI {
       chatTimeline: document.getElementById('chatTimeline'),
       promptInput: document.getElementById('promptInput'),
       sendButton: document.getElementById('sendButton'),
+      micButton: document.getElementById('micButton'),
+      copyChatButton: document.getElementById('copyChatButton'),
+      copyToast: document.getElementById('copyToast'),
       modelActiveProfile: document.getElementById('modelActiveProfile'),
       modelProfileSource: document.getElementById('modelProfileSource'),
       modelOllamaReachable: document.getElementById('modelOllamaReachable'),
@@ -72,6 +101,27 @@ class Xv7UI {
       chatReceiptModelTag: document.getElementById('chatReceiptModelTag'),
       chatReceiptSelectionSource: document.getElementById('chatReceiptSelectionSource'),
       chatReceiptRequestId: document.getElementById('chatReceiptRequestId'),
+      operatorActivityList: document.getElementById('operatorActivityList'),
+      statusCoreApi: document.getElementById('statusCoreApi'),
+      statusRuntimeHealth: document.getElementById('statusRuntimeHealth'),
+      statusActiveProfile: document.getElementById('statusActiveProfile'),
+      statusOperatorMode: document.getElementById('statusOperatorMode'),
+      statusMemory: document.getElementById('statusMemory'),
+      statusLastAction: document.getElementById('statusLastAction'),
+      statusLastChecked: document.getElementById('statusLastChecked'),
+      // compact strip chips (separate elements in new layout)
+      statusCoreApiChip: document.getElementById('statusCoreApiChip'),
+      statusRuntimeHealthChip: document.getElementById('statusRuntimeHealthChip'),
+      statusActiveProfileChip: document.getElementById('statusActiveProfileChip'),
+      statusOperatorModeChip: document.getElementById('statusOperatorModeChip'),
+      statusLastCheckedChip: document.getElementById('statusLastCheckedChip'),
+      // operator summary chip in main view
+      operatorSummaryChip: document.getElementById('operatorSummaryChip'),
+      // diagnostics drawer
+      diagnosticsDrawer: document.getElementById('diagnosticsDrawer'),
+      diagnosticsBackdrop: document.getElementById('diagnosticsBackdrop'),
+      diagnosticsToggleButton: document.getElementById('diagnosticsToggleButton'),
+      diagnosticsCloseButton: document.getElementById('diagnosticsCloseButton'),
     };
 
     this.bindEvents();
@@ -84,7 +134,7 @@ class Xv7UI {
     });
 
     this.els.promptInput.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         void this.sendMessage();
       }
@@ -110,6 +160,36 @@ class Xv7UI {
     this.els.modelClearButton.addEventListener('click', () => {
       void this.clearRuntimeProfileOverride();
     });
+
+    if (this.els.micButton) {
+      this.els.micButton.addEventListener('click', () => {
+        this.toggleVoiceInput();
+      });
+    }
+
+    if (this.els.copyChatButton) {
+      this.els.copyChatButton.addEventListener('click', () => {
+        void this.copyEntireChat();
+      });
+    }
+
+    if (this.els.diagnosticsToggleButton) {
+      this.els.diagnosticsToggleButton.addEventListener('click', () => {
+        this.openDiagnosticsDrawer();
+      });
+    }
+
+    if (this.els.diagnosticsCloseButton) {
+      this.els.diagnosticsCloseButton.addEventListener('click', () => {
+        this.closeDiagnosticsDrawer();
+      });
+    }
+
+    if (this.els.diagnosticsBackdrop) {
+      this.els.diagnosticsBackdrop.addEventListener('click', () => {
+        this.closeDiagnosticsDrawer();
+      });
+    }
   }
 
   async initialize() {
@@ -119,12 +199,21 @@ class Xv7UI {
       this.populatePersonas(payload);
       this.showAlert('Persona registry loaded successfully.', false, 2400);
       this.setHardwareLoad('Ready', 8);
+      this.statusSummary.coreApi = 'reachable';
+      this.statusSummary.memory = 'available';
+      this.refreshStatusTimestamp();
+      this.renderStatusStrip();
     } catch (error) {
       this.showAlert(this.humanizeError(error), true);
       this.setHardwareLoad('Degraded', 16);
+      this.statusSummary.coreApi = 'unreachable';
+      this.statusSummary.runtimeHealth = 'unknown';
+      this.refreshStatusTimestamp();
+      this.renderStatusStrip();
     }
 
     await this.refreshModelProfileControl();
+    this.setupVoiceInput();
   }
 
   async refreshModelProfileControl() {
@@ -153,12 +242,21 @@ class Xv7UI {
       }
 
       this.modelPanelStatus = 'Runtime profile data loaded.';
+      this.statusSummary.runtimeHealth = 'ok';
+      this.statusSummary.activeProfile = activeProfile || 'unknown';
+      this.statusSummary.coreApi = 'reachable';
+      this.statusSummary.memory = 'available';
+      this.refreshStatusTimestamp();
     } catch (error) {
       this.modelPayload = { models: null, active: null, effective: null };
       this.modelPanelStatus = this.humanizeError(error);
+      this.statusSummary.runtimeHealth = 'degraded';
+      this.statusSummary.coreApi = 'reachable';
+      this.refreshStatusTimestamp();
     }
 
     this.renderModelProfileControl();
+    this.renderStatusStrip();
   }
 
   renderModelProfileControl() {
@@ -180,8 +278,8 @@ class Xv7UI {
     this.els.modelProfileSource.textContent = profileSource;
     this.els.modelOllamaReachable.textContent = reachable ? 'yes' : 'no';
     this.els.modelEffectiveChat.textContent = effectiveChatModel;
-    this.els.modelOllamaReachable.classList.toggle('text-teal-200', reachable);
-    this.els.modelOllamaReachable.classList.toggle('text-red-300', !reachable);
+    this.els.modelOllamaReachable.classList.toggle('status-ok', reachable);
+    this.els.modelOllamaReachable.classList.toggle('status-bad', !reachable);
 
     this.els.modelProfileSelect.innerHTML = '';
     if (!availableProfiles.length) {
@@ -354,7 +452,7 @@ class Xv7UI {
         }
       }
 
-      this.appendMessageCard('user', raw, null);
+      this.appendMessageCard('user', raw, null, null, this.nowIso());
       this.els.promptInput.value = '';
 
       const data = await this.fetchJson(`/api/sessions/${this.currentSessionId}/messages`, {
@@ -371,19 +469,34 @@ class Xv7UI {
           typeof assistantMessage.content === 'string'
             ? assistantMessage.content
             : '';
-        const assistantText = this.stripReasoningTokens(assistantContent).trim();
+        const assistantMeta =
+          assistantMessage &&
+          typeof assistantMessage === 'object' &&
+          assistantMessage.metadata &&
+          typeof assistantMessage.metadata === 'object'
+            ? assistantMessage.metadata
+            : {};
+        const assistantText = this.resolveAssistantVisibleText(assistantMeta, assistantContent);
         const reasoningText = this.extractReasoning(assistantContent);
 
-        this.appendMessageCard('assistant', assistantText || 'No assistant content returned.', reasoningText);
+        this.appendMessageCard(
+          'assistant',
+          assistantText || 'No assistant content returned.',
+          reasoningText,
+          assistantMeta,
+          this.inferAssistantTimestamp(assistantMeta),
+        );
 
         this.renderModelUseReceipt(data?.metadata?.model_use_receipt);
+        this.renderOperatorActivity(data?.metadata?.operator_action_history);
+        this.updateStatusFromHistory(data?.metadata?.operator_action_history);
 
         this.memoryLogCount = messages.length;
         this.updateSessionTelemetry();
         this.renderRetrievalJournal(data);
         this.setHardwareLoad('Ready', 12);
       } catch (parseError) {
-        this.els.sendButton.textContent = '[ ERROR ]';
+        this.els.sendButton.textContent = 'Error';
         throw new Error(`Failed to parse assistant response: ${this.humanizeError(parseError)}`);
       }
     } catch (error) {
@@ -399,22 +512,46 @@ class Xv7UI {
    * @param {string} content
    * @param {string | null} reasoning
    */
-  appendMessageCard(role, content, reasoning) {
+  appendMessageCard(role, content, reasoning, messageMetadata = null, timestamp = '') {
     const article = document.createElement('article');
-    article.className =
-      role === 'user'
-        ? 'rounded-xl border border-sky-300/40 bg-sky-400/10 p-4'
-        : 'rounded-xl border border-teal-300/30 bg-teal-300/10 p-4';
+    article.className = role === 'user' ? 'chat-card chat-card-user' : 'chat-card chat-card-assistant';
+    article.dataset.role = role;
+    article.dataset.timestamp = timestamp || '';
 
     const roleLabel = document.createElement('p');
-    roleLabel.className = 'font-mono text-xs uppercase tracking-[0.16em] text-slate-300';
+    roleLabel.className = 'chat-role-label';
     roleLabel.textContent = role === 'user' ? 'User Input' : 'Assistant Output';
 
-    const text = document.createElement('p');
-    text.className = 'mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-100';
-    text.textContent = this.stripReasoningTokens(content);
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
 
-    article.append(roleLabel, text);
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'message-copy-button';
+    copyButton.setAttribute('aria-label', 'Copy message');
+    copyButton.textContent = 'Copy';
+    copyButton.addEventListener('click', () => {
+      void this.copySingleMessage(article);
+    });
+    actions.append(copyButton);
+
+    const text = document.createElement('p');
+    text.className = 'chat-visible-text';
+    text.textContent = content;
+    text.dataset.visibleText = content;
+
+    article.append(roleLabel, actions, text);
+
+    const copyPayload = {
+      role,
+      text: content,
+      timestamp: timestamp || '',
+      receiptSummary: [],
+    };
+
+    if (role === 'assistant') {
+      copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
+    }
 
     if (reasoning && reasoning.trim()) {
       const details = document.createElement('details');
@@ -434,6 +571,191 @@ class Xv7UI {
 
     this.els.chatTimeline.append(article);
     this.els.chatTimeline.scrollTop = this.els.chatTimeline.scrollHeight;
+    this.visibleConversation.push(copyPayload);
+  }
+
+  appendReceiptChips(article, messageMetadata) {
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const chipRow = document.createElement('div');
+    chipRow.className = 'receipt-chip-row';
+
+    const compactReceipts = [];
+
+    const operatorReceipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts : [];
+    operatorReceipts.forEach((receipt) => {
+      if (!receipt || typeof receipt !== 'object') return;
+      const status = typeof receipt.status === 'string' ? receipt.status : 'unknown';
+      const actionName = typeof receipt.action_name === 'string' ? receipt.action_name : 'operator_action';
+      const readOnly = receipt.read_only === true ? 'read_only=true' : 'read_only=false';
+      const chip = document.createElement('span');
+      chip.className = `receipt-chip status-${status}`;
+      chip.textContent = `Operator: ${this.operatorChipLabel(actionName, status)}`;
+      chipRow.append(chip);
+      compactReceipts.push(`${actionName} ${status} ${readOnly}`);
+    });
+
+    const contextReceipt = meta.context_receipt && typeof meta.context_receipt === 'object' ? meta.context_receipt : null;
+    if (contextReceipt && typeof contextReceipt.compact === 'string' && contextReceipt.compact.trim()) {
+      const chip = document.createElement('span');
+      chip.className = 'receipt-chip';
+      const contextSummary = this.summarizeContextReceipt(contextReceipt.compact);
+      chip.textContent = `Context: ${contextSummary}`;
+      chipRow.append(chip);
+      compactReceipts.push(`context ${contextSummary}`);
+    }
+
+    const memoryReceipts = Array.isArray(meta.memory_receipts) ? meta.memory_receipts : [];
+    memoryReceipts.slice(0, 2).forEach((item) => {
+      if (typeof item !== 'string' || !item.trim()) return;
+      const chip = document.createElement('span');
+      chip.className = 'receipt-chip';
+      const memoryId = this.extractReceiptId(item);
+      chip.textContent = `Memory: ${memoryId}`;
+      chipRow.append(chip);
+      compactReceipts.push(`memory ${memoryId}`);
+    });
+
+    const modelUseReceipt = meta.model_use_receipt && typeof meta.model_use_receipt === 'object' ? meta.model_use_receipt : null;
+    if (typeof modelUseReceipt?.model_tag === 'string' && modelUseReceipt.model_tag.trim()) {
+      const chip = document.createElement('span');
+      chip.className = 'receipt-chip';
+      chip.textContent = `Model: ${modelUseReceipt.model_tag.trim()}`;
+      chipRow.append(chip);
+      compactReceipts.push(`model ${modelUseReceipt.model_tag.trim()}`);
+    }
+
+    if (chipRow.childElementCount > 0) {
+      article.append(chipRow);
+    }
+
+    if (operatorReceipts.length > 0) {
+      operatorReceipts.forEach((receipt) => {
+        if (!receipt || typeof receipt !== 'object') return;
+        const details = document.createElement('details');
+        details.className = 'receipt-details';
+
+        const summary = document.createElement('summary');
+        const label = typeof receipt.receipt_label === 'string' ? receipt.receipt_label : 'operator receipt';
+        const status = typeof receipt.status === 'string' ? receipt.status : 'unknown';
+        summary.textContent = `${label} (${status})`;
+
+        const body = document.createElement('div');
+        body.className = 'receipt-detail-grid';
+        this.appendReceiptField(body, 'action_id', receipt.action_id);
+        this.appendReceiptField(body, 'action_name', receipt.action_name);
+        this.appendReceiptField(body, 'status', receipt.status);
+        this.appendReceiptField(body, 'read_only', receipt.read_only);
+        this.appendReceiptField(body, 'target', receipt.target);
+        this.appendReceiptField(body, 'summary', receipt.summary);
+        this.appendReceiptField(body, 'limitation', receipt.limitation);
+        this.appendReceiptField(body, 'timestamp', receipt.completed_at || receipt.started_at);
+
+        details.append(summary, body);
+        article.append(details);
+      });
+    }
+
+    return compactReceipts;
+  }
+
+  renderOperatorActivity(history) {
+    const list = this.els.operatorActivityList;
+    const chip = this.els.operatorSummaryChip;
+
+    const items = Array.isArray(history) ? history.slice().reverse() : [];
+
+    // --- compact summary chip in main view ---
+    if (chip) {
+      if (!items.length) {
+        chip.classList.add('hidden');
+        chip.textContent = '';
+      } else {
+        const latest = items[0];
+        const status = typeof latest.status === 'string' ? latest.status : 'unknown';
+        const actionName = typeof latest.action_name === 'string' ? latest.action_name : 'operator_action';
+        const hasLimitation = typeof latest.limitation === 'string' && latest.limitation.trim().length > 0;
+        const label = hasLimitation ? `${actionName} (limitation)` : `${actionName} ${status}`;
+        chip.textContent = `Last operator action: ${label}`;
+        chip.className = `operator-summary-chip border-b border-xv7-line bg-xv7-panelSoft px-4 py-1.5 text-[11px] chip-status-${hasLimitation ? 'limitation' : status}`;
+      }
+    }
+
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (!items.length) {
+      const li = document.createElement('li');
+      li.className = 'rounded border border-dashed border-xv7-line px-2 py-1.5 text-slate-500';
+      li.textContent = 'No operator actions yet.';
+      list.append(li);
+      return;
+    }
+
+    items.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const li = document.createElement('li');
+      const status = typeof entry.status === 'string' ? entry.status : 'unknown';
+      const hasLimitation = typeof entry.limitation === 'string' && entry.limitation.trim().length > 0;
+      li.className = `operator-activity-item status-${hasLimitation ? 'limitation' : status}`;
+
+      const summary = document.createElement('div');
+      summary.className = 'operator-activity-summary';
+
+      const name = document.createElement('span');
+      name.className = 'operator-activity-name';
+      name.textContent = entry.action_name || 'unknown';
+
+      const badge = document.createElement('span');
+      badge.className = `operator-status-badge status-${hasLimitation ? 'limitation' : status}`;
+      badge.textContent = hasLimitation ? 'limitation' : status;
+
+      summary.append(name, badge);
+
+      const meta = document.createElement('div');
+      meta.className = 'operator-activity-meta font-mono';
+      const timestamp = typeof entry.completed_at === 'string' ? entry.completed_at : 'n/a';
+      meta.textContent = `${timestamp} | target=${entry.target || 'unknown'}`;
+
+      const detail = document.createElement('div');
+      detail.className = 'operator-activity-meta';
+      detail.textContent = String(entry.summary || entry.receipt_label || 'no summary');
+
+      const details = document.createElement('details');
+      details.className = 'operator-activity-details';
+      const detailsSummary = document.createElement('summary');
+      detailsSummary.textContent = 'Expand details';
+      const detailGrid = document.createElement('div');
+      detailGrid.className = 'receipt-detail-grid';
+      this.appendReceiptField(detailGrid, 'action_id', entry.action_id);
+      this.appendReceiptField(detailGrid, 'status', status);
+      this.appendReceiptField(detailGrid, 'read_only', entry.read_only);
+      this.appendReceiptField(detailGrid, 'target', entry.target);
+      this.appendReceiptField(detailGrid, 'summary', entry.summary);
+      this.appendReceiptField(detailGrid, 'limitation', entry.limitation);
+      this.appendReceiptField(detailGrid, 'timestamp', entry.completed_at || entry.started_at);
+      details.append(detailsSummary, detailGrid);
+
+      li.append(summary, meta, detail, details);
+      list.append(li);
+    });
+  }
+
+  updateStatusFromHistory(history) {
+    const items = Array.isArray(history) ? history : [];
+    if (!items.length) {
+      this.renderStatusStrip();
+      return;
+    }
+
+    const latest = items[items.length - 1];
+    if (latest && typeof latest === 'object') {
+      const status = typeof latest.status === 'string' ? latest.status : 'unknown';
+      const actionName = typeof latest.action_name === 'string' ? latest.action_name : 'operator_action';
+      this.statusSummary.lastAction = `${actionName} ${status}`;
+      this.statusSummary.operatorMode = 'Read-only';
+      this.refreshStatusTimestamp();
+      this.renderStatusStrip();
+    }
   }
 
   /**
@@ -493,6 +815,8 @@ class Xv7UI {
   updateSessionTelemetry() {
     this.els.sessionIdValue.textContent = this.currentSessionId || 'not initialized';
     this.els.memoryCountValue.textContent = String(this.memoryLogCount);
+    this.statusSummary.memory = this.currentSessionId ? 'available' : 'idle';
+    this.renderStatusStrip();
   }
 
   /**
@@ -510,7 +834,7 @@ class Xv7UI {
   lockInput(locked) {
     this.els.promptInput.disabled = locked;
     this.els.sendButton.disabled = locked;
-    this.els.sendButton.textContent = locked ? '[ PROCESSING ]' : '[ SEND ]';
+    this.els.sendButton.textContent = locked ? 'Processing…' : 'Send';
   }
 
   /**
@@ -534,9 +858,9 @@ class Xv7UI {
     this.els.alertBox.classList.toggle('hidden', !message);
     this.els.alertBox.textContent = message;
 
-    this.els.alertBox.classList.remove('border-teal-300/60', 'bg-teal-500/10', 'text-teal-100');
+    this.els.alertBox.classList.remove('alert-info');
     if (!isError && message) {
-      this.els.alertBox.classList.add('border-teal-300/60', 'bg-teal-500/10', 'text-teal-100');
+      this.els.alertBox.classList.add('alert-info');
     }
 
     if (autoHideMs > 0) {
@@ -544,6 +868,175 @@ class Xv7UI {
         this.els.alertBox.classList.add('hidden');
       }, autoHideMs);
     }
+  }
+
+  setupVoiceInput() {
+    if (!this.els.micButton) return;
+
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+    this.speechSupported = Boolean(SpeechRecognitionCtor);
+    if (!this.speechSupported) {
+      this.els.micButton.disabled = true;
+      this.els.micButton.setAttribute('aria-label', 'Start voice input');
+      this.els.micButton.title = 'Voice input is not supported in this browser.';
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      this.isListening = true;
+      this.els.micButton.classList.add('listening');
+      this.els.micButton.textContent = 'Listening...';
+      this.els.micButton.setAttribute('aria-label', 'Stop voice input');
+      this.els.micButton.title = 'Click to stop voice input.';
+    };
+
+    recognition.onend = () => {
+      this.isListening = false;
+      this.els.micButton.classList.remove('listening');
+      this.els.micButton.textContent = 'Mic';
+      this.els.micButton.setAttribute('aria-label', 'Start voice input');
+      this.els.micButton.title = 'Start voice input.';
+    };
+
+    recognition.onresult = (event) => {
+      const result = event.results?.[0]?.[0]?.transcript;
+      if (!result || typeof result !== 'string') return;
+      this.els.promptInput.value = result.trim();
+      this.els.promptInput.focus();
+      this.showCopyToast('Voice transcript added to prompt.');
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        this.showAlert('Microphone permission was denied.', true, 2200);
+        return;
+      }
+      if (event.error === 'no-speech') {
+        this.showAlert('No speech was detected. Try again.', true, 1800);
+        return;
+      }
+      this.showAlert('Voice input failed to start.', true, 1800);
+    };
+
+    this.speechRecognition = recognition;
+    this.els.micButton.disabled = false;
+    this.els.micButton.title = 'Start voice input.';
+  }
+
+  toggleVoiceInput() {
+    if (!this.speechSupported || !this.speechRecognition) {
+      this.showAlert('Voice input is not supported in this browser.', true, 2200);
+      return;
+    }
+
+    if (this.isListening) {
+      this.speechRecognition.stop();
+      return;
+    }
+
+    this.speechRecognition.start();
+  }
+
+  async copyEntireChat() {
+    const lines = [];
+    this.visibleConversation.forEach((entry) => {
+      const roleLabel = entry.role === 'assistant' ? 'Xoduz' : 'User';
+      if (entry.timestamp) {
+        lines.push(`[${entry.timestamp}]`);
+      }
+      lines.push(`${roleLabel}:`);
+      lines.push(entry.text || '');
+      if (Array.isArray(entry.receiptSummary) && entry.receiptSummary.length) {
+        entry.receiptSummary.forEach((receiptLine) => {
+          lines.push('');
+          lines.push(`Operator receipt:`);
+          lines.push(receiptLine);
+        });
+      }
+      lines.push('');
+    });
+
+    await this.copyToClipboard(lines.join('\n').trim());
+    this.showCopyToast('Chat copied.');
+  }
+
+  async copySingleMessage(article) {
+    const role = article?.dataset?.role === 'assistant' ? 'Xoduz' : 'User';
+    const text = article.querySelector('.chat-visible-text')?.textContent || '';
+    const timestamp = article?.dataset?.timestamp || '';
+
+    const lines = [];
+    if (timestamp) {
+      lines.push(`[${timestamp}]`);
+    }
+    lines.push(`${role}:`);
+    lines.push(text);
+
+    if (role === 'Xoduz') {
+      const chips = [...article.querySelectorAll('.receipt-chip')]
+        .map((chip) => (chip.textContent || '').trim())
+        .filter(Boolean);
+      chips.forEach((chipText) => {
+        lines.push('');
+        lines.push(`Receipt:`);
+        lines.push(chipText);
+      });
+    }
+
+    await this.copyToClipboard(lines.join('\n').trim());
+    this.showCopyToast('Copied.');
+  }
+
+  async copyToClipboard(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.setAttribute('readonly', '');
+    el.style.position = 'absolute';
+    el.style.left = '-9999px';
+    document.body.append(el);
+    el.select();
+    document.execCommand('copy');
+    el.remove();
+  }
+
+  showCopyToast(message) {
+    const toast = this.els.copyToast;
+    if (!toast) {
+      this.showAlert(message, false, 1200);
+      return;
+    }
+
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    window.clearTimeout(this.copyToastTimer);
+    this.copyToastTimer = window.setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 1200);
+  }
+
+  nowIso() {
+    return new Date().toISOString();
+  }
+
+  inferAssistantTimestamp(metadata) {
+    const receipts = Array.isArray(metadata?.operator_receipts) ? metadata.operator_receipts : [];
+    const latest = receipts[receipts.length - 1];
+    if (latest && typeof latest.completed_at === 'string') {
+      return latest.completed_at;
+    }
+    return this.nowIso();
   }
 
   /**
@@ -589,6 +1082,167 @@ class Xv7UI {
       safeReceipt.model_selection_source,
     );
     this.els.chatReceiptRequestId.textContent = this.receiptField(safeReceipt.request_id);
+  }
+
+  renderStatusStrip() {
+    // --- drawer panel values (existing IDs) ---
+    const drawerMap = [
+      ['statusCoreApi', this.statusSummary.coreApi],
+      ['statusRuntimeHealth', this.statusSummary.runtimeHealth],
+      ['statusActiveProfile', this.statusSummary.activeProfile],
+      ['statusOperatorMode', this.statusSummary.operatorMode],
+      ['statusMemory', this.statusSummary.memory],
+      ['statusLastAction', this.statusSummary.lastAction],
+      ['statusLastChecked', this.statusSummary.lastChecked],
+    ];
+
+    drawerMap.forEach(([id, value]) => {
+      const el = this.els[id];
+      if (!el) return;
+      el.textContent = value;
+    });
+
+    this.applyStatusTone(this.els.statusCoreApi, this.statusSummary.coreApi);
+    this.applyStatusTone(this.els.statusRuntimeHealth, this.statusSummary.runtimeHealth);
+    this.applyStatusTone(this.els.statusMemory, this.statusSummary.memory);
+    this.applyStatusTone(this.els.statusLastAction, this.statusSummary.lastAction);
+
+    // --- compact strip chips (new layout, separate elements) ---
+    if (this.els.statusCoreApiChip) {
+      this.els.statusCoreApiChip.textContent = this.statusSummary.coreApi;
+      this.applyStatusTone(this.els.statusCoreApiChip, this.statusSummary.coreApi);
+    }
+    if (this.els.statusRuntimeHealthChip) {
+      this.els.statusRuntimeHealthChip.textContent = this.statusSummary.runtimeHealth;
+      this.applyStatusTone(this.els.statusRuntimeHealthChip, this.statusSummary.runtimeHealth);
+    }
+    if (this.els.statusActiveProfileChip) {
+      this.els.statusActiveProfileChip.textContent = this.statusSummary.activeProfile;
+    }
+    if (this.els.statusOperatorModeChip) {
+      this.els.statusOperatorModeChip.textContent = this.statusSummary.operatorMode;
+    }
+    if (this.els.statusLastCheckedChip) {
+      this.els.statusLastCheckedChip.textContent = this.statusSummary.lastChecked;
+    }
+  }
+
+  refreshStatusTimestamp() {
+    const date = new Date();
+    this.statusSummary.lastChecked = `last checked ${date.toLocaleTimeString()}`;
+  }
+
+  openDiagnosticsDrawer() {
+    this.diagnosticsDrawerOpen = true;
+    if (this.els.diagnosticsDrawer) {
+      this.els.diagnosticsDrawer.classList.add('open');
+    }
+    if (this.els.diagnosticsBackdrop) {
+      this.els.diagnosticsBackdrop.classList.remove('hidden');
+    }
+    if (this.els.diagnosticsToggleButton) {
+      this.els.diagnosticsToggleButton.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  closeDiagnosticsDrawer() {
+    this.diagnosticsDrawerOpen = false;
+    if (this.els.diagnosticsDrawer) {
+      this.els.diagnosticsDrawer.classList.remove('open');
+    }
+    if (this.els.diagnosticsBackdrop) {
+      this.els.diagnosticsBackdrop.classList.add('hidden');
+    }
+    if (this.els.diagnosticsToggleButton) {
+      this.els.diagnosticsToggleButton.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  applyStatusTone(el, rawValue) {
+    if (!el) return;
+    const value = String(rawValue || '').toLowerCase();
+    const positive = ['ok', 'reachable', 'available', 'read-only', 'none', 'unknown'];
+    const negative = ['unreachable', 'failed', 'degraded', 'denied', 'error'];
+
+    const isNegative = negative.some((token) => value.includes(token));
+    const isPositive = positive.some((token) => value.includes(token));
+
+    el.classList.toggle('status-bad', isNegative);
+    el.classList.toggle('status-ok', !isNegative && isPositive);
+  }
+
+  appendReceiptField(container, label, value) {
+    const row = document.createElement('div');
+    row.className = 'receipt-field';
+
+    const key = document.createElement('span');
+    key.className = 'receipt-field-key';
+    key.textContent = `${label}:`;
+
+    const val = document.createElement('span');
+    val.className = 'receipt-field-value';
+    val.textContent = this.receiptField(value);
+
+    row.append(key, val);
+    container.append(row);
+  }
+
+  operatorChipLabel(actionName, status) {
+    const normalizedAction = String(actionName || 'operator_action');
+    const normalizedStatus = String(status || 'unknown');
+    if (normalizedAction === 'read_only_guard' && normalizedStatus === 'denied') {
+      return 'mutation denied';
+    }
+    return `${normalizedAction} ${normalizedStatus}`;
+  }
+
+  summarizeContextReceipt(value) {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+
+    const id = this.extractReceiptId(text);
+    if (id !== text) {
+      if (text.toLowerCase().includes('verified status')) {
+        return `Verified Status ${id}`;
+      }
+      return id;
+    }
+
+    return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+  }
+
+  extractReceiptId(value) {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    const match = text.match(/(XV7-[A-Z-]+-\d+)/);
+    return match ? match[1] : text;
+  }
+
+  resolveAssistantVisibleText(metadata, content) {
+    const meta = metadata && typeof metadata === 'object' ? metadata : {};
+    const fromMeta = typeof meta.visible_text === 'string' ? meta.visible_text.trim() : '';
+    if (fromMeta) return fromMeta;
+
+    const stripped = this.stripReasoningTokens(String(content || '')).trim();
+    if (!stripped) return 'No assistant content returned.';
+
+    if (this.looksLikeStructuredPayload(stripped)) {
+      return 'Structured response received. Expand receipts for details.';
+    }
+
+    return stripped;
+  }
+
+  looksLikeStructuredPayload(text) {
+    if (!text) return false;
+    const first = text[0];
+    if (first !== '{' && first !== '[') return false;
+    try {
+      JSON.parse(text);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   receiptField(value) {

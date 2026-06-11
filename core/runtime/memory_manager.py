@@ -93,6 +93,7 @@ class MemoryManager:
         session_id: UUID,
         role: MessageRole,
         raw_text: str,
+        message_metadata: dict[str, Any] | None = None,
     ) -> SessionState:
         """Parse and append a message to session memory.
 
@@ -117,6 +118,7 @@ class MemoryManager:
             role=role,
             content=visible_content,
             reasoning_content=reasoning_content,
+            metadata=message_metadata or {},
         )
 
         async with self._lock:

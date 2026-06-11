@@ -7,12 +7,8 @@ function okJson(payload) {
   return {
     ok: true,
     status: 200,
-    async json() {
-      return payload;
-    },
-    async text() {
-      return JSON.stringify(payload);
-    },
+    async json() { return payload; },
+    async text() { return JSON.stringify(payload); },
   };
 }
 
@@ -20,12 +16,8 @@ function errorText(status, message) {
   return {
     ok: false,
     status,
-    async json() {
-      return { detail: message };
-    },
-    async text() {
-      return message;
-    },
+    async json() { return { detail: message }; },
+    async text() { return message; },
   };
 }
 
@@ -39,10 +31,12 @@ function buildDom() {
     <div id="hardwareLoadBar"></div>
     <section id="alertBox" class="hidden"></section>
     <ul id="retrievalJournal"></ul>
-    <section id="chatTimeline"></section>
+    <button id="copyChatButton"></button>
+    <div id="copyToast" class="hidden"></div>
+    <div id="chatTimeline"></div>
     <textarea id="promptInput"></textarea>
+    <button id="micButton"></button>
     <button id="sendButton"></button>
-
     <span id="modelActiveProfile"></span>
     <span id="modelProfileSource"></span>
     <span id="modelOllamaReachable"></span>
@@ -59,13 +53,30 @@ function buildDom() {
     <span id="modelAvailabilityCode"></span>
     <span id="modelAvailabilityEmbedding"></span>
     <p id="modelPanelStatus"></p>
-
     <span id="chatReceiptProfile"></span>
     <span id="chatReceiptSource"></span>
     <span id="chatReceiptRole"></span>
     <span id="chatReceiptModelTag"></span>
     <span id="chatReceiptSelectionSource"></span>
     <span id="chatReceiptRequestId"></span>
+    <ul id="operatorActivityList"></ul>
+    <span id="statusCoreApi"></span>
+    <span id="statusRuntimeHealth"></span>
+    <span id="statusActiveProfile"></span>
+    <span id="statusOperatorMode"></span>
+    <span id="statusMemory"></span>
+    <span id="statusLastAction"></span>
+    <span id="statusLastChecked"></span>
+    <span id="statusCoreApiChip"></span>
+    <span id="statusRuntimeHealthChip"></span>
+    <span id="statusActiveProfileChip"></span>
+    <span id="statusOperatorModeChip"></span>
+    <span id="statusLastCheckedChip"></span>
+    <div id="operatorSummaryChip" class="hidden"></div>
+    <aside id="diagnosticsDrawer"></aside>
+    <div id="diagnosticsBackdrop" class="hidden"></div>
+    <button id="diagnosticsToggleButton"></button>
+    <button id="diagnosticsCloseButton"></button>
   `;
 }
 
@@ -216,10 +227,88 @@ function createRuntimeFetchMock(options = {}) {
     }
 
     if (path === '/api/sessions/session-1/messages' && method === 'POST') {
+      const body = JSON.parse(init.body || '{}');
+      const prompt = String(body.raw_text || '').toLowerCase();
+      let operatorReceipts = [];
+      let answer = 'XV7_MODEL_PROOF';
+      let actionHistory = [];
+      let contextReceipt = { compact: 'Context receipt: Verified Status XV7-VERIFIED-0001.' };
+      let memoryReceipts = [];
+
+      if (prompt.includes('check the repo')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-1',
+            action_name: 'repo_status',
+            status: 'success',
+            mode: 'read_only',
+            target: '/workspace',
+            receipt_label: 'repo_status OP-1',
+            read_only: true,
+            started_at: '2026-06-11T00:00:00Z',
+            completed_at: '2026-06-11T00:00:01Z',
+            exit_code: 0,
+            safety: { allowed: true, read_only: true },
+            summary: 'repo checked',
+            limitation: '',
+            data_preview: { branch: 'main' },
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'The repo is on main. The working tree is not clean.';
+      } else if (prompt.includes('containers')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-2',
+            action_name: 'docker_compose_ps',
+            status: 'failed',
+            mode: 'read_only',
+            target: '/workspace',
+            receipt_label: 'docker_compose_ps OP-2',
+            read_only: true,
+            started_at: '2026-06-11T00:00:02Z',
+            completed_at: '2026-06-11T00:00:03Z',
+            exit_code: 127,
+            safety: { allowed: true, read_only: true },
+            summary: 'unavailable',
+            limitation: 'Container status cannot be proven.',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'Container status cannot be proven from inside xv7-core.';
+      } else if (prompt.includes('delete')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-3',
+            action_name: 'read_only_guard',
+            status: 'denied',
+            mode: 'read_only',
+            target: '/workspace',
+            receipt_label: 'read_only_guard OP-3',
+            read_only: true,
+            started_at: '2026-06-11T00:00:04Z',
+            completed_at: '2026-06-11T00:00:04Z',
+            exit_code: null,
+            safety: { allowed: false, read_only: true },
+            summary: 'denied mutation',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'B7 is read-only right now. I denied that request.';
+      } else if (prompt.includes('remember')) {
+        answer = 'Saved that preference as active memory.';
+        memoryReceipts = ['Memory receipt: XV7-MEMORY-0002 active.'];
+        contextReceipt = { compact: 'Context receipt: Memory XV7-MEMORY-0002.' };
+      }
+
       return okJson({
         session_id: 'session-1',
         current_persona: 'default',
         metadata: {
+          operator_action_history: actionHistory,
           model_use_receipt: {
             model_profile: state.activeProfile,
             profile_source: state.source,
@@ -231,7 +320,22 @@ function createRuntimeFetchMock(options = {}) {
         },
         messages: [
           { role: 'user', content: 'x' },
-          { role: 'assistant', content: 'XV7_MODEL_PROOF' },
+          {
+            role: 'assistant',
+            content: answer,
+            metadata: {
+              visible_text: answer,
+              context_receipt: contextReceipt,
+              operator_receipts: operatorReceipts,
+              memory_receipts: memoryReceipts,
+              model_use_receipt: {
+                model_tag: profiles[state.activeProfile].chat,
+              },
+              policy_provenance: { policy_source: 'operator_manager' },
+              warnings: [],
+              action_history_refs: operatorReceipts.map((item) => item.action_id),
+            },
+          },
         ],
       });
     }
@@ -250,6 +354,11 @@ describe('ModelProfileControl', () => {
   beforeEach(() => {
     buildDom();
     window.__XV7_DISABLE_AUTO_INIT = true;
+    navigator.clipboard = {
+      writeText: vi.fn().mockResolvedValue(undefined),
+    };
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
   });
 
   it('renders active profile and available profiles', async () => {
@@ -335,6 +444,76 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
   });
 
+  it('renders operator receipt chip and expandable details', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const chip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').includes('Operator: repo_status success'),
+    );
+    expect(chip).toBeTruthy();
+
+    const details = [...document.querySelectorAll('.receipt-details summary')].find((node) =>
+      (node.textContent || '').includes('repo_status OP-1'),
+    );
+    expect(details).toBeTruthy();
+  });
+
+  it('renders failed and denied receipt status styles', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Are containers running?';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const failedChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').includes('docker_compose_ps failed'),
+    );
+    expect(failedChip).toBeTruthy();
+    expect(failedChip.className.includes('status-failed')).toBe(true);
+
+    prompt.value = 'Delete a file.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    // operatorChipLabel maps read_only_guard+denied → 'mutation denied'
+    const deniedChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').includes('mutation denied'),
+    );
+    expect(deniedChip).toBeTruthy();
+    expect(deniedChip.className.includes('status-denied')).toBe(true);
+  });
+
+  it('renders operator activity panel from recent action history', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const items = [...document.querySelectorAll('.operator-activity-item')];
+    expect(items.length).toBeGreaterThan(0);
+    expect((items[0].textContent || '').toLowerCase()).toContain('repo_status');
+  });
+
   it('clear action sends DELETE /api/runtime/models/active via proxy path', async () => {
     const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
     global.fetch = fetchMock;
@@ -389,5 +568,234 @@ describe('ModelProfileControl', () => {
     });
 
     expect(putCalls.length).toBe(1);
+  });
+
+  it('Enter sends prompt; Shift+Enter does not send', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+    fetchMock.mockClear();
+
+    const input = document.getElementById('promptInput');
+    input.value = 'hello';
+
+    // Shift+Enter must NOT send
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+    await flushAsync();
+    const afterShift = fetchMock.mock.calls.filter((c) =>
+      new URL(c[0], 'http://localhost').pathname === '/api/sessions' && (c[1]?.method || '').toUpperCase() === 'POST'
+    );
+    expect(afterShift.length).toBe(0);
+
+    // Plain Enter MUST send
+    input.value = 'hello';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false, bubbles: true }));
+    await flushAsync();
+    const afterEnter = fetchMock.mock.calls.filter((c) =>
+      new URL(c[0], 'http://localhost').pathname === '/api/sessions' && (c[1]?.method || '').toUpperCase() === 'POST'
+    );
+    expect(afterEnter.length).toBe(1);
+  });
+
+  it('disables mic and shows unsupported message when speech recognition is unavailable', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const micButton = document.getElementById('micButton');
+    expect(micButton.disabled).toBe(true);
+
+    ui.toggleVoiceInput();
+    expect(document.getElementById('alertBox').textContent).toContain('Voice input is not supported in this browser.');
+  });
+
+  it('writes transcript to prompt and does not auto-send', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+
+      start() {
+        if (this.onstart) this.onstart();
+      }
+
+      stop() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    const ui = new Xv7UI();
+    await flushAsync();
+    fetchMock.mockClear();
+
+    ui.toggleVoiceInput();
+    expect(document.getElementById('micButton').textContent).toContain('Listening...');
+
+    ui.speechRecognition.onresult({
+      results: [[{ transcript: 'voice draft text' }]],
+    });
+    await flushAsync();
+
+    expect(document.getElementById('promptInput').value).toBe('voice draft text');
+
+    const messageCalls = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] || {};
+      return new URL(call[0], 'http://localhost').pathname.includes('/messages') && (init.method || '').toUpperCase() === 'POST';
+    });
+    expect(messageCalls.length).toBe(0);
+  });
+
+  it('shows permission denied message from microphone errors', async () => {
+    class SpeechRecognitionMock {
+      constructor() {
+        this.onstart = null;
+        this.onend = null;
+        this.onresult = null;
+        this.onerror = null;
+      }
+
+      start() {
+        if (this.onerror) this.onerror({ error: 'not-allowed' });
+      }
+
+      stop() {}
+    }
+
+    window.SpeechRecognition = SpeechRecognitionMock;
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.toggleVoiceInput();
+    expect(document.getElementById('alertBox').textContent).toContain('Microphone permission was denied.');
+  });
+
+  it('copies entire chat with visible content and compact receipts only', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    document.getElementById('copyChatButton').click();
+    await flushAsync();
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+    const copiedText = navigator.clipboard.writeText.mock.calls[0][0];
+    expect(copiedText).toContain('User:');
+    expect(copiedText).toContain('Xoduz:');
+    expect(copiedText).toContain('Operator receipt:');
+    expect(copiedText).not.toContain('{"');
+    expect(document.getElementById('copyToast').textContent).toContain('Chat copied.');
+  });
+
+  it('copies individual message content and keeps assistant receipts compact', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const copyButtons = [...document.querySelectorAll('.message-copy-button')];
+    expect(copyButtons.length).toBeGreaterThan(1);
+
+    copyButtons[0].click();
+    await flushAsync();
+    const userCopy = navigator.clipboard.writeText.mock.calls.at(-1)[0];
+    expect(userCopy).toContain('User:');
+
+    copyButtons[1].click();
+    await flushAsync();
+    const assistantCopy = navigator.clipboard.writeText.mock.calls.at(-1)[0];
+    expect(assistantCopy).toContain('Xoduz:');
+    expect(assistantCopy).toContain('Receipt:');
+    expect(document.getElementById('copyToast').textContent).toContain('Copied.');
+  });
+
+  it('renders context receipt chip as Context, not Operator', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Return exactly: XV7_MODEL_PROOF';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
+    expect(chips.some((text) => text.startsWith('Context:'))).toBe(true);
+    expect(chips.some((text) => text.startsWith('Context: Operator receipt:'))).toBe(false);
+  });
+
+  it('renders memory receipts with Memory label', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Remember this preference';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const memoryChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').includes('Memory:'),
+    );
+    expect(memoryChip).toBeTruthy();
+  });
+
+  it('renders operator action receipts with Operator label', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const operatorChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').startsWith('Operator:'),
+    );
+    expect(operatorChip).toBeTruthy();
+  });
+
+  it('renders model receipt with Model label', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Return exactly: XV7_MODEL_PROOF';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const modelChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').startsWith('Model:'),
+    );
+    expect(modelChip).toBeTruthy();
   });
 });

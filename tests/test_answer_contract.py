@@ -81,7 +81,55 @@ def test_active_focus_answer_uses_b51_transition_focus() -> None:
     )
 
     assert answer is not None
-    assert "B5.1 provenance cleanup" in answer
+    assert "B8.2 brain content fill and communication routing repair" in answer
+
+
+def test_user_name_answer_comes_from_memory() -> None:
+    contract = AnswerContract()
+    answer = contract.try_answer(
+        "What is my name?",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+
+    assert answer == "Your name is Otis Duncan."
+
+
+def test_vs_code_prompt_help_is_allowed_not_denied() -> None:
+    contract = AnswerContract()
+    answer = contract.try_answer(
+        "Can you help write implementation prompts for VS Code/Copilot?",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+
+    assert answer is not None
+    assert "implementation prompts" in answer.lower()
+    assert "denied" not in answer.lower()
+
+
+def test_ui_self_knowledge_answers_are_direct() -> None:
+    contract = AnswerContract()
+
+    mic = contract.try_answer(
+        "Do you have a microphone button?",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+    autosend = contract.try_answer(
+        "Does the mic auto-send?",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+    theme = contract.try_answer(
+        "What color theme are we using?",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+
+    assert mic is not None and "yes" in mic.lower()
+    assert autosend is not None and "does not auto-send" in autosend.lower()
+    assert theme is not None and "neon-blue" in theme.lower()
 
 
 def test_operator_readiness_model_proof_answer_is_cautious() -> None:

@@ -39,6 +39,12 @@ class BrainRecord(BaseModel):
     title: str = Field(min_length=1)
     summary: str = Field(min_length=1)
     body: str = Field(min_length=1)
+    memory_type: Literal[
+        "user_profile",
+        "preference",
+        "project_note",
+        "working_memory",
+    ] | None = None
     status: Literal["active", "archived"] = "active"
     priority: int = 0
     tags: list[str] = Field(default_factory=list)

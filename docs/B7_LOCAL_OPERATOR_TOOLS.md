@@ -116,3 +116,44 @@ B7 acceptance requires tests for:
 - proof-gated repo-check claims in chat metadata/answers
 - honesty on failed operator action output
 - operator receipt presence in operator-backed chat replies
+
+## B7.2 Receipt UX And Action History
+
+Assistant messages now include structured payload metadata while preserving plain text fallback content.
+
+Message metadata includes:
+
+- `visible_text`
+- `context_receipt`
+- `operator_receipts`
+- `memory_receipts`
+- `model_use_receipt`
+- `policy_provenance`
+- `warnings`
+- `action_history_refs`
+
+Operator receipt structure includes:
+
+- `action_id`
+- `action_name`
+- `status`
+- `mode`
+- `target`
+- `receipt_label`
+- `read_only`
+- `started_at`
+- `completed_at`
+- `exit_code`
+- `safety`
+- `summary`
+- `limitation`
+- `data_preview`
+
+Session-scoped action history tracks read-only operator actions (success/failed/denied) and powers:
+
+- `Did you check the repo?`
+- `What did you just check?`
+- `Show the last operator receipt.`
+- `What operator actions have run?`
+
+Frontend renders operator receipts as compact chips below the natural assistant answer. Receipt details are collapsible, and Operator Activity shows recent actions with time/status/target/summary/action id.

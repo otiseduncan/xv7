@@ -71,6 +71,21 @@ class AnswerContract:
     ) -> BrainRecord | None:
         return records_by_layer.get(layer)
 
+    @staticmethod
+    def _extract_user_name(memory: BrainRecord | None) -> str | None:
+        if memory is None:
+            return None
+        for fact in memory.facts:
+            text = fact.statement.strip()
+            lowered = text.lower()
+            if "otis duncan" in lowered:
+                return "Otis Duncan"
+            if lowered.startswith("the user/operator is "):
+                value = text.split("is", 1)[-1].strip().strip(".")
+                if value:
+                    return value
+        return None
+
     def try_answer(
         self,
         question: str,
@@ -91,6 +106,14 @@ class AnswerContract:
                 return "Missing required record: system_prompt."
             identity = self._facts(system)
             return identity[0] if identity else system.summary
+
+        if normalized in {"what is my name?", "what is my name"}:
+            if memory is None:
+                return "Missing required record: memory."
+            user_name = self._extract_user_name(memory)
+            if user_name is None:
+                return "Memory record is loaded, but user identity is not present yet."
+            return f"Your name is {user_name}."
 
         if normalized in {
             "what are we working on?",
@@ -183,6 +206,113 @@ class AnswerContract:
             if not memory_facts:
                 return "Memory record is loaded but contains no memory facts."
             return "Memory facts: " + " ".join(f"- {item}" for item in memory_facts)
+
+        if normalized in {
+            "is that memory, knowledge, or verified status?",
+            "is that memory, knowledge, or verified status",
+        }:
+            return (
+                "Memory is remembered context (preferences/notes), "
+                "Knowledge is general system/project understanding, and "
+                "Verified Status is proof-backed execution/repo/runtime evidence."
+            )
+
+        if normalized in {
+            "are launch proofs memory?",
+            "are launch proofs memory",
+        }:
+            return "Launch proofs belong in Verified Status, not Memory."
+
+        if normalized in {
+            "is “otis wants fresh xv7 knowledge” verified or remembered?",
+            "is \"otis wants fresh xv7 knowledge\" verified or remembered?",
+            "is \"otis wants fresh xv7 knowledge\" verified or remembered",
+            "is otis wants fresh xv7 knowledge verified or remembered?",
+            "is otis wants fresh xv7 knowledge verified or remembered",
+        }:
+            return (
+                "That is remembered user/project preference unless separately proven in Verified Status."
+            )
+
+        if normalized in {
+            "what do you know about xv7 architecture?",
+            "what do you know about xv7 architecture",
+            "answer from knowledge only: what is xv7’s architecture?",
+            "answer from knowledge only: what is xv7's architecture?",
+            "answer from knowledge only: what is xv7 architecture?",
+        }:
+            if knowledge is None:
+                return "Missing required record: knowledge."
+            facts = self._facts(knowledge)
+            if not facts:
+                return "Knowledge record is loaded but has no facts."
+            return "Knowledge facts: " + " ".join(f"- {item}" for item in facts)
+
+        if normalized in {
+            "if we are planning an app, can you help me do that?",
+            "if we are planning an app, can you help me do that",
+            "can you help design the architecture?",
+            "can you help design the architecture",
+            "can you help write implementation prompts for vs code/copilot?",
+            "can you help write implementation prompts for vs code/copilot",
+            "write a vs code prompt for b8.2",
+        }:
+            return (
+                "Yes. I can help with app planning, architecture, implementation prompts for VS Code/Copilot, "
+                "task slicing, acceptance tests, and safe rollout guidance."
+            )
+
+        if normalized in {
+            "do you have a microphone button?",
+            "do you have a microphone button",
+        }:
+            return (
+                "Yes. The current UI includes a microphone button in the prompt row for browser voice input."
+            )
+
+        if normalized in {
+            "does the mic auto-send?",
+            "does the mic auto-send",
+        }:
+            return "No. Mic input fills the prompt box for review and does not auto-send."
+
+        if normalized in {
+            "what color theme are we using?",
+            "what color theme are we using",
+        }:
+            return "The UI uses a bright neon-blue accent theme on a dark chat-first layout."
+
+        if normalized in {
+            "do you have copy chat?",
+            "do you have copy chat",
+        }:
+            return "Yes. The chat header includes a Copy Chat control."
+
+        if normalized in {
+            "can i copy individual prompts?",
+            "can i copy individual prompts",
+        }:
+            return "Yes. Each user and assistant message includes its own copy button."
+
+        if normalized in {
+            "can you scan my local system?",
+            "can you scan my local system",
+        }:
+            return (
+                "I cannot run an unrestricted full-system scan. I can run approved read-only XV7 operator checks "
+                "such as repo status, runtime health, memory audit, logs summary, and operator environment."
+            )
+
+        if normalized in {
+            "answer from verified status only: what is proven?",
+            "answer from verified status only: what is proven",
+        }:
+            if verified is None:
+                return "Missing required record: verified_status."
+            facts = self._facts(verified)
+            if not facts:
+                return "Verified status record is present but has no facts."
+            return "Verified facts: " + " ".join(f"- {item}" for item in facts)
 
         if "guess" in normalized:
             focus_hint = focus.summary if focus is not None else "current focus is missing"

@@ -453,7 +453,7 @@ async def add_session_message(
         }
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
-            context_receipt={"compact": operator_receipt, "source": "operator_action"},
+            context_receipt={},
             operator_receipts=[structured_receipt],
             memory_receipts=[],
             model_use_receipt={},
@@ -523,7 +523,7 @@ async def add_session_message(
         }
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
-            context_receipt={"compact": memory_action.receipt, "source": "persistent_memory"},
+            context_receipt={},
             operator_receipts=[],
             memory_receipts=[memory_action.receipt] if memory_action.receipt else [],
             model_use_receipt={},
