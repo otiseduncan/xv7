@@ -13,6 +13,10 @@ from typing import Any
 import aiosqlite
 import httpx
 
+# Maximum number of embeddings to keep in the per-process cache.
+# At ~768 floats each (nomic-embed-text) this costs ≈1.5 MB for 512 entries.
+_EMBEDDING_CACHE_MAX = 512
+
 
 class VectorMemoryEngine:
     """Asynchronous semantic memory engine with Ollama embeddings.
@@ -36,6 +40,12 @@ class VectorMemoryEngine:
         ).rstrip("/")
         self._init_lock = asyncio.Lock()
         self._initialized = False
+
+        # Embedding cache: avoids re-embedding the same text twice per turn.
+        # Key: stripped text; Value: embedding vector.
+        # Eviction: FIFO once the cache exceeds _EMBEDDING_CACHE_MAX entries.
+        self._embed_cache: dict[str, list[float]] = {}
+        self._embed_cache_keys: list[str] = []
 
         timeout = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
         limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
@@ -84,10 +94,18 @@ class VectorMemoryEngine:
             self._initialized = True
 
     async def _get_embedding(self, text: str) -> list[float]:
-        """Generate an embedding vector via Ollama `/api/embeddings`."""
+        """Generate an embedding vector via Ollama `/api/embeddings`.
+
+        Results are cached in-process so the same text is never sent to Ollama
+        more than once per process lifetime (e.g. user query embedded for
+        similarity search and then again for storage in the same turn).
+        """
         cleaned = text.strip()
         if not cleaned:
             raise ValueError("Cannot embed empty text")
+
+        if cleaned in self._embed_cache:
+            return self._embed_cache[cleaned]
 
         payload = {
             "model": self._model_embed,
@@ -120,11 +138,20 @@ class VectorMemoryEngine:
             )
 
         try:
-            return [float(value) for value in vector]
+            floats = [float(value) for value in vector]
         except (TypeError, ValueError) as exc:
             raise ValueError(
                 "Invalid embedding response: non-numeric embedding values"
             ) from exc
+
+        # Write to cache with FIFO eviction.
+        if len(self._embed_cache) >= _EMBEDDING_CACHE_MAX:
+            oldest = self._embed_cache_keys.pop(0)
+            self._embed_cache.pop(oldest, None)
+        self._embed_cache[cleaned] = floats
+        self._embed_cache_keys.append(cleaned)
+
+        return floats
 
     async def store_memory(
         self,

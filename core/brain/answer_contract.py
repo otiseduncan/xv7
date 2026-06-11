@@ -109,6 +109,19 @@ class AnswerContract:
         return None
 
     @staticmethod
+    def _session_active_focus_summary(session_metadata: dict[str, Any]) -> str | None:
+        focus_payload = session_metadata.get("active_focus")
+        if isinstance(focus_payload, dict):
+            summary = str(focus_payload.get("summary", "")).strip()
+            if summary:
+                return summary
+        if isinstance(focus_payload, str):
+            summary = focus_payload.strip()
+            if summary:
+                return summary
+        return None
+
+    @staticmethod
     def _normalize_reminder_request(question: str) -> str:
         text = re.sub(r"\s+", " ", question.strip())
         text = re.sub(r"^(please\s+)?(set|create|add)\s+(me\s+)?(a\s+)?reminder\s+(for|to)\s+", "", text, flags=re.IGNORECASE)
@@ -479,10 +492,37 @@ class AnswerContract:
             "what are we working on",
             "what are we working on right now?",
             "what are we working on right now",
+            "what is your current active focus?",
+            "what is your current active focus",
+            "what is your active focus?",
+            "what is your active focus",
         }:
+            session_focus = self._session_active_focus_summary(session_metadata)
+            if session_focus is not None:
+                return session_focus
             if focus is None:
                 return "Missing required record: active_focus."
             return focus.summary
+
+        if normalized in {
+            "what did i just change your focus to?",
+            "what did i just change your focus to",
+        }:
+            session_focus = self._session_active_focus_summary(session_metadata)
+            if session_focus is not None:
+                return f"You just changed my active focus to: {session_focus}."
+            if focus is None:
+                return "Missing required record: active_focus."
+            return f"You just changed my active focus to: {focus.summary}."
+
+        if normalized in {
+            "what are you supposed to do when i correct you?",
+            "what are you supposed to do when i correct you",
+        }:
+            return (
+                "When you correct me, I should treat it as high-priority tuning input, "
+                "apply it immediately unless protected rules are involved, and keep the behavior grounded in your instructions."
+            )
 
         if normalized in {
             "what do you know is verified?",
@@ -526,10 +566,8 @@ class AnswerContract:
             if has_beta_ready_proof:
                 return "Verified: XV7 has explicit beta-ready proof in loaded verified records."
 
-            focus_text = (
-                focus.summary
-                if focus is not None
-                else "active focus record is not loaded"
+            focus_text = self._session_active_focus_summary(session_metadata) or (
+                focus.summary if focus is not None else "active focus record is not loaded"
             )
             return (
                 "I do not have proof that XV7 is beta-ready yet. "

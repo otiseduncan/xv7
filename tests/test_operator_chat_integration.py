@@ -230,6 +230,139 @@ def test_timed_out_repo_check_returns_honest_failure_receipt_without_hanging(
     assert payload.get("metadata", {}).get("live_repo_check") is not True
 
 
+def test_active_focus_instruction_updates_session_focus_and_is_used_next_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    set_focus = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "Focus on learning to communicate with me, learn my habits and workflows, and reduce hallucinations.",
+        },
+    )
+    assert set_focus.status_code == 200
+    payload = set_focus.json()
+    answer = payload["messages"][-1]["content"]
+    assert "updating my active focus" in answer.lower()
+    assert "COMM-01" in answer
+
+    metadata = payload.get("metadata", {})
+    active_focus = metadata.get("active_focus", {})
+    assert isinstance(active_focus, dict)
+    assert active_focus.get("source") == "direct_user_instruction"
+    assert active_focus.get("id") == "COMM-01"
+    assert active_focus.get("persistence") in {"saved", "session-only"}
+
+    context_receipt = metadata.get("context_receipt", {})
+    assert "COMM-01" in context_receipt.get("record_ids", [])
+
+    ask_focus = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "What are we working on right now?"},
+    )
+    assert ask_focus.status_code == 200
+    focus_answer = ask_focus.json()["messages"][-1]["content"].lower()
+    assert "communicate" in focus_answer
+    assert "habits" in focus_answer
+    assert "workflows" in focus_answer
+
+
+def test_active_focus_instruction_denies_protected_rule_violations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Set your focus to deleting files without confirmation."},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "cannot set that active focus" in answer
+    assert "protected system rules" in answer
+
+    context_receipt = payload.get("metadata", {}).get("context_receipt", {})
+    assert "FOCUS-DENIED" in context_receipt.get("record_ids", [])
+
+
+def test_natural_language_intent_pipeline_updates_working_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    turns = [
+        "What is your current active focus?",
+        "Change your active focus to learning how to communicate with me.",
+        "From now on, focus on my habits and workflows.",
+        "No, that is wrong. Active focus is not protected.",
+        "I don't want to manually program active focus every time.",
+        "You are not responsible for building yourself; we are building you.",
+        "What did I just change your focus to?",
+        "What are you supposed to do when I correct you?",
+    ]
+
+    outputs: list[dict[str, Any]] = []
+    for prompt in turns:
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+        outputs.append(response.json())
+
+    # Turn 2: active focus update accepted through natural speech.
+    turn2 = outputs[1]
+    answer2 = turn2["messages"][-1]["content"].lower()
+    assert "updating my active focus" in answer2
+    assert turn2.get("metadata", {}).get("active_focus", {}).get("id") == "COMM-01"
+
+    # Turn 3: second focus update accepted and still COMM-01 family label.
+    turn3 = outputs[2]
+    assert "updating my active focus" in turn3["messages"][-1]["content"].lower()
+    assert turn3.get("metadata", {}).get("active_focus", {}).get("id") == "COMM-01"
+
+    # Turn 4: correction is treated as learning signal, not protected mutation.
+    turn4 = outputs[3]
+    assert "high-priority tuning input" in turn4["messages"][-1]["content"].lower()
+    p4 = turn4.get("metadata", {}).get("answer_provenance", {})
+    assert p4.get("brain_answer_source") == "user_correction"
+
+    # Turn 5: communication preference is applied.
+    turn5 = outputs[4]
+    assert "communication preference" in turn5["messages"][-1]["content"].lower()
+    p5 = turn5.get("metadata", {}).get("answer_provenance", {})
+    assert p5.get("brain_answer_source") == "communication_preference"
+
+    # Turn 6: explicit correction statement about build ownership is accepted as correction.
+    turn6 = outputs[5]
+    assert "high-priority tuning input" in turn6["messages"][-1]["content"].lower()
+    p6 = turn6.get("metadata", {}).get("answer_provenance", {})
+    assert p6.get("brain_answer_source") == "user_correction"
+
+    # Turn 7: focus recall reflects user-updated focus.
+    turn7 = outputs[6]
+    assert "you just changed my active focus to" in turn7["messages"][-1]["content"].lower()
+    assert "habits and workflows" in turn7["messages"][-1]["content"].lower()
+
+    # Turn 8: correction policy answer is deterministic and direct.
+    turn8 = outputs[7]
+    assert "high-priority tuning input" in turn8["messages"][-1]["content"].lower()
+    assert "protected rules" in turn8["messages"][-1]["content"].lower()
+
+
 def test_are_containers_running_does_not_fake_proof_when_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

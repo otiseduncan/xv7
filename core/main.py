@@ -177,6 +177,295 @@ def sanitize_visible_answer_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+ACTIVE_FOCUS_UPDATE_PREFIXES = (
+    "focus on ",
+    "from now on focus on ",
+    "change your active focus to ",
+    "change active focus to ",
+    "set your focus to ",
+    "set active focus to ",
+    "change your focus to ",
+    "change my focus to ",
+    "make your focus ",
+    "your active focus is ",
+)
+
+INTENT_CLASSES = {
+    "active_focus_update",
+    "user_correction",
+    "communication_preference",
+    "workflow_habit_learning",
+    "protected_mutation_request",
+    "status_question",
+    "normal_question",
+    "implementation_task",
+}
+
+PROTECTED_MUTATION_PATTERN = re.compile(
+    r"\b("
+    r"delete|remove|drop|destroy|format|wipe|erase|"
+    r"shutdown|restart service|reset hard|git reset|"
+    r"truncate|overwrite|force remove|rm -rf|"
+    r"delete the memory database|delete memory database"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+IMPLEMENTATION_TASK_PATTERN = re.compile(
+    r"\b(implement|build|create|add|update|fix|refactor|wire|ship|patch|test)\b",
+    flags=re.IGNORECASE,
+)
+
+STATUS_QUESTION_PATTERN = re.compile(
+    r"^(what|which|who|when|where|why|how|did|do|does|is|are|can)\b",
+    flags=re.IGNORECASE,
+)
+
+CORRECTION_PREFIXES = (
+    "no, that is wrong",
+    "no that is wrong",
+    "that is wrong",
+    "you're wrong",
+    "you are wrong",
+    "incorrect",
+)
+
+COMMUNICATION_PREFERENCE_MARKERS = (
+    "i don't want",
+    "i do not want",
+    "i want you to",
+    "prefer",
+    "keep answers",
+    "don't over-explain",
+    "do not over-explain",
+    "be direct",
+)
+
+WORKFLOW_HABIT_MARKERS = (
+    "my habits",
+    "my workflow",
+    "my workflows",
+    "how i work",
+    "how i build",
+    "how i make decisions",
+    "the way i work",
+)
+
+
+def _normalize_intent_text(text: str) -> str:
+    lowered = text.lower().strip().replace("’", "'")
+    lowered = re.sub(r"[\s,]+", " ", lowered)
+    return lowered
+
+ACTIVE_FOCUS_PROTECTED_PATTERN = re.compile(
+    r"\b("
+    r"delete|remove|destroy|format|wipe|erase|"
+    r"bypass safety|disable safety|ignore safety|"
+    r"exfiltrate|steal|credential theft|malware|ransomware|"
+    r"without confirmation|without approval|without receipts"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_active_focus_instruction(question: str) -> str | None:
+    stripped = question.strip()
+    normalized = _normalize_intent_text(stripped)
+
+    if normalized.startswith("please "):
+        normalized = normalized[len("please ") :]
+    for prefix in ACTIVE_FOCUS_UPDATE_PREFIXES:
+        if normalized.startswith(prefix):
+            focus_text = normalized[len(prefix) :].strip(" .!?")
+            if len(focus_text) >= 3:
+                return focus_text
+
+    from_now_on_match = re.match(r"^from now on\s*,?\s*focus on\s+(.+)$", normalized)
+    if from_now_on_match:
+        focus_text = from_now_on_match.group(1).strip(" .!?")
+        if len(focus_text) >= 3:
+            return focus_text
+
+    return None
+
+
+def _extract_after_prefixes(normalized: str, prefixes: tuple[str, ...]) -> str:
+    for prefix in prefixes:
+        if normalized.startswith(prefix):
+            return normalized[len(prefix) :].strip(" .!?")
+    return normalized.strip(" .!?")
+
+
+def _classify_speech_act(question: str) -> str:
+    normalized = _normalize_intent_text(question)
+
+    if _extract_active_focus_instruction(question) is not None:
+        return "active_focus_update"
+
+    if any(normalized.startswith(prefix) for prefix in CORRECTION_PREFIXES):
+        return "user_correction"
+
+    if "you are not responsible for building yourself" in normalized:
+        return "user_correction"
+
+    if any(marker in normalized for marker in WORKFLOW_HABIT_MARKERS):
+        return "workflow_habit_learning"
+
+    if any(marker in normalized for marker in COMMUNICATION_PREFERENCE_MARKERS):
+        return "communication_preference"
+
+    if PROTECTED_MUTATION_PATTERN.search(normalized):
+        return "protected_mutation_request"
+
+    if STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?"):
+        return "status_question"
+
+    if IMPLEMENTATION_TASK_PATTERN.search(normalized):
+        return "implementation_task"
+
+    return "normal_question"
+
+
+def _extract_correction_text(question: str) -> str:
+    normalized = _normalize_intent_text(question)
+    return _extract_after_prefixes(normalized, CORRECTION_PREFIXES)
+
+
+def _extract_preference_text(question: str) -> str:
+    normalized = _normalize_intent_text(question)
+    return normalized.strip(" .!?")
+
+
+def _extract_workflow_habit_text(question: str) -> str:
+    normalized = _normalize_intent_text(question)
+    return normalized.strip(" .!?")
+
+
+def _append_learning_signal(session_metadata: dict[str, Any], signal: dict[str, Any]) -> None:
+    current = session_metadata.get("learning_signals")
+    if not isinstance(current, list):
+        current = []
+    current.append(signal)
+    session_metadata["learning_signals"] = current[-50:]
+
+
+def _intent_context_receipt(
+    *,
+    intent_class: str,
+    record_id: str,
+    source: str,
+    persistence: str,
+    status: str,
+) -> dict[str, Any]:
+    return {
+        "compact": (
+            f"Context receipt: Intent {intent_class} "
+            f"(record={record_id}; source={source}; persistence={persistence}; status={status})."
+        ),
+        "context_receipts": [
+            {
+                "layer": "memory",
+                "record_id": record_id,
+                "source": source,
+                "persistence": persistence,
+                "status": status,
+                "intent_class": intent_class,
+            }
+        ],
+        "record_ids": [record_id],
+    }
+
+
+def _focus_violates_protected_rules(focus_text: str) -> bool:
+    return bool(ACTIVE_FOCUS_PROTECTED_PATTERN.search(focus_text))
+
+
+def _focus_label_for_text(focus_text: str) -> str:
+    lowered = focus_text.lower()
+    if any(token in lowered for token in ("communicat", "habit", "workflow")):
+        return "COMM-01"
+    return "FOCUS-USER"
+
+
+def _active_focus_system_prompt(session_metadata: dict[str, Any]) -> str:
+    focus = session_metadata.get("active_focus")
+    if not isinstance(focus, dict):
+        return ""
+
+    label = str(focus.get("id", "FOCUS-USER")).strip() or "FOCUS-USER"
+    summary = str(focus.get("summary", "")).strip()
+    if not summary:
+        return ""
+
+    return (
+        "--- ACTIVE FOCUS (DIRECT USER INSTRUCTION) ---\n"
+        f"{label} — {summary}\n"
+        "Treat this as the current working priority until the user changes it.\n"
+        "Do not confuse roadmap phase with active user focus.\n"
+        "----------------------------------------------\n"
+    )
+
+
+async def _persist_session_focus_fact(
+    *,
+    session_id: UUID,
+    focus_payload: dict[str, Any],
+) -> bool:
+    try:
+        existing = await get_session_facts(str(session_id))
+        existing["xv7_active_focus"] = focus_payload
+        await upsert_session_facts(str(session_id), existing)
+        return True
+    except Exception:
+        return False
+
+
+def _is_focus_status_question(question: str) -> bool:
+    normalized = " ".join(question.lower().strip().split())
+    return normalized in {
+        "what are we working on?",
+        "what are we working on",
+        "what are we working on right now?",
+        "what are we working on right now",
+        "what is your current active focus?",
+        "what is your current active focus",
+        "what is your active focus?",
+        "what is your active focus",
+        "what did i just change your focus to?",
+        "what did i just change your focus to",
+    }
+
+
+def _session_focus_context_receipt(session_metadata: dict[str, Any]) -> dict[str, Any] | None:
+    focus = session_metadata.get("active_focus")
+    if not isinstance(focus, dict):
+        return None
+
+    focus_id = str(focus.get("id", "")).strip()
+    focus_summary = str(focus.get("summary", "")).strip()
+    source = str(focus.get("source", "direct_user_instruction")).strip() or "direct_user_instruction"
+    persistence = str(focus.get("persistence", "session-only")).strip() or "session-only"
+    if not focus_id or not focus_summary:
+        return None
+
+    return {
+        "compact": (
+            f"Context receipt: Active Focus {focus_id} "
+            f"(source={source}; persistence={persistence})."
+        ),
+        "context_receipts": [
+            {
+                "layer": "active_focus",
+                "record_id": focus_id,
+                "source": source,
+                "persistence": persistence,
+                "status": "active",
+            }
+        ],
+        "record_ids": [focus_id],
+    }
+
+
 async def ensure_session_facts_table() -> None:
     async with aiosqlite.connect(facts_db_path) as conn:
         await conn.execute(
@@ -582,6 +871,395 @@ async def add_session_message(
 
     session_state = await memory_manager.get_session(session_id)
     inference_state = session_state.model_copy(deep=True)
+    intent_class = _classify_speech_act(payload.raw_text)
+
+    current_history = get_history(session_state.metadata)
+    action_history_refs = [
+        str(item.get("action_id", ""))
+        for item in current_history[-5:]
+        if isinstance(item, dict) and str(item.get("action_id", ""))
+    ]
+
+    if intent_class == "user_correction":
+        correction_text = _extract_correction_text(payload.raw_text)
+        persisted = True
+        record_id = "MEMORY-UNAVAILABLE"
+        try:
+            record = persistent_memory_manager.create_active_memory(
+                content=f"User correction (high priority): {correction_text}",
+                source="user_explicit",
+                memory_type="correction",
+                tags=["learning", "correction", "high-priority"],
+                confidence=0.98,
+            )
+            record_id = record.id
+        except Exception:
+            persisted = False
+
+        _append_learning_signal(
+            session_state.metadata,
+            {
+                "type": "user_correction",
+                "content": correction_text,
+                "source": "direct_user_instruction",
+            },
+        )
+
+        persistence_label = "saved" if persisted else "session-only"
+        visible_text = (
+            "Understood. I will treat that correction as high-priority tuning input and apply it immediately, "
+            "unless protected rules are involved."
+        )
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_intent_context_receipt(
+                intent_class="user_correction",
+                record_id=record_id,
+                source="direct_user_instruction",
+                persistence=persistence_label,
+                status="applied",
+            ),
+            operator_receipts=[],
+            memory_receipts=[f"Memory: {record_id}"] if persisted else [],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "intent_router",
+                "brain_answer_source": "user_correction",
+                "intent_class": intent_class,
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    if intent_class == "communication_preference":
+        preference_text = _extract_preference_text(payload.raw_text)
+        persisted = True
+        record_id = "MEMORY-UNAVAILABLE"
+        try:
+            record = persistent_memory_manager.create_active_memory(
+                content=f"Communication preference: {preference_text}",
+                source="user_explicit",
+                memory_type="user_preference",
+                tags=["learning", "communication", "preference"],
+                confidence=0.96,
+            )
+            record_id = record.id
+        except Exception:
+            persisted = False
+
+        _append_learning_signal(
+            session_state.metadata,
+            {
+                "type": "communication_preference",
+                "content": preference_text,
+                "source": "direct_user_instruction",
+            },
+        )
+
+        persistence_label = "saved" if persisted else "session-only"
+        visible_text = (
+            "Understood. I recorded that as a communication preference and will use it as working behavior going forward."
+        )
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_intent_context_receipt(
+                intent_class="communication_preference",
+                record_id=record_id,
+                source="direct_user_instruction",
+                persistence=persistence_label,
+                status="applied",
+            ),
+            operator_receipts=[],
+            memory_receipts=[f"Memory: {record_id}"] if persisted else [],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "intent_router",
+                "brain_answer_source": "communication_preference",
+                "intent_class": intent_class,
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    if intent_class == "workflow_habit_learning":
+        workflow_text = _extract_workflow_habit_text(payload.raw_text)
+        persisted = True
+        record_id = "MEMORY-UNAVAILABLE"
+        try:
+            record = persistent_memory_manager.create_active_memory(
+                content=f"Workflow/habit learning signal: {workflow_text}",
+                source="user_explicit",
+                memory_type="workflow_note",
+                tags=["learning", "workflow", "habits"],
+                confidence=0.96,
+            )
+            record_id = record.id
+        except Exception:
+            persisted = False
+
+        _append_learning_signal(
+            session_state.metadata,
+            {
+                "type": "workflow_habit_learning",
+                "content": workflow_text,
+                "source": "direct_user_instruction",
+            },
+        )
+
+        persistence_label = "saved" if persisted else "session-only"
+        visible_text = (
+            "Understood. I recorded that as workflow/habit learning and will adapt to it as current working behavior."
+        )
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_intent_context_receipt(
+                intent_class="workflow_habit_learning",
+                record_id=record_id,
+                source="direct_user_instruction",
+                persistence=persistence_label,
+                status="applied",
+            ),
+            operator_receipts=[],
+            memory_receipts=[f"Memory: {record_id}"] if persisted else [],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "intent_router",
+                "brain_answer_source": "workflow_habit_learning",
+                "intent_class": intent_class,
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    active_focus_instruction = _extract_active_focus_instruction(payload.raw_text)
+    if active_focus_instruction is not None:
+        if _focus_violates_protected_rules(active_focus_instruction):
+            visible_text = (
+                "I cannot set that Active Focus because it conflicts with protected system rules "
+                "(safety, destructive behavior, or bypassing approval boundaries). "
+                "Please give a safe working focus and I will apply it immediately."
+            )
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt={
+                    "compact": "Context receipt: Active Focus denied by protected rules.",
+                    "context_receipts": [
+                        {
+                            "layer": "active_focus",
+                            "record_id": "FOCUS-DENIED",
+                            "source": "direct_user_instruction",
+                            "persistence": "none",
+                            "status": "denied",
+                        }
+                    ],
+                    "record_ids": ["FOCUS-DENIED"],
+                },
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "active_focus_intent",
+                    "brain_answer_source": "active_focus_denied",
+                    "intent_class": intent_class,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=action_history_refs,
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+        focus_id = _focus_label_for_text(active_focus_instruction)
+        focus_summary = active_focus_instruction.strip()
+        focus_payload = {
+            "id": focus_id,
+            "summary": focus_summary,
+            "source": "direct_user_instruction",
+        }
+        persisted = await _persist_session_focus_fact(
+            session_id=session_id,
+            focus_payload=focus_payload,
+        )
+        focus_payload["persistence"] = "saved" if persisted else "session-only"
+        session_state.metadata["active_focus"] = focus_payload
+
+        visible_text = (
+            "Understood. I'm updating my Active Focus.\n\n"
+            "New Active Focus:\n"
+            f"{focus_id} - {focus_summary}\n\n"
+            "I will treat this as the current priority until you change it."
+        )
+
+        context_receipt = {
+            "compact": (
+                f"Context receipt: Active Focus {focus_id} "
+                f"(source=direct_user_instruction; persistence={focus_payload['persistence']})."
+            ),
+            "context_receipts": [
+                {
+                    "layer": "active_focus",
+                    "record_id": focus_id,
+                    "source": "direct_user_instruction",
+                    "persistence": focus_payload["persistence"],
+                    "status": "active",
+                }
+            ],
+            "record_ids": [focus_id],
+        }
+
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=context_receipt,
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "active_focus_intent",
+                "brain_answer_source": "active_focus_update",
+                "intent_class": intent_class,
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        updated_state.metadata["active_focus"] = focus_payload
+        _append_learning_signal(
+            updated_state.metadata,
+            {
+                "type": "active_focus_update",
+                "content": focus_summary,
+                "source": "direct_user_instruction",
+            },
+        )
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    focus_prompt = _active_focus_system_prompt(session_state.metadata)
+    if focus_prompt:
+        inference_state.messages.insert(
+            0,
+            ConversationMessage(role="system", content=focus_prompt),
+        )
 
     operator_action = operator_manager.try_handle_chat(
         payload.raw_text,
@@ -745,9 +1423,14 @@ async def add_session_message(
             "session_id": str(session_id),
             "runtime_model_inference_proven": False,
         }
+        effective_context_receipt = brain_context.receipt
+        if _is_focus_status_question(payload.raw_text):
+            override_receipt = _session_focus_context_receipt(session_state.metadata)
+            if override_receipt is not None:
+                effective_context_receipt = override_receipt
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
-            context_receipt=brain_context.receipt,
+            context_receipt=effective_context_receipt,
             operator_receipts=[],
             memory_receipts=[],
             model_use_receipt={},
@@ -778,7 +1461,7 @@ async def add_session_message(
         )
         updated_state.metadata["answer_provenance"] = policy_provenance
         updated_state.metadata["vector_memory"] = vector_memory_receipt
-        updated_state.metadata["context_receipt"] = brain_context.receipt
+        updated_state.metadata["context_receipt"] = effective_context_receipt
         updated_state.metadata["last_assistant_payload"] = assistant_payload
         await memory_manager.update_session(updated_state)
         return updated_state
