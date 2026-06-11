@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 from uuid import UUID
+from uuid import uuid4
 
 import aiosqlite
 import httpx
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.agents.base_agent import BaseAgent
+from core.brain.manager import BrainContextManager
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
 from core.runtime.model_profile_selection import (
@@ -152,6 +154,7 @@ app.add_middleware(
 memory_manager = MemoryManager()
 base_agent = BaseAgent()
 vector_store = VectorMemoryEngine()
+brain_context_manager = BrainContextManager()
 
 
 @app.on_event("shutdown")
@@ -312,6 +315,16 @@ async def runtime_effective_models(profile: str | None = None) -> dict[str, Any]
     return build_effective_runtime_models(profile_override=profile)
 
 
+@app.get("/runtime/context/active")
+async def runtime_active_context() -> dict[str, Any]:
+    context = brain_context_manager.build_active_context()
+    return {
+        "prompt": context.prompt,
+        "receipt": context.receipt,
+        "compact_receipt": context.receipt.get("compact", ""),
+    }
+
+
 @app.get("/personas")
 async def get_personas() -> dict[str, Any]:
     """Return registered persona configurations for local discovery/debugging."""
@@ -378,6 +391,49 @@ async def add_session_message(
     session_state = await memory_manager.get_session(session_id)
     inference_state = session_state.model_copy(deep=True)
 
+    brain_context = brain_context_manager.build_context_for_question(payload.raw_text)
+    inference_state.messages.insert(
+        0,
+        ConversationMessage(role="system", content=brain_context.prompt),
+    )
+
+    compact_receipt = str(brain_context.receipt.get("compact", "")).strip()
+    brain_answer = brain_context_manager.answer_from_records(payload.raw_text)
+    if brain_answer is not None:
+        assistant_output = brain_answer.strip()
+        if compact_receipt:
+            assistant_output = f"{assistant_output}\n\n{compact_receipt}"
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=assistant_output,
+        )
+        assistant_message = updated_state.messages[-1]
+
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        model_use_receipt = {
+            "model_profile": "xv7_brain_context",
+            "profile_source": "runtime_context",
+            "runtime_role": "chat",
+            "model_tag": "xv7-brain-records",
+            "model_selection_source": "brain_records",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+        }
+        updated_state.metadata["model_use_receipt"] = model_use_receipt
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = brain_context.receipt
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     try:
         facts = await get_session_facts(str(session_id))
     except Exception:
@@ -411,10 +467,14 @@ async def add_session_message(
         inference_state
     )
 
+    assistant_output = raw_response.strip()
+    if compact_receipt:
+        assistant_output = f"{assistant_output}\n\n{compact_receipt}"
+
     updated_state = await memory_manager.add_message(
         session_id=session_id,
         role="assistant",
-        raw_text=raw_response,
+        raw_text=assistant_output,
     )
 
     assistant_message = updated_state.messages[-1]
@@ -430,6 +490,7 @@ async def add_session_message(
     model_use_receipt["session_id"] = str(session_id)
     updated_state.metadata["model_use_receipt"] = model_use_receipt
     updated_state.metadata["vector_memory"] = vector_memory_receipt
+    updated_state.metadata["context_receipt"] = brain_context.receipt
     await memory_manager.update_session(updated_state)
 
     return updated_state
