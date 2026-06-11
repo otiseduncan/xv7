@@ -96,6 +96,15 @@ class BrainContextAssembler:
         receipt: dict[str, object] = {
             "version": "xv7-brain-b4",
             "record_ids": [r.record_id for r in selected],
+            "context_receipts": [
+                {
+                    "record_id": r.record_id,
+                    "layer": r.layer.value,
+                    "title": r.title,
+                    "receipt_label": f"{self._LAYER_LABELS[r.layer]} {r.record_id}",
+                }
+                for r in selected
+            ],
             "missing_layers": missing_layers,
             "layer_counts": {
                 layer.value: len([r for r in selected if r.layer == layer])

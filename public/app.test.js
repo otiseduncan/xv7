@@ -298,6 +298,58 @@ function createRuntimeFetchMock(options = {}) {
         ];
         actionHistory = operatorReceipts;
         answer = 'B7 is read-only right now. I denied that request.';
+      } else if (prompt.includes('what is your name')) {
+        answer = 'I am Xoduz, the XV7 assistant.';
+        contextReceipt = {
+          compact: 'Context receipt: System Prompt XV7-SYSTEM-0001.',
+          context_receipts: [
+            {
+              record_id: 'XV7-SYSTEM-0001',
+              layer: 'system_prompt',
+              title: 'Xoduz identity and behavior rules',
+              receipt_label: 'System Prompt XV7-SYSTEM-0001',
+            },
+          ],
+        };
+      } else if (prompt.includes('what are we working on right now')) {
+        answer = 'Current focus is B8.2 brain content fill and communication routing repair after B8 chat-first UI polish.';
+        contextReceipt = {
+          compact: 'Context receipt: Active Focus XV7-FOCUS-0003.',
+          context_receipts: [
+            {
+              record_id: 'XV7-FOCUS-0003',
+              layer: 'active_focus',
+              title: 'B8.2 brain content and communication routing repair',
+              receipt_label: 'Active Focus XV7-FOCUS-0003',
+            },
+          ],
+        };
+      } else if (prompt.includes('implementation prompts')) {
+        answer = 'Yes. I can help write precise VS Code/Copilot implementation prompts and acceptance checks.';
+        contextReceipt = {
+          compact: 'Context receipt: Knowledge XV7-KNOWLEDGE-0002.',
+          context_receipts: [
+            {
+              record_id: 'XV7-KNOWLEDGE-0002',
+              layer: 'knowledge',
+              title: 'XV7 capability, operator boundary, and UI self-knowledge',
+              receipt_label: 'Knowledge XV7-KNOWLEDGE-0002',
+            },
+          ],
+        };
+      } else if (prompt.includes('what do you know is verified')) {
+        answer = 'Verified facts: runtime and launch checks are passing.';
+        contextReceipt = {
+          compact: 'Context receipt: Verified Status XV7-VERIFIED-0001.',
+          context_receipts: [
+            {
+              record_id: 'XV7-VERIFIED-0001',
+              layer: 'verified_status',
+              title: 'B3.2 proven operational status',
+              receipt_label: 'Verified Status XV7-VERIFIED-0001',
+            },
+          ],
+        };
       } else if (prompt.includes('remember')) {
         answer = 'Saved that preference as active memory.';
         memoryReceipts = ['Memory receipt: XV7-MEMORY-0002 active.'];
@@ -732,20 +784,64 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('copyToast').textContent).toContain('Copied.');
   });
 
-  it('renders context receipt chip as Context, not Operator', async () => {
+  it('renders system receipt as System label', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
 
     new Xv7UI();
     await flushAsync();
 
-    document.getElementById('promptInput').value = 'Return exactly: XV7_MODEL_PROOF';
+    document.getElementById('promptInput').value = 'What is your name?';
     document.getElementById('sendButton').click();
     await flushAsync();
 
     const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
-    expect(chips.some((text) => text.startsWith('Context:'))).toBe(true);
-    expect(chips.some((text) => text.startsWith('Context: Operator receipt:'))).toBe(false);
+    expect(chips.some((text) => text === 'System: XV7-SYSTEM-0001')).toBe(true);
+  });
+
+  it('renders focus receipt as Focus label', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'What are we working on right now?';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
+    expect(chips.some((text) => text === 'Focus: XV7-FOCUS-0003')).toBe(true);
+  });
+
+  it('renders knowledge receipt as Knowledge label', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Can you help write implementation prompts for VS Code/Copilot?';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
+    expect(chips.some((text) => text === 'Knowledge: XV7-KNOWLEDGE-0002')).toBe(true);
+  });
+
+  it('renders verified receipt as Verified label', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'What do you know is verified?';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
+    expect(chips.some((text) => text === 'Verified: XV7-VERIFIED-0001')).toBe(true);
   });
 
   it('renders memory receipts with Memory label', async () => {
@@ -763,6 +859,44 @@ describe('ModelProfileControl', () => {
       (node.textContent || '').includes('Memory:'),
     );
     expect(memoryChip).toBeTruthy();
+  });
+
+  it('does not render operator/context mislabel strings in chips', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
+    expect(chips.some((text) => text.includes('Operator receipt: context'))).toBe(false);
+    expect(chips.some((text) => text.includes('Context: Operator receipt'))).toBe(false);
+  });
+
+  it('renders legacy fallback compact context safely', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'fallback context test',
+      null,
+      {
+        context_receipt: { compact: 'Context receipt: something_custom_without_ids.' },
+        operator_receipts: [],
+        memory_receipts: [],
+        model_use_receipt: {},
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const chips = [...document.querySelectorAll('.receipt-chip')].map((node) => (node.textContent || '').trim());
+    expect(chips.some((text) => text.startsWith('Context:'))).toBe(true);
   });
 
   it('renders operator action receipts with Operator label', async () => {

@@ -214,3 +214,31 @@ def test_forget_that_is_ambiguous_does_not_delete(monkeypatch, tmp_path: Path) -
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"]
     assert "matches multiple memories" in answer
+
+
+def test_structured_context_receipt_has_layer_by_prompt(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    cases = [
+        ("What is my name?", "memory"),
+        ("What are we working on right now?", "active_focus"),
+        ("Can you help write implementation prompts for VS Code/Copilot?", "knowledge"),
+        ("What do you know is verified?", "verified_status"),
+        ("What is your name?", "system_prompt"),
+    ]
+
+    for prompt, expected_layer in cases:
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+
+        metadata = response.json().get("metadata", {})
+        context_receipt = metadata.get("context_receipt", {})
+        structured = context_receipt.get("context_receipts", [])
+        assert isinstance(structured, list)
+        assert len(structured) >= 1
+        assert structured[0].get("layer") == expected_layer

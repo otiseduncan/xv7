@@ -38,7 +38,12 @@ class BrainContextManager:
     def select_relevant_layers(self, question: str) -> list[BrainLayer]:
         normalized = self._normalize_question(question)
 
-        if normalized in {"who are you?", "who are you"}:
+        if normalized in {
+            "who are you?",
+            "who are you",
+            "what is your name?",
+            "what is your name",
+        }:
             return [BrainLayer.SYSTEM_PROMPT]
 
         if normalized in {"what are we working on?", "what are we working on"}:

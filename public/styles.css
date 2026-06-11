@@ -304,6 +304,16 @@ details[open] > .diag-section-title::before {
   color: #fde68a;
 }
 
+.receipt-chip-system,
+.receipt-chip-focus,
+.receipt-chip-knowledge,
+.receipt-chip-memory,
+.receipt-chip-verified,
+.receipt-chip-operator,
+.receipt-chip-model {
+  box-shadow: inset 0 0 0 1px rgba(0, 163, 255, 0.14);
+}
+
 /* ─── Receipt detail grid ──────────────────── */
 
 .receipt-details {

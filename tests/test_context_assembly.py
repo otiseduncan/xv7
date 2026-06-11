@@ -14,10 +14,14 @@ def test_active_context_compact_receipt_has_required_layers() -> None:
     manager = BrainContextManager()
     context = manager.build_active_context()
     compact = str(context.receipt.get("compact", ""))
+    structured = context.receipt.get("context_receipts", [])
 
     assert "System Prompt XV7-SYSTEM-0001" in compact
     assert "Active Focus XV7-FOCUS-0003" in compact
     assert "Verified Status XV7-VERIFIED-0001" in compact
+    assert isinstance(structured, list)
+    assert all(isinstance(item, dict) for item in structured)
+    assert all("layer" in item and "record_id" in item for item in structured if isinstance(item, dict))
 
 
 def test_missing_record_reports_missing_in_answer(monkeypatch, tmp_path: Path) -> None:
@@ -84,29 +88,33 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
             "Who are you?",
             "I am Xoduz",
             "System Prompt XV7-SYSTEM-0001",
+            "system_prompt",
             ["Active Focus", "Memory", "Verified Status"],
         ),
         (
             "What are we working on?",
             "B8.2 brain content fill and communication routing repair",
             "Active Focus XV7-FOCUS-0003",
+            "active_focus",
             ["System Prompt", "Knowledge", "Memory", "Verified Status"],
         ),
         (
             "What do you know is verified?",
             "Verified facts:",
             "Verified Status XV7-VERIFIED-0001",
+            "verified_status",
             ["System Prompt", "Active Focus", "Knowledge", "Memory"],
         ),
         (
             "What repo/status are we on?",
             "Repo/status:",
             "Verified Status XV7-VERIFIED-0001",
+            "verified_status",
             ["System Prompt", "Active Focus", "Knowledge", "Memory"],
         ),
     ]
 
-    for question, expected, required_receipt_fragment, unexpected_layer_labels in cases:
+    for question, expected, required_receipt_fragment, expected_layer, unexpected_layer_labels in cases:
         response = client.post(
             f"/sessions/{session_id}/messages",
             headers={"X-XV7-API-Key": "test-secret"},
@@ -125,6 +133,10 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
         context_receipt = payload["metadata"].get("context_receipt", {})
         assert "record_ids" in context_receipt
         assert len(context_receipt["record_ids"]) >= 1
+        structured = context_receipt.get("context_receipts", [])
+        assert isinstance(structured, list)
+        assert len(structured) >= 1
+        assert structured[0].get("layer") == expected_layer
 
 
 def test_runtime_active_context_endpoint_returns_prompt_and_receipt() -> None:

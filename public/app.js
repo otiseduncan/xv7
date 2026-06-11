@@ -595,13 +595,42 @@ class Xv7UI {
     });
 
     const contextReceipt = meta.context_receipt && typeof meta.context_receipt === 'object' ? meta.context_receipt : null;
-    if (contextReceipt && typeof contextReceipt.compact === 'string' && contextReceipt.compact.trim()) {
-      const chip = document.createElement('span');
-      chip.className = 'receipt-chip';
-      const contextSummary = this.summarizeContextReceipt(contextReceipt.compact);
-      chip.textContent = `Context: ${contextSummary}`;
-      chipRow.append(chip);
-      compactReceipts.push(`context ${contextSummary}`);
+    const contextEntries = Array.isArray(contextReceipt?.context_receipts)
+      ? contextReceipt.context_receipts
+      : [];
+
+    if (contextEntries.length > 0) {
+      contextEntries.forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const recordId = this.extractReceiptId(entry.record_id || entry.receipt_label || '');
+        if (!recordId || recordId === '-') return;
+        const label = this.contextLayerChipLabel(entry.layer || entry.receipt_label || '');
+
+        const chip = document.createElement('span');
+        chip.className = `receipt-chip receipt-chip-${label.toLowerCase()}`;
+        chip.textContent = `${label}: ${recordId}`;
+        chipRow.append(chip);
+        compactReceipts.push(`${label.toLowerCase()} ${recordId}`);
+      });
+    } else if (contextReceipt && typeof contextReceipt.compact === 'string' && contextReceipt.compact.trim()) {
+      const layered = this.parseLayeredContextFromCompact(contextReceipt.compact);
+
+      if (layered.length > 0) {
+        layered.forEach((item) => {
+          const chip = document.createElement('span');
+          chip.className = `receipt-chip receipt-chip-${item.label.toLowerCase()}`;
+          chip.textContent = `${item.label}: ${item.recordId}`;
+          chipRow.append(chip);
+          compactReceipts.push(`${item.label.toLowerCase()} ${item.recordId}`);
+        });
+      } else if (!contextReceipt.compact.toLowerCase().includes('operator receipt')) {
+        const chip = document.createElement('span');
+        chip.className = 'receipt-chip';
+        const contextSummary = this.summarizeContextReceipt(contextReceipt.compact);
+        chip.textContent = `Context: ${contextSummary}`;
+        chipRow.append(chip);
+        compactReceipts.push(`context ${contextSummary}`);
+      }
     }
 
     const memoryReceipts = Array.isArray(meta.memory_receipts) ? meta.memory_receipts : [];
@@ -1209,6 +1238,30 @@ class Xv7UI {
     }
 
     return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+  }
+
+  contextLayerChipLabel(layerOrLabel) {
+    const normalized = String(layerOrLabel || '').toLowerCase();
+    if (normalized.includes('system_prompt') || normalized.includes('system prompt')) return 'System';
+    if (normalized.includes('active_focus') || normalized.includes('active focus')) return 'Focus';
+    if (normalized.includes('verified_status') || normalized.includes('verified status')) return 'Verified';
+    if (normalized.includes('knowledge')) return 'Knowledge';
+    if (normalized.includes('memory')) return 'Memory';
+    return 'Context';
+  }
+
+  parseLayeredContextFromCompact(value) {
+    const text = String(value || '');
+    const out = [];
+    const pattern = /(System Prompt|Active Focus|Knowledge|Memory|Verified Status)\s+(XV7-[A-Z-]+-\d+)/g;
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      out.push({
+        label: this.contextLayerChipLabel(match[1]),
+        recordId: match[2],
+      });
+    }
+    return out;
   }
 
   extractReceiptId(value) {

@@ -101,7 +101,12 @@ class AnswerContract:
         memory = self._find_layer_record(records_by_layer, BrainLayer.MEMORY)
         verified = self._find_layer_record(records_by_layer, BrainLayer.VERIFIED_STATUS)
 
-        if normalized in {"who are you?", "who are you"}:
+        if normalized in {
+            "who are you?",
+            "who are you",
+            "what is your name?",
+            "what is your name",
+        }:
             if system is None:
                 return "Missing required record: system_prompt."
             identity = self._facts(system)
