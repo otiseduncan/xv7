@@ -145,6 +145,24 @@ preflight fails, it prints the exact variable names and tells you to run:
 .\scripts\start_xv7_local.ps1 -HealthTimeoutSeconds 120
 ```
 
+### Start local host scan bridge (B9.8)
+
+Read-only host scan commands (for example `/scan-ports`, `/scan-docker`, `/scan-cpu`) are served through a localhost bridge process.
+
+Run this in a separate PowerShell window:
+
+```powershell
+.\scripts\start_xv7_local_bridge.ps1
+```
+
+Defaults:
+
+- Bind address: `127.0.0.1`
+- Port: `8765`
+- Token: `xv7-local-bridge-token`
+
+If the bridge is not running, scan actions return an honest limitation message: `Local host scan bridge is not running.`
+
 ### Expected endpoints after a healthy start
 
 | Endpoint | URL | Auth required |

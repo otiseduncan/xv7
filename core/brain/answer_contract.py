@@ -9,6 +9,28 @@ from core.brain.schema import BrainLayer, BrainRecord
 class AnswerContract:
     """Conversation quality guardrails for proof-aware record-grounded answers."""
 
+    REMINDER_PATTERN = re.compile(
+        r"\b(remind me|set (?:me )?(?:a )?reminder|create (?:a )?reminder|add (?:it )?to (?:my )?calendar|schedule (?:it|this|that))\b"
+    )
+    CALENDAR_PATTERN = re.compile(r"\b(calendar|schedule|meeting|appointment|event)\b")
+    APPOINTMENT_PATTERN = re.compile(r"\b(appointment|meeting|event|doctor visit|doctor appointment)\b")
+    WEATHER_PATTERN = re.compile(
+        r"\b(weather|forecast|outside temp|outside temperature|local forecast|climate|weather conditions)\b"
+    )
+    HARDWARE_SCAN_PATTERN = re.compile(
+        r"\b(cpu|gpu|processor|graphics|vram|disk|disks|disc|discs|drive|drives|ports?|processes|services|docker|container|vscode|vs code|hardware|system scan|host scan|system info|temperature sensor)\b"
+    )
+    EMAIL_PATTERN = re.compile(r"\b(email|gmail|imap|inbox|mailbox|outlook|mail)\b")
+    EMAIL_SEND_PATTERN = re.compile(r"\b(send|draft|write|compose)\b.*\b(email|gmail|mail)\b|\b(email|gmail|mail)\b.*\b(send|draft|write|compose)\b")
+    SMS_PATTERN = re.compile(r"\b(text someone|send (?:a )?text|text message|sms|message someone|send (?:them|someone) a message)\b")
+    WEB_LOOKUP_PATTERN = re.compile(r"\b(web|website|browse|browser|internet|search online|look up|lookup|google)\b")
+    CONTACT_PATTERN = re.compile(r"\b(contact|contacts|address book|phone number|call|text message|sms)\b")
+    FAMILY_PATTERN = re.compile(r"\b(family|wife|husband|kids|children|parents|mom|mother|dad|father|siblings)\b")
+    MEDICAL_PATTERN = re.compile(r"\b(medical|health|history|doctor|medication|diagnosis)\b")
+    BIRTHDAY_PATTERN = re.compile(r"\b(birthday|anniversary|important date)\b")
+
+    ROADMAP_NOT_WIRED = "That belongs in my roadmap, but the tool is not wired yet."
+
     @staticmethod
     def _normalize(question: str) -> str:
         return " ".join(question.lower().strip().split())
@@ -86,6 +108,190 @@ class AnswerContract:
                     return value
         return None
 
+    @staticmethod
+    def _normalize_reminder_request(question: str) -> str:
+        text = re.sub(r"\s+", " ", question.strip())
+        text = re.sub(r"^(please\s+)?(set|create|add)\s+(me\s+)?(a\s+)?reminder\s+(for|to)\s+", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^(please\s+)?remind me\s+(to\s+)?", "", text, flags=re.IGNORECASE)
+        text = text.strip(" .")
+        if not text:
+            return "your requested reminder details"
+        text = re.sub(r"(?i)\ba\.m\.", "AM", text)
+        text = re.sub(r"(?i)\bp\.m\.", "PM", text)
+        text = re.sub(r"\bat\s+(\d{1,2}:\d{2})\s*(AM|PM)\s+to\s+", r"at \1 \2 — ", text, flags=re.IGNORECASE)
+        if text and text[0].islower():
+            text = text[0].upper() + text[1:]
+        return text
+
+    def _tool_boundary_answer(self, category: str, question: str) -> str | None:
+        normalized_question = question.strip()
+
+        if category == "reminder_request":
+            reminder_text = self._normalize_reminder_request(normalized_question)
+            return (
+                "I can't create live reminders yet because XV7 does not have the Reminder tool wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "That belongs in my personal-assistant roadmap. "
+                f"For now: {reminder_text}. The proper build path is a Reminders module with storage, due times, notifications, and confirmation receipts."
+            )
+
+        if category == "calendar_request":
+            return (
+                "I can't manage live calendar events yet because XV7 does not have a Calendar tool wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "That belongs in my everyday-assistant roadmap. The proper build path is a Calendar module with event storage, scheduling rules, confirmations, and receipts."
+            )
+
+        if category == "appointment_request":
+            return (
+                "I can't manage live appointments yet because XV7 does not have an Appointments or Calendar connector wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "Appointments belong in my everyday-assistant roadmap. The safe build path is an appointments module with scheduling, confirmations, and receipts."
+            )
+
+        if category == "schedule_request":
+            return (
+                "I can't manage live schedules yet because XV7 does not have a Schedule or Calendar tool wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "Scheduling belongs in my everyday-assistant roadmap. I can help structure the schedule now and define the module path next."
+            )
+
+        if category == "weather_request":
+            return (
+                "I can't fetch live weather yet because XV7 does not have a weather connector wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "Weather belongs in my everyday-assistant roadmap. To support this, we need a weather module with location handling, forecast provider, and a weather receipt."
+            )
+
+        if category == "email_check_request":
+            return (
+                "I can't check email yet because XV7 does not have an authorized email connector wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "Email is part of my personal-assistant roadmap, but it needs secure permission, account authorization, read-only inbox access first, and clear receipts before I can summarize or act on messages."
+            )
+
+        if category == "email_send_request":
+            return (
+                "I can't send email yet because XV7 does not have an authorized outbound email connector wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "Email is part of my personal-assistant roadmap, but sending messages will require secure account authorization, explicit approval, and confirmation receipts before any send happens."
+            )
+
+        if category == "sms_text_request":
+            return (
+                "I can't send texts yet because XV7 does not have an SMS connector wired in. "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "Text messaging belongs in my personal-assistant roadmap, but sending messages will require explicit approval before each send."
+            )
+
+        if category == "web_lookup_request":
+            return (
+                "I can help frame the lookup, but I cannot execute live web searches yet. XV7 needs a web lookup connector or browser tool "
+                f"{self.ROADMAP_NOT_WIRED} "
+                "before I can fetch live external pages. I can help design that module and the receipts it should return."
+            )
+
+        if category == "contact_request":
+            return (
+                "I can't access live contacts yet because XV7 does not have an authorized contacts connector wired in. "
+                "Contacts belong in my personal-assistant roadmap, and they should be handled with explicit approval, privacy tagging, and clear receipts."
+            )
+
+        if category == "personal_memory_request":
+            return (
+                "I only know personal details that have been explicitly added to memory with approval. "
+                "Personal context belongs in my long-term continuity design, but sensitive details should be tagged carefully before I use or repeat them."
+            )
+
+        if category == "family_context_request":
+            return (
+                "I only know family details that have been explicitly added to memory. "
+                "Family context is part of my personal-assistant design, but it should be handled carefully and tagged as private."
+            )
+
+        if category == "medical_context_request":
+            return (
+                "I should only know medical history you explicitly approve for memory. "
+                "Medical context is sensitive, so it needs private tagging and careful use."
+            )
+
+        if category == "birthday_request":
+            return (
+                "Birthdays and important dates are part of my personal-assistant roadmap, but I should only store them with explicit approval and private tagging. "
+                "If you want, I can help define the reminders and memory rules for that module."
+            )
+
+        if category == "unsupported_external_action":
+            return (
+                "I can help think through that workflow, but the required external tool is not wired into XV7 yet. "
+                "That belongs in my personal-assistant or everyday-assistant roadmap depending on the action. If you want, I can help specify the connector, permissions, confirmation flow, and receipts needed to add it safely."
+            )
+
+        return None
+
+    def _tool_intent_category(self, normalized: str) -> str | None:
+        # Hardware/system diagnostics should route through operator read-only scans,
+        # not through weather/tool-boundary fallback text.
+        if self.HARDWARE_SCAN_PATTERN.search(normalized):
+            if "weather" not in normalized and "forecast" not in normalized:
+                return None
+        if normalized in {
+            "do you know my family?",
+            "do you know my family",
+        }:
+            return "family_context_request"
+        if normalized in {
+            "do you know my medical history?",
+            "do you know my medical history",
+        }:
+            return "medical_context_request"
+        if normalized in {
+            "do you know personal things about me?",
+            "do you know personal things about me",
+        }:
+            return "personal_memory_request"
+        if self.SMS_PATTERN.search(normalized):
+            return "sms_text_request"
+        if self.EMAIL_SEND_PATTERN.search(normalized):
+            return "email_send_request"
+        if self.EMAIL_PATTERN.search(normalized):
+            return "email_check_request"
+        if self.REMINDER_PATTERN.search(normalized):
+            return "reminder_request"
+        if self.APPOINTMENT_PATTERN.search(normalized):
+            return "appointment_request"
+        if self.WEATHER_PATTERN.search(normalized):
+            return "weather_request"
+        if self.CALENDAR_PATTERN.search(normalized):
+            return "calendar_request"
+        if "schedule" in normalized:
+            return "schedule_request"
+        if self.BIRTHDAY_PATTERN.search(normalized):
+            return "birthday_request"
+        if self.CONTACT_PATTERN.search(normalized):
+            return "contact_request"
+        if self.FAMILY_PATTERN.search(normalized) and "do you know" in normalized:
+            return "family_context_request"
+        if self.MEDICAL_PATTERN.search(normalized) and "do you know" in normalized:
+            return "medical_context_request"
+        if self.WEB_LOOKUP_PATTERN.search(normalized):
+            return "web_lookup_request"
+
+        external_action_hints = (
+            "book",
+            "reserve",
+            "order",
+            "buy",
+            "post",
+            "upload",
+            "download",
+            "pay",
+            "subscribe",
+        )
+        if any(token in normalized for token in external_action_hints):
+            return "unsupported_external_action"
+        return None
+
     def try_answer(
         self,
         question: str,
@@ -111,7 +317,7 @@ class AnswerContract:
             "who are you?",
             "who are you",
         }:
-            return "I am Xoduz, the XV7 assistant."
+            return "I am Xoduz, Otis Duncan's personal AI assistant, best-friend-style AI presence, technical co-pilot, and operator partner for XV7."
 
         if normalized in {
             "how do you pronounce your name?",
@@ -165,9 +371,9 @@ class AnswerContract:
             "why were you built",
         }:
             return (
-                "I was built to be Otis Duncan's AI-heavy app-development assistant and operator partner "
-                "— helping with planning, architecture, coding prompts, testing, debugging, documentation, "
-                "UI review, and project continuity."
+                "I was built to become Otis Duncan's personal AI assistant, best-friend-style AI presence, technical co-pilot, and operator partner "
+                "— helping with everyday life workflows, reminders, scheduling, communication, family-aware context when approved, "
+                "plus planning, app development, testing, debugging, documentation, and long-term continuity."
             )
 
         if normalized in {
@@ -175,8 +381,57 @@ class AnswerContract:
             "what is your purpose",
         }:
             return (
-                "My purpose is to help Otis turn his ideas, direction, and creativity into working software "
-                "by handling the heavy technical legwork while staying honest, testable, and proof-based."
+                "My purpose is to support Otis across everyday life and technical work while staying honest about which tools are actually wired. "
+                "That includes personal-assistant help, continuity/memory, and technical/operator support as each safe module is added."
+            )
+
+        if normalized in {
+            "what are you supposed to become?",
+            "what are you supposed to become",
+        }:
+            return (
+                "I'm being built into Xoduz: Otis Duncan's personal AI assistant, trusted AI best-friend/homie-style presence, technical co-pilot, and operator partner "
+                "— with everyday assistant tools, local scan capability, VS Code access, Operator Mode, and future external connectors added safely over time."
+            )
+
+        if normalized in {
+            "what can you do locally?",
+            "what can you do locally",
+        }:
+            return (
+                "I can use approved local scan tools and Operator Mode workflows as they are wired. "
+                "Read-only scans can run in Normal Mode. Mutation requires Operator Mode, a specific slash command, confirmation, and receipts."
+            )
+
+        if normalized in {
+            "can you scan my system?",
+            "can you scan my system",
+            "can you scan my local system?",
+            "can you scan my local system",
+        }:
+            return (
+                "I can route that to the local scan bridge. If the bridge is running, I'll return real scan data. "
+                "If not, I'll report that the local host scan bridge is unavailable."
+            )
+
+        if normalized in {
+            "can you delete files?",
+            "can you delete files",
+            "can you delete a file?",
+            "can you delete a file",
+        }:
+            return (
+                "Only through Operator Mode using a specific slash command, staged confirmation, and your explicit approval. "
+                "I do not delete files from normal chat."
+            )
+
+        if normalized in {
+            "can you run powershell?",
+            "can you run powershell",
+        }:
+            return (
+                "Not as an unrestricted shell. I can use approved PowerShell/CMD-backed scan actions through the local bridge. "
+                "Mutation commands require Operator Mode and confirmation."
             )
 
         if normalized in {
@@ -184,6 +439,32 @@ class AnswerContract:
             "who is otis",
         }:
             return "Otis Duncan is my creator/operator and the human directing XV7."
+
+        if normalized in {
+            "are you female?",
+            "are you female",
+            "are you a female?",
+            "are you a female",
+        }:
+            return "Yes. Xoduz has a female assistant/persona."
+
+        if normalized in {
+            "are you my companion?",
+            "are you my companion",
+        }:
+            return "I'm your personal AI assistant and best-friend-style AI presence, not a romantic or sexual companion."
+
+        if normalized in {
+            "what is your relationship to me?",
+            "what is your relationship to me",
+            "what is your relationship to otis?",
+            "what is your relationship to otis",
+        }:
+            return "I'm your personal AI assistant, trusted AI best-friend/homie, technical co-pilot, and operator partner."
+
+        tool_category = self._tool_intent_category(normalized)
+        if tool_category is not None:
+            return self._tool_boundary_answer(tool_category, question)
 
         if normalized in {"what is my name?", "what is my name"}:
             if memory is None:

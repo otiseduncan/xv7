@@ -23,8 +23,8 @@ class OperatorActionResult(BaseModel):
 
     action_id: str = Field(min_length=1)
     action_name: str = Field(min_length=1)
-    mode: Literal["read_only"] = "read_only"
-    status: Literal["success", "failed", "denied"]
+    mode: Literal["read_only", "operator", "high_risk"] = "read_only"
+    status: Literal["success", "failed", "denied", "pending", "cancelled", "not_implemented"]
     started_at: datetime
     completed_at: datetime
     command_or_operation: str = Field(min_length=1)

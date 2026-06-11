@@ -71,7 +71,41 @@ class BrainContextManager:
             "why were you built",
             "what is your purpose?",
             "what is your purpose",
+            "what are you supposed to become?",
+            "what are you supposed to become",
         }:
+            return [BrainLayer.KNOWLEDGE]
+
+        if any(
+            token in normalized
+            for token in (
+                "remind me",
+                "reminder",
+                "calendar",
+                "schedule",
+                "weather",
+                "forecast",
+                "email",
+                "gmail",
+                "imap",
+                "inbox",
+                "mail",
+                "text",
+                "sms",
+                "family",
+                "medical",
+                "birthday",
+                "appointment",
+                "web",
+                "browse",
+                "look up",
+                "lookup",
+                "google",
+                "contact",
+                "contacts",
+                "address book",
+            )
+        ):
             return [BrainLayer.KNOWLEDGE]
 
         if normalized in {"who is otis?", "who is otis"}:

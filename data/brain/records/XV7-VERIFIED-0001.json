@@ -1,0 +1,80 @@
+{
+  "record_id": "XV7-VERIFIED-0001",
+  "layer": "verified_status",
+  "title": "Verified milestones and current phase status",
+  "summary": "Verified: B9.5 identity cleanup and B9.7 Operator Mode confirmation layer. Current in progress: B9.8 local scan bridge hardening.",
+  "body": "Verified status contains proven facts and current phase flags. Proven: B3.2 launch baseline checks pass; B9.5 personal-assistant identity repair passed; B9.5.1/B9.5.2 removed bad companion wording from normal identity/purpose answers; B9.7 Operator Mode slash confirmation layer passed (default OFF, mutation requires Operator Mode, stage first, confirm before execute, high-risk typed confirmation). Current in progress: B9.8 local scan routing/bridge hardening. Local scan behavior is wired for operator actions, but host bridge runtime availability remains environment-dependent and should be reported honestly as unavailable when not running.",
+  "status": "active",
+  "priority": 210,
+  "tags": ["verified", "b3.2", "b9.5", "b9.7", "b9.8", "proof", "in-progress"],
+  "facts": [
+    {
+      "statement": "Repo path is X:\\XV7\\xv7.",
+      "source_type": "user_confirmed",
+      "source_detail": "Verified baseline"
+    },
+    {
+      "statement": "Branch is main and synced with origin/main.",
+      "source_type": "user_confirmed",
+      "source_detail": "Verified baseline"
+    },
+    {
+      "statement": "start_xv7_local.ps1 passes cleanly.",
+      "source_type": "verified_output",
+      "source_detail": "Command output validated"
+    },
+    {
+      "statement": "python scripts/operator_readiness_report.py passes cleanly.",
+      "source_type": "verified_output",
+      "source_detail": "Command output validated"
+    },
+    {
+      "statement": "Core API, frontend, Open WebUI, and Ollama are reachable.",
+      "source_type": "verified_output",
+      "source_detail": "Operator readiness report"
+    },
+    {
+      "statement": "Auth enforcement passes and chat proof passes.",
+      "source_type": "verified_output",
+      "source_detail": "Operator readiness report"
+    },
+    {
+      "statement": "metadata.model_use_receipt is present and model_use_receipt.model_tag matches effective chat model.",
+      "source_type": "verified_output",
+      "source_detail": "Operator readiness report"
+    },
+    {
+      "statement": "The last verified operator readiness proof used qwen3:14b.",
+      "source_type": "verified_output",
+      "source_detail": "Operator readiness report output in this session"
+    },
+    {
+      "statement": "Launcher artifact tests pass.",
+      "source_type": "verified_output",
+      "source_detail": "pytest tests/test_launcher_artifacts.py -q"
+    },
+    {
+      "statement": "B9.5 personal-assistant identity repair passed.",
+      "source_type": "verified_output",
+      "source_detail": "B9.5 test and manual validation"
+    },
+    {
+      "statement": "B9.5.1/B9.5.2 removed bad companion wording from normal identity answers.",
+      "source_type": "verified_output",
+      "source_detail": "Identity contract/conversation quality tests"
+    },
+    {
+      "statement": "B9.7 Operator Mode slash command confirmation layer passed with default OFF.",
+      "source_type": "verified_output",
+      "source_detail": "tests/test_operator_mode_b97.py and frontend operator mode tests"
+    },
+    {
+      "statement": "B9.8 local scan routing/bridge is current and in progress.",
+      "source_type": "verified_output",
+      "source_detail": "B9.8 phase status marker"
+    }
+  ],
+  "evidence": [
+    "User baseline list and command/test outputs in this session."
+  ]
+}

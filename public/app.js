@@ -93,6 +93,21 @@ class Xv7UI {
   /** @type {number} */
   messageCounter = 0;
 
+  /** @type {boolean} */
+  operatorModeActive = false;
+
+  /** @type {Array<any>} */
+  slashCommands = [];
+
+  /** @type {boolean} */
+  slashMenuOpen = false;
+
+  /** @type {string} */
+  slashFilter = '';
+
+  /** @type {any | null} */
+  pendingOperatorAction = null;
+
   /** @type {Array<{role:string,text:string,timestamp:string,receiptSummary:string[]}>} */
   visibleConversation = [];
 
@@ -108,16 +123,19 @@ class Xv7UI {
   /** @type {boolean} */
   avatarClipLoaded = false;
 
+  /** @type {boolean} */
+  avatarMediaEnabled = false;
+
   /** @type {number | null} */
   avatarResetTimer = null;
 
   avatarClips = {
-    idle: './avatar/xoduz-idle.mp4',
-    listening: './avatar/xoduz-idle.mp4',
-    captured: './avatar/xoduz-idle.mp4',
-    thinking: './avatar/xoduz-thinking.mp4',
-    speaking: './avatar/xoduz-speaking.mp4',
-    error: './avatar/xoduz-thinking.mp4',
+    idle: '/avatar/xoduz-idle.mp4',
+    listening: '/avatar/xoduz-idle.mp4',
+    captured: '/avatar/xoduz-idle.mp4',
+    thinking: '/avatar/xoduz-thinking.mp4',
+    speaking: '/avatar/xoduz-speaking.mp4',
+    error: '/avatar/xoduz-idle.mp4',
   };
 
   voiceState = {
@@ -132,6 +150,7 @@ class Xv7UI {
   };
 
   constructor() {
+    this.avatarMediaEnabled = this.resolveAvatarMediaEnabled();
     this.els = {
       personaSelect: document.getElementById('personaSelect'),
       personaHint: document.getElementById('personaHint'),
@@ -143,7 +162,11 @@ class Xv7UI {
       retrievalJournal: document.getElementById('retrievalJournal'),
       chatTimeline: document.getElementById('chatTimeline'),
       promptInput: document.getElementById('promptInput'),
+      slashMenu: document.getElementById('slashMenu'),
       sendButton: document.getElementById('sendButton'),
+      operatorModeToggle: document.getElementById('operatorModeToggle'),
+      operatorModeBanner: document.getElementById('operatorModeBanner'),
+      operatorConfirmArea: document.getElementById('operatorConfirmArea'),
       micButton: document.getElementById('micButton'),
       copyChatButton: document.getElementById('copyChatButton'),
       copyToast: document.getElementById('copyToast'),
@@ -234,6 +257,21 @@ class Xv7UI {
     void this.initialize();
   }
 
+  resolveAvatarMediaEnabled() {
+    const bodyValue = String(document.body?.dataset?.avatarMedia || '').toLowerCase();
+    if (bodyValue === 'off' || bodyValue === 'disabled') return false;
+
+    const storedValue = String(window.localStorage?.getItem('xv7-avatar-media') || '').toLowerCase();
+    if (storedValue === 'off' || storedValue === 'disabled') return false;
+    if (storedValue === 'on' || storedValue === 'enabled') return true;
+
+    const runtimeValue = window.XV7_ENABLE_AVATAR_MEDIA;
+    if (runtimeValue === false) return false;
+    if (runtimeValue === true) return true;
+
+    return true;
+  }
+
   bindEvents() {
     this.els.sendButton.addEventListener('click', () => {
       void this.sendMessage();
@@ -245,6 +283,16 @@ class Xv7UI {
         void this.sendMessage();
       }
     });
+
+    this.els.promptInput.addEventListener('input', () => {
+      this.handlePromptInputChanged();
+    });
+
+    if (this.els.operatorModeToggle) {
+      this.els.operatorModeToggle.addEventListener('click', () => {
+        void this.toggleOperatorMode();
+      });
+    }
 
     this.els.personaSelect.addEventListener('change', () => {
       this.activePersona = this.els.personaSelect.value;
@@ -423,12 +471,207 @@ class Xv7UI {
     }
 
     await this.refreshModelProfileControl();
+    await this.refreshSlashCommands();
+    this.renderOperatorModeUi();
     this.loadVoicePreferences();
     this.setupVoiceInput();
     this.setupVoiceOutput();
     this.refreshVoiceVoices();
     this.renderVoiceDiagnostics();
     this.initializeAvatar();
+  }
+
+  async toggleOperatorMode() {
+    this.operatorModeActive = !this.operatorModeActive;
+    this.statusSummary.operatorMode = this.operatorModeActive ? 'Operator Active' : 'Read-only';
+    this.renderStatusStrip();
+    this.renderOperatorModeUi();
+    await this.refreshSlashCommands();
+    this.handlePromptInputChanged();
+    if (!this.operatorModeActive) {
+      this.pendingOperatorAction = null;
+      this.renderPendingOperatorAction();
+    }
+  }
+
+  renderOperatorModeUi() {
+    if (this.els.operatorModeToggle) {
+      this.els.operatorModeToggle.setAttribute('aria-pressed', this.operatorModeActive ? 'true' : 'false');
+      this.els.operatorModeToggle.textContent = this.operatorModeActive ? 'Operator Mode: ON' : 'Operator Mode: OFF';
+      this.els.operatorModeToggle.classList.toggle('operator-mode-on', this.operatorModeActive);
+    }
+    if (this.els.operatorModeBanner) {
+      this.els.operatorModeBanner.classList.toggle('hidden', !this.operatorModeActive);
+    }
+  }
+
+  async refreshSlashCommands() {
+    try {
+      const payload = await this.fetchJson(`/api/operator/commands?operator_mode=${this.operatorModeActive ? 'true' : 'false'}`, {
+        method: 'GET',
+      });
+      this.slashCommands = Array.isArray(payload?.commands) ? payload.commands : [];
+    } catch {
+      this.slashCommands = [];
+    }
+    this.renderSlashMenu();
+  }
+
+  handlePromptInputChanged() {
+    const text = String(this.els.promptInput.value || '');
+    const trimmed = text.trimStart();
+    if (!trimmed.startsWith('/')) {
+      this.slashMenuOpen = false;
+      this.slashFilter = '';
+      this.renderSlashMenu();
+      return;
+    }
+
+    this.slashMenuOpen = true;
+    this.slashFilter = trimmed.slice(1).toLowerCase();
+    this.renderSlashMenu();
+  }
+
+  groupedSlashCommands() {
+    const groups = {
+      read_only: [],
+      mutation: [],
+      high_risk: [],
+      vscode: [],
+    };
+    this.slashCommands.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      const slash = String(item.slash || '');
+      const category = String(item.category || '');
+      const visible = Boolean(item.visible);
+      if (!visible) return;
+      if (this.slashFilter && !slash.toLowerCase().includes(this.slashFilter)) return;
+
+      if (category.includes('high_risk')) {
+        groups.high_risk.push(item);
+      } else if (category.includes('vscode')) {
+        groups.vscode.push(item);
+      } else if (String(item.mode) === 'read_only') {
+        groups.read_only.push(item);
+      } else {
+        groups.mutation.push(item);
+      }
+    });
+    return groups;
+  }
+
+  renderSlashMenu() {
+    const menu = this.els.slashMenu;
+    if (!menu) return;
+    menu.innerHTML = '';
+    menu.classList.toggle('hidden', !this.slashMenuOpen);
+    if (!this.slashMenuOpen) return;
+
+    const groups = this.groupedSlashCommands();
+    const labels = [
+      ['read_only', 'Read-only Scan Commands'],
+      ['mutation', 'Operator Mutation Commands'],
+      ['high_risk', 'High-risk Commands'],
+      ['vscode', 'VS Code Commands'],
+    ];
+
+    labels.forEach(([key, label]) => {
+      const items = groups[key] || [];
+      if (!items.length) return;
+      const section = document.createElement('div');
+      section.className = 'slash-group';
+
+      const title = document.createElement('p');
+      title.className = 'slash-group-title';
+      title.textContent = label;
+      section.append(title);
+
+      items.forEach((item) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'slash-item';
+        row.disabled = !Boolean(item.enabled);
+        const risk = String(item.risk_level || 'low');
+        row.textContent = `${item.slash} (${risk})`;
+        row.addEventListener('click', () => {
+          this.els.promptInput.value = `${item.slash} `;
+          this.els.promptInput.focus();
+          this.slashMenuOpen = false;
+          this.renderSlashMenu();
+        });
+        section.append(row);
+      });
+
+      menu.append(section);
+    });
+  }
+
+  renderPendingOperatorAction() {
+    const mount = this.els.operatorConfirmArea;
+    if (!mount) return;
+    mount.innerHTML = '';
+    if (!this.pendingOperatorAction) {
+      mount.classList.add('hidden');
+      return;
+    }
+    mount.classList.remove('hidden');
+
+    const pending = this.pendingOperatorAction;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'operator-confirm-card';
+
+    const title = document.createElement('p');
+    title.className = 'operator-confirm-title';
+    title.textContent = "I'm ready to perform this operator action, but I need confirmation first.";
+
+    const details = document.createElement('div');
+    details.className = 'operator-confirm-grid';
+    this.appendReceiptField(details, 'Action', String(pending.command_name || '-'));
+    this.appendReceiptField(details, 'Target', String(pending.target || '-'));
+    this.appendReceiptField(details, 'Mode', 'Operator Mode');
+    this.appendReceiptField(details, 'Risk level', String(pending.risk_level || 'unknown'));
+    this.appendReceiptField(details, 'Can this be undone', pending.reversible ? 'Possibly' : 'No, not from XV7');
+    this.appendReceiptField(details, 'Command preview', String(pending.command_preview || '-'));
+    this.appendReceiptField(details, 'Status', 'Pending confirmation');
+
+    const typedWrap = document.createElement('div');
+    let typedInput = null;
+    if (pending.requires_typed_confirmation) {
+      typedWrap.className = 'operator-typed-confirm-wrap';
+      const typedLabel = document.createElement('label');
+      typedLabel.className = 'operator-typed-confirm-label';
+      typedLabel.textContent = `Type: ${String(pending.confirmation_phrase || '')}`;
+      typedInput = document.createElement('input');
+      typedInput.type = 'text';
+      typedInput.className = 'operator-typed-confirm-input';
+      typedInput.placeholder = 'Type exact confirmation phrase';
+      typedWrap.append(typedLabel, typedInput);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'operator-confirm-actions';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'xv7-control-button';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => {
+      void this.cancelPendingOperatorAction();
+    });
+
+    const confirmButton = document.createElement('button');
+    confirmButton.type = 'button';
+    confirmButton.className = 'xv7-control-button operator-confirm-exec';
+    confirmButton.textContent = 'Confirm Action';
+    confirmButton.addEventListener('click', () => {
+      const typed = typedInput ? typedInput.value : '';
+      void this.confirmPendingOperatorAction(typed);
+    });
+    actions.append(cancelButton, confirmButton);
+
+    wrapper.append(title, details);
+    if (typedWrap.childElementCount) wrapper.append(typedWrap);
+    wrapper.append(actions);
+    mount.append(wrapper);
   }
 
   async refreshModelProfileControl() {
@@ -652,31 +895,27 @@ class Xv7UI {
     this.setHardwareLoad('Inference', 74);
 
     try {
-      if (!this.currentSessionId) {
-        const sessionData = await this.fetchJson('/api/sessions', {
-          method: 'POST',
-          body: JSON.stringify({
-            current_persona: this.activePersona,
-            metadata: {
-              source: 'xv7-public-spa',
-              started_at: new Date().toISOString(),
-            },
-          }),
-        });
-        this.currentSessionId = sessionData.session_id;
-        if (!this.currentSessionId || typeof this.currentSessionId !== 'string') {
-          throw new Error('Session creation response did not include a valid session_id.');
-        }
-      }
+      await this.ensureSession();
 
       this.appendMessageCard('user', raw, null, null, this.nowIso());
       this.els.promptInput.value = '';
+      this.slashMenuOpen = false;
+      this.renderSlashMenu();
       this.transcriptPending = false;
       this.voiceInputError = '';
       this.setVoiceStatus('');
       this.voiceState.transcriptPending = false;
       this.voiceState.lastVoiceError = '';
       this.renderVoiceDiagnostics();
+
+      if (raw.startsWith('/')) {
+        await this.sendSlashCommand(raw);
+        this.memoryLogCount += 1;
+        this.updateSessionTelemetry();
+        this.setHardwareLoad('Ready', 12);
+        this.setAvatarState('idle', 'operator-stage-response');
+        return;
+      }
 
       const data = await this.fetchJson(`/api/sessions/${this.currentSessionId}/messages`, {
         method: 'POST',
@@ -753,6 +992,139 @@ class Xv7UI {
       this.scheduleAvatarReset('idle', 1800);
     } finally {
       this.lockInput(false);
+    }
+  }
+
+  async ensureSession() {
+    if (this.currentSessionId) return;
+    const sessionData = await this.fetchJson('/api/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_persona: this.activePersona,
+        metadata: {
+          source: 'xv7-public-spa',
+          started_at: new Date().toISOString(),
+        },
+      }),
+    });
+    this.currentSessionId = sessionData.session_id;
+    if (!this.currentSessionId || typeof this.currentSessionId !== 'string') {
+      throw new Error('Session creation response did not include a valid session_id.');
+    }
+  }
+
+  async sendSlashCommand(commandText) {
+    let payload;
+    try {
+      payload = await this.fetchJson('/api/operator/stage', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: this.currentSessionId,
+          command_text: commandText,
+          operator_mode: this.operatorModeActive,
+        }),
+      });
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true);
+      return;
+    }
+
+    const receipt = payload?.receipt && typeof payload.receipt === 'object' ? payload.receipt : null;
+    const assistantMeta = {
+      visible_text: payload?.answer || '',
+      context_receipt: {},
+      operator_receipts: receipt ? [receipt] : [],
+      memory_receipts: [],
+      model_use_receipt: {},
+      policy_provenance: { policy_source: 'operator_mode_slash' },
+      warnings: [],
+      action_history_refs: receipt?.action_id ? [receipt.action_id] : [],
+    };
+    this.appendMessageCard('assistant', payload?.answer || 'Operator action processed.', null, assistantMeta, this.nowIso());
+
+    this.pendingOperatorAction = payload?.pending_action || null;
+    this.renderPendingOperatorAction();
+
+    if (receipt) {
+      this.renderOperatorActivity([receipt]);
+      this.updateStatusFromHistory([receipt]);
+    }
+  }
+
+  async confirmPendingOperatorAction(typedConfirmation = '') {
+    if (!this.pendingOperatorAction || !this.currentSessionId) return;
+    let payload;
+    try {
+      payload = await this.fetchJson('/api/operator/confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: this.currentSessionId,
+          action_id: this.pendingOperatorAction.action_id,
+          typed_confirmation: typedConfirmation || null,
+        }),
+      });
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true);
+      return;
+    }
+
+    const receipt = payload?.receipt && typeof payload.receipt === 'object' ? payload.receipt : null;
+    const assistantMeta = {
+      visible_text: payload?.answer || '',
+      context_receipt: {},
+      operator_receipts: receipt ? [receipt] : [],
+      memory_receipts: [],
+      model_use_receipt: {},
+      policy_provenance: { policy_source: 'operator_mode_confirm' },
+      warnings: [],
+      action_history_refs: receipt?.action_id ? [receipt.action_id] : [],
+    };
+    this.appendMessageCard('assistant', payload?.answer || 'Operator confirmation processed.', null, assistantMeta, this.nowIso());
+
+    this.pendingOperatorAction = payload?.pending_action || null;
+    this.renderPendingOperatorAction();
+
+    if (receipt) {
+      this.renderOperatorActivity([receipt]);
+      this.updateStatusFromHistory([receipt]);
+    }
+  }
+
+  async cancelPendingOperatorAction() {
+    if (!this.pendingOperatorAction || !this.currentSessionId) return;
+    let payload;
+    try {
+      payload = await this.fetchJson('/api/operator/cancel', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: this.currentSessionId,
+          action_id: this.pendingOperatorAction.action_id,
+        }),
+      });
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true);
+      return;
+    }
+
+    const receipt = payload?.receipt && typeof payload.receipt === 'object' ? payload.receipt : null;
+    const assistantMeta = {
+      visible_text: payload?.answer || '',
+      context_receipt: {},
+      operator_receipts: receipt ? [receipt] : [],
+      memory_receipts: [],
+      model_use_receipt: {},
+      policy_provenance: { policy_source: 'operator_mode_cancel' },
+      warnings: [],
+      action_history_refs: receipt?.action_id ? [receipt.action_id] : [],
+    };
+    this.appendMessageCard('assistant', payload?.answer || 'Pending operator action cancelled.', null, assistantMeta, this.nowIso());
+
+    this.pendingOperatorAction = null;
+    this.renderPendingOperatorAction();
+
+    if (receipt) {
+      this.renderOperatorActivity([receipt]);
+      this.updateStatusFromHistory([receipt]);
     }
   }
 
@@ -856,7 +1228,7 @@ class Xv7UI {
       chip.className = `receipt-chip status-${status}`;
       chip.textContent = `Operator: ${this.operatorChipLabel(actionName, status)}`;
       chipRow.append(chip);
-      compactReceipts.push(`${actionName} ${status} ${readOnly}`);
+      compactReceipts.push(chip.textContent || `${actionName} ${status} ${readOnly}`);
     });
 
     const contextReceipt = meta.context_receipt && typeof meta.context_receipt === 'object' ? meta.context_receipt : null;
@@ -875,7 +1247,7 @@ class Xv7UI {
         chip.className = `receipt-chip receipt-chip-${label.toLowerCase()}`;
         chip.textContent = `${label}: ${recordId}`;
         chipRow.append(chip);
-        compactReceipts.push(`${label.toLowerCase()} ${recordId}`);
+        compactReceipts.push(chip.textContent);
       });
     } else if (contextReceipt && typeof contextReceipt.compact === 'string' && contextReceipt.compact.trim()) {
       const layered = this.parseLayeredContextFromCompact(contextReceipt.compact);
@@ -886,7 +1258,7 @@ class Xv7UI {
           chip.className = `receipt-chip receipt-chip-${item.label.toLowerCase()}`;
           chip.textContent = `${item.label}: ${item.recordId}`;
           chipRow.append(chip);
-          compactReceipts.push(`${item.label.toLowerCase()} ${item.recordId}`);
+          compactReceipts.push(chip.textContent);
         });
       } else if (!contextReceipt.compact.toLowerCase().includes('operator receipt')) {
         const chip = document.createElement('span');
@@ -894,7 +1266,7 @@ class Xv7UI {
         const contextSummary = this.summarizeContextReceipt(contextReceipt.compact);
         chip.textContent = `Context: ${contextSummary}`;
         chipRow.append(chip);
-        compactReceipts.push(`context ${contextSummary}`);
+        compactReceipts.push(chip.textContent);
       }
     }
 
@@ -906,7 +1278,7 @@ class Xv7UI {
       const memoryId = this.extractReceiptId(item);
       chip.textContent = `Memory: ${memoryId}`;
       chipRow.append(chip);
-      compactReceipts.push(`memory ${memoryId}`);
+      compactReceipts.push(chip.textContent);
     });
 
     const modelUseReceipt = meta.model_use_receipt && typeof meta.model_use_receipt === 'object' ? meta.model_use_receipt : null;
@@ -915,7 +1287,7 @@ class Xv7UI {
       chip.className = 'receipt-chip';
       chip.textContent = `Model: ${modelUseReceipt.model_tag.trim()}`;
       chipRow.append(chip);
-      compactReceipts.push(`model ${modelUseReceipt.model_tag.trim()}`);
+      compactReceipts.push(chip.textContent);
     }
 
     if (chipRow.childElementCount > 0) {
@@ -1046,7 +1418,6 @@ class Xv7UI {
       const status = typeof latest.status === 'string' ? latest.status : 'unknown';
       const actionName = typeof latest.action_name === 'string' ? latest.action_name : 'operator_action';
       this.statusSummary.lastAction = `${actionName} ${status}`;
-      this.statusSummary.operatorMode = 'Read-only';
       this.refreshStatusTimestamp();
       this.renderStatusStrip();
     }
@@ -1116,6 +1487,7 @@ class Xv7UI {
       'memory receipt:',
       'model receipt:',
       'receipt:',
+      'receipts:',
       'system:',
       'memory:',
       'knowledge:',
@@ -1569,6 +1941,15 @@ class Xv7UI {
       return;
     }
 
+    if (!this.avatarMediaEnabled) {
+      this.avatarClipLoaded = false;
+      this.avatarLastEvent = this.avatarLastEvent || 'avatar-media-disabled';
+      if (video.getAttribute('src')) {
+        video.removeAttribute('src');
+      }
+      return;
+    }
+
     const currentSrc = video.getAttribute('src') || '';
     if (currentSrc !== clip) {
       this.avatarClipLoaded = false;
@@ -1610,7 +1991,9 @@ class Xv7UI {
 
   renderAvatarDiagnostics() {
     const clipPath = this.avatarClips[this.avatarState] || this.avatarClips.idle || '';
-    const clipName = clipPath.split('/').pop() || 'fallback';
+    const clipName = this.avatarMediaEnabled
+      ? (clipPath.split('/').pop() || 'fallback')
+      : ((clipPath.split('/').pop() || 'fallback') + ' (disabled)');
     const visible = this.els.avatarCard ? !this.els.avatarCard.classList.contains('collapsed') : false;
 
     if (this.els.avatarDiagState) this.els.avatarDiagState.textContent = this.avatarState;
@@ -1879,10 +2262,10 @@ class Xv7UI {
       lines.push(`${roleLabel}:`);
       lines.push(entry.text || '');
       if (Array.isArray(entry.receiptSummary) && entry.receiptSummary.length) {
+        lines.push('');
+        lines.push('Receipts:');
         entry.receiptSummary.forEach((receiptLine) => {
-          lines.push('');
-          lines.push(`Receipt:`);
-          lines.push(receiptLine);
+          lines.push(`- ${receiptLine}`);
         });
       }
       lines.push('');
@@ -1908,11 +2291,13 @@ class Xv7UI {
       const chips = [...article.querySelectorAll('.receipt-chip')]
         .map((chip) => (chip.textContent || '').trim())
         .filter(Boolean);
-      chips.forEach((chipText) => {
+      if (chips.length) {
         lines.push('');
-        lines.push(`Receipt:`);
-        lines.push(chipText);
-      });
+        lines.push('Receipts:');
+        chips.forEach((chipText) => {
+          lines.push(`- ${chipText}`);
+        });
+      }
     }
 
     await this.copyToClipboard(lines.join('\n').trim());
@@ -2117,6 +2502,15 @@ class Xv7UI {
     const normalizedStatus = String(status || 'unknown');
     if (normalizedAction === 'read_only_guard' && normalizedStatus === 'denied') {
       return 'mutation denied';
+    }
+    if (normalizedStatus === 'pending') {
+      return `${normalizedAction} pending_confirmation`;
+    }
+    if (normalizedStatus === 'cancelled') {
+      return `${normalizedAction} cancelled`;
+    }
+    if (normalizedStatus === 'not_implemented') {
+      return `${normalizedAction} not_implemented`;
     }
     return `${normalizedAction} ${normalizedStatus}`;
   }

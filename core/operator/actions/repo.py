@@ -7,6 +7,9 @@ from pathlib import Path
 from core.operator.schema import OperatorActionResult, OperatorSafety
 
 
+GIT_COMMAND_TIMEOUT_SECONDS = 8
+
+
 def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
@@ -15,6 +18,7 @@ def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[st
             text=True,
             capture_output=True,
             check=False,
+            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
         )
     except FileNotFoundError:
         return subprocess.CompletedProcess(
@@ -22,6 +26,17 @@ def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[st
             returncode=127,
             stdout="",
             stderr="git executable not found",
+        )
+    except subprocess.TimeoutExpired:
+        command = "git " + " ".join(args)
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=124,
+            stdout="",
+            stderr=(
+                "limitation: repo status check timed out after "
+                f"{GIT_COMMAND_TIMEOUT_SECONDS}s while running {command}"
+            ),
         )
 
 

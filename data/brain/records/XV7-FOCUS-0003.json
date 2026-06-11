@@ -1,0 +1,25 @@
+{
+  "record_id": "XV7-FOCUS-0003",
+  "layer": "active_focus",
+  "title": "B9.5 personal assistant identity and everyday capability roadmap repair",
+  "summary": "B9.5 identity repair focus is complete and superseded by B9.8 local scan bridge and Operator Mode local capability phase.",
+  "body": "This focus record is archived. B9.5 established personal-assistant identity and honest missing-tool boundaries. Active focus has moved to B9.8 local host scan bridge, hardware/system visibility, and Operator Mode local capability stabilization.",
+  "status": "archived",
+  "priority": 140,
+  "tags": ["focus", "b9", "b9.5", "identity", "archived", "superseded"],
+  "facts": [
+    {
+      "statement": "B9.5 focus is archived and superseded by the B9.8 local scan bridge and Operator Mode local capability phase.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.8.2 focus refresh"
+    },
+    {
+      "statement": "Identity repair remains valid, but it is no longer the active focus lane.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.8.2 focus refresh"
+    }
+  ],
+  "evidence": [
+    "B9.5 scope completed and moved to archived status during B9.8.2 brain/config refresh."
+  ]
+}

@@ -56,6 +56,35 @@ class AddMessageRequest(BaseModel):
     raw_text: str = Field(min_length=1)
 
 
+class OperatorStageRequest(BaseModel):
+    """Stage a slash command action with optional operator mode enabled."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    command_text: str = Field(min_length=1)
+    operator_mode: bool = False
+
+
+class OperatorConfirmRequest(BaseModel):
+    """Confirm a previously staged operator action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    action_id: str = Field(min_length=1)
+    typed_confirmation: str | None = None
+
+
+class OperatorCancelRequest(BaseModel):
+    """Cancel a previously staged operator action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    action_id: str = Field(min_length=1)
+
+
 class UpdateFactsRequest(BaseModel):
     """Payload for updating persistent memory facts for a session."""
 
@@ -389,6 +418,111 @@ async def get_personas() -> dict[str, Any]:
     return {
         "count": len(base_agent.personas),
         "personas": base_agent.personas,
+    }
+
+
+@app.get(
+    "/operator/commands",
+    dependencies=[Depends(require_api_key)],
+)
+async def list_operator_commands(operator_mode: bool = False) -> dict[str, Any]:
+    return {
+        "operator_mode": operator_mode,
+        "commands": operator_manager.list_slash_commands(operator_mode=operator_mode),
+    }
+
+
+@app.post(
+    "/operator/stage",
+    dependencies=[Depends(require_api_key)],
+)
+async def stage_operator_action(payload: OperatorStageRequest) -> dict[str, Any]:
+    session_state = await memory_manager.get_session(payload.session_id)
+    stage_result = operator_manager.stage_slash_command(
+        payload.command_text,
+        operator_mode=payload.operator_mode,
+        session_metadata=session_state.metadata,
+    )
+
+    structured_receipt = stage_result["result"].structured_receipt()
+    history = append_history(session_state.metadata, structured_receipt)
+    session_state.metadata["operator_last_action"] = stage_result["result"].model_dump(mode="json")
+    session_state.metadata["operator_action_history"] = history
+    await memory_manager.update_session(session_state)
+
+    return {
+        "session_id": str(payload.session_id),
+        "answer": stage_result["answer"],
+        "executed": stage_result["executed"],
+        "pending_action": stage_result["pending_action"],
+        "receipt": structured_receipt,
+    }
+
+
+@app.post(
+    "/operator/confirm",
+    dependencies=[Depends(require_api_key)],
+)
+async def confirm_operator_action(payload: OperatorConfirmRequest) -> dict[str, Any]:
+    session_state = await memory_manager.get_session(payload.session_id)
+    pending = operator_manager.get_pending_action(session_state.metadata)
+
+    if pending is None or str(pending.get("action_id", "")) != payload.action_id:
+        raise ValueError("No matching pending operator action found for confirmation.")
+
+    confirmation = operator_manager.confirm_pending_action(
+        pending,
+        typed_confirmation=payload.typed_confirmation,
+    )
+    result = confirmation["result"]
+    structured_receipt = result.structured_receipt()
+
+    should_clear = result.status in {"success", "cancelled", "not_implemented"}
+    if result.status == "failed":
+        err = str(result.stderr_summary or "").lower()
+        should_clear = not ("typed confirmation did not match" in err)
+
+    if should_clear:
+        operator_manager.clear_pending_action(session_state.metadata)
+
+    history = append_history(session_state.metadata, structured_receipt)
+    session_state.metadata["operator_last_action"] = result.model_dump(mode="json")
+    session_state.metadata["operator_action_history"] = history
+    await memory_manager.update_session(session_state)
+
+    return {
+        "session_id": str(payload.session_id),
+        "answer": confirmation["answer"],
+        "receipt": structured_receipt,
+        "pending_action": operator_manager.get_pending_action(session_state.metadata),
+    }
+
+
+@app.post(
+    "/operator/cancel",
+    dependencies=[Depends(require_api_key)],
+)
+async def cancel_operator_action(payload: OperatorCancelRequest) -> dict[str, Any]:
+    session_state = await memory_manager.get_session(payload.session_id)
+    pending = operator_manager.get_pending_action(session_state.metadata)
+
+    if pending is None or str(pending.get("action_id", "")) != payload.action_id:
+        raise ValueError("No matching pending operator action found for cancel request.")
+
+    cancellation = operator_manager.cancel_pending_action(pending)
+    operator_manager.clear_pending_action(session_state.metadata)
+
+    structured_receipt = cancellation["result"].structured_receipt()
+    history = append_history(session_state.metadata, structured_receipt)
+    session_state.metadata["operator_last_action"] = cancellation["result"].model_dump(mode="json")
+    session_state.metadata["operator_action_history"] = history
+    await memory_manager.update_session(session_state)
+
+    return {
+        "session_id": str(payload.session_id),
+        "answer": cancellation["answer"],
+        "receipt": structured_receipt,
+        "pending_action": None,
     }
 
 

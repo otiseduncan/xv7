@@ -28,7 +28,11 @@ docker/core/.dockerignore
 core/data/
 *.db
 *.sqlite3
-data/
+data/*
+!data/brain/
+data/brain/*
+!data/brain/records/
+!data/brain/records/*.json
 
 # Logs
 *.log

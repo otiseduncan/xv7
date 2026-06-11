@@ -1,0 +1,25 @@
+{
+  "record_id": "XV7-FOCUS-0002",
+  "layer": "active_focus",
+  "title": "Current active focus",
+  "summary": "Current focus is B5.1 provenance cleanup and Active Focus refresh before B6 persistent memory.",
+  "body": "Current project focus: complete B5.1 by separating policy/brain answer provenance from actual runtime model inference provenance, refresh active focus records, and prepare a clean transition into B6 persistent memory.",
+  "status": "archived",
+  "priority": 110,
+  "tags": ["focus", "b5.1", "b6-transition"],
+  "facts": [
+    {
+      "statement": "We are working on B5.1 provenance cleanup and Active Focus refresh before B6 persistent memory.",
+      "source_type": "user_confirmed",
+      "source_detail": "B5.1 directive"
+    },
+    {
+      "statement": "B5 conversation quality baseline is implemented and passing.",
+      "source_type": "user_confirmed",
+      "source_detail": "Current verified state"
+    }
+  ],
+  "evidence": [
+    "User requested B5.1 provenance and active focus cleanup before B6."
+  ]
+}

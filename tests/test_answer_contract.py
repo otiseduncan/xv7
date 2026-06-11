@@ -81,7 +81,8 @@ def test_active_focus_answer_uses_b51_transition_focus() -> None:
     )
 
     assert answer is not None
-    assert "B8.2 brain content fill and communication routing repair" in answer
+    assert "B9.8" in answer
+    assert "local host scan bridge" in answer.lower()
 
 
 def test_user_name_answer_comes_from_memory() -> None:
@@ -174,7 +175,9 @@ def test_identity_answers_are_deterministic_and_pronunciation_safe() -> None:
     assert "pronounced" not in name.lower()
     assert pronounce == "Xoduz is pronounced Exodus."
     assert spell == "X-O-D-U-Z."
-    assert who == "I am Xoduz, the XV7 assistant."
+    assert "I am Xoduz" in who
+    assert "personal ai assistant" in who.lower()
+    assert "technical co-pilot" in who.lower()
 
 
 def test_spelling_correction_prompts_are_deterministic() -> None:
@@ -226,9 +229,149 @@ def test_creator_and_purpose_answers_are_deterministic() -> None:
 
     assert creator == "I was created by Otis Duncan for the XV7 project under Syfernetics."
     assert "Otis Duncan" in built
-    assert "app-development assistant and operator partner" in built
-    assert "help Otis turn his ideas" in purpose
+    assert "personal ai assistant" in built.lower()
+    assert "technical co-pilot" in built.lower()
+    assert "everyday life and technical work" in purpose.lower()
     assert who_is_otis == "Otis Duncan is my creator/operator and the human directing XV7."
+
+
+def test_become_family_medical_and_sms_answers_follow_personal_assistant_identity() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    become = contract.try_answer(
+        "What are you supposed to become?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    sms = contract.try_answer(
+        "Can you text someone for me?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    family = contract.try_answer(
+        "Do you know my family?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    medical = contract.try_answer(
+        "Do you know my medical history?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+
+    assert become is not None
+    assert "personal ai assistant" in become.lower()
+    assert "best-friend" in become.lower()
+    assert "technical co-pilot" in become.lower()
+    assert "female companion" not in become.lower()
+    assert "companion" not in become.lower()
+
+    assert sms is not None
+    assert "can't send texts yet" in sms.lower()
+    assert "sms connector" in sms.lower()
+    assert "explicit approval" in sms.lower()
+
+    assert family is not None
+    assert "explicitly added to memory" in family.lower()
+    assert "private" in family.lower()
+
+    assert medical is not None
+    assert "explicitly approve" in medical.lower()
+    assert "sensitive" in medical.lower()
+    assert "private tagging" in medical.lower()
+
+
+def test_missing_tool_answers_are_honest_and_useful() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    reminder = contract.try_answer(
+        "Set me a reminder for tomorrow at 5:00 p.m. to take out the trash",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    weather = contract.try_answer(
+        "What's the weather forecast today for Milledgeville Georgia?",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    email = contract.try_answer(
+        "Check my email",
+        records_by_layer=records,
+        session_metadata={},
+    )
+
+    assert reminder is not None
+    assert "can't create live reminders yet" in reminder.lower()
+    assert "reminder tool wired in" in reminder.lower()
+    assert "personal-assistant roadmap" in reminder.lower()
+    assert "reminders module" in reminder.lower()
+    assert "tomorrow at 5:00" in reminder.lower()
+    assert "use a calendar app" not in reminder.lower()
+    assert "was set" not in reminder.lower()
+
+    assert weather is not None
+    assert "can't fetch live weather" in weather.lower()
+    assert "weather connector" in weather.lower()
+    assert "everyday-assistant roadmap" in weather.lower()
+    assert "milledgeville" not in weather.lower() or "forecast" in weather.lower()
+
+    assert email is not None
+    assert "can't check email yet" in email.lower()
+    assert "authorized email connector" in email.lower()
+    assert "personal-assistant roadmap" in email.lower()
+    assert "read-only inbox access" in email.lower()
+
+
+def test_missing_tool_answers_do_not_fall_back_to_context_or_external_apps() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    for prompt in (
+        "Set me a reminder for tomorrow at 5:00 p.m. to take out the trash",
+        "What's the weather forecast today for Milledgeville Georgia?",
+        "Check my email",
+        "Can you text someone for me?",
+        "Do you know my family?",
+        "Do you know my medical history?",
+    ):
+        answer = contract.try_answer(
+            prompt,
+            records_by_layer=records,
+            session_metadata={},
+        )
+        assert answer is not None
+        lowered = answer.lower()
+        assert "context does not specify" not in lowered
+        assert "use a calendar app" not in lowered
+        assert "use another app" not in lowered
+        assert "my focus is app development" not in lowered
+        assert "i already" not in lowered
+        assert "i checked" not in lowered
+
+
+def test_hardware_temperature_prompt_is_not_misrouted_to_weather() -> None:
+    contract = AnswerContract()
+    answer = contract.try_answer(
+        "Scan CPU temperature and usage right now",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+
+    # Should defer to operator routing rather than emitting weather fallback text.
+    assert answer is None
+
+
+def test_gpu_temperature_prompt_is_not_misrouted_to_weather() -> None:
+    contract = AnswerContract()
+    answer = contract.try_answer(
+        "Check GPU temperature",
+        records_by_layer=_layer_map(),
+        session_metadata={},
+    )
+
+    assert answer is None
 
 
 def test_identity_contract_answers_do_not_include_receipt_text() -> None:
@@ -255,3 +398,87 @@ def test_identity_contract_answers_do_not_include_receipt_text() -> None:
         lowered = answer.lower()
         assert "context receipt:" not in lowered
         assert "operator receipt:" not in lowered
+
+
+def test_no_identity_answer_contains_companion() -> None:
+    """Companion must never appear in normal identity/purpose answers."""
+    contract = AnswerContract()
+    records = _layer_map()
+
+    for prompt in (
+        "What is your name?",
+        "Who are you?",
+        "Why were you built?",
+        "What is your purpose?",
+        "What are you supposed to become?",
+        "Who is Otis?",
+    ):
+        answer = contract.try_answer(
+            prompt,
+            records_by_layer=records,
+            session_metadata={},
+        )
+        assert answer is not None, f"No answer returned for: {prompt}"
+        assert "companion" not in answer.lower(), (
+            f"'companion' found in answer to '{prompt}': {answer!r}"
+        )
+
+
+def test_relationship_and_gender_answers_are_deterministic() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    female = contract.try_answer("Are you female?", records_by_layer=records, session_metadata={})
+    companion_q = contract.try_answer("Are you my companion?", records_by_layer=records, session_metadata={})
+    relationship = contract.try_answer("What is your relationship to me?", records_by_layer=records, session_metadata={})
+
+    assert female is not None
+    assert "yes" in female.lower()
+    assert "female" in female.lower()
+
+    assert companion_q is not None
+    assert "personal ai assistant" in companion_q.lower()
+    assert "best-friend" in companion_q.lower()
+    assert "not a romantic" in companion_q.lower()
+    assert "companion" in companion_q.lower()  # allowed only in this denial context
+    assert "romantic" in companion_q.lower()    # explains what it is NOT
+
+    assert relationship is not None
+    assert "personal ai assistant" in relationship.lower()
+    assert "best-friend" in relationship.lower()
+    assert "technical co-pilot" in relationship.lower()
+    assert "operator partner" in relationship.lower()
+    assert "companion" not in relationship.lower()
+
+
+def test_local_capability_prompts_are_phase_accurate() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    local_caps = contract.try_answer(
+        "what can you do locally",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    scan_system = contract.try_answer(
+        "can you scan my system",
+        records_by_layer=records,
+        session_metadata={},
+    )
+    run_ps = contract.try_answer(
+        "can you run powershell",
+        records_by_layer=records,
+        session_metadata={},
+    )
+
+    assert local_caps is not None
+    assert "read-only scans can run in normal mode" in local_caps.lower()
+    assert "mutation requires operator mode" in local_caps.lower()
+
+    assert scan_system is not None
+    assert "local scan bridge" in scan_system.lower()
+    assert "local host scan bridge" in scan_system.lower()
+
+    assert run_ps is not None
+    assert "not as an unrestricted shell" in run_ps.lower()
+    assert "powershell/cmd-backed scan actions" in run_ps.lower()

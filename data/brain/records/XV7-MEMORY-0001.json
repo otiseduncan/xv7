@@ -1,0 +1,25 @@
+{
+  "record_id": "XV7-MEMORY-0001",
+  "layer": "memory",
+  "title": "User preference for fresh XV7 records",
+  "summary": "Otis requires fresh XV7-native knowledge records and no XV6.1 bulk import.",
+  "body": "User memory rule: do not migrate or bulk import XV6.1 knowledge. XV6.1 can be used only as historical reference. Build fresh clean XV7 records from currently verified facts.",
+  "status": "archived",
+  "priority": 95,
+  "tags": ["user_preference", "memory"],
+  "facts": [
+    {
+      "statement": "Do not migrate, copy, or bulk import XV6.1 knowledge records.",
+      "source_type": "user_stated",
+      "source_detail": "B4 important direction"
+    },
+    {
+      "statement": "XV6.1 may be used as historical reference only.",
+      "source_type": "user_stated",
+      "source_detail": "B4 important direction"
+    }
+  ],
+  "evidence": [
+    "User provided explicit direction for fresh XV7-native knowledge system."
+  ]
+}

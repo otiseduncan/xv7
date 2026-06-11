@@ -274,6 +274,12 @@
             </section>
 
             <section class="space-y-2 rounded-xl border border-xv7-line bg-xv7-panelSoft/80 p-3">
+              <div class="space-y-2 rounded-lg border border-amber-300/35 bg-amber-300/10 p-2.5">
+                <label class="font-mono text-[10px] uppercase tracking-[0.16em] text-amber-100">Operator Control</label>
+                <button id="operatorModeToggle" type="button" class="operator-mode-toggle">Operator Mode: OFF</button>
+                <p class="text-[11px] text-amber-100/80">Mutation actions require slash commands and explicit confirmation.</p>
+              </div>
+
               <div>
                 <label class="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Voice Output</label>
                 <p class="mt-1 text-[11px] text-slate-500">Shell controls stay synced with the drawer.</p>
@@ -332,6 +338,7 @@
           </div>
 
           <div id="operatorSummaryChip" class="operator-summary-chip hidden border-b border-xv7-line bg-xv7-panelSoft px-4 py-1.5 text-[11px]"></div>
+          <div id="operatorModeBanner" class="hidden border-b border-amber-300/35 bg-amber-400/10 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-amber-100">OPERATOR MODE ACTIVE</div>
 
           <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
             <div class="flex items-center justify-between">
@@ -347,11 +354,13 @@
           </div>
 
           <div class="border-t border-xv7-line bg-xv7-panel/70 px-4 py-3">
+            <div id="operatorConfirmArea" class="hidden mb-2"></div>
             <div class="flex items-end gap-2">
               <textarea id="promptInput" rows="2" placeholder="Ask xv7 anything… (Enter to send, Shift+Enter for new line)" class="flex-1 resize-none rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-xv7-glow"></textarea>
               <button id="micButton" type="button" aria-label="Start voice input" class="xv7-control-button self-end" title="Voice input is not supported in this browser.">Mic</button>
               <button id="sendButton" class="self-end rounded-xl border border-xv7-primary/70 bg-xv7-primary/15 px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-[0.14em] text-xv7-glow transition hover:bg-xv7-primary/25 disabled:cursor-not-allowed disabled:opacity-50">Send</button>
             </div>
+            <div id="slashMenu" class="hidden mt-2 slash-menu" aria-label="Slash command menu"></div>
             <div id="voiceStatus" class="voice-status mt-2 text-[11px] text-slate-500" role="status" aria-live="polite"></div>
           </div>
         </main>

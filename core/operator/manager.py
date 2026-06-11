@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import shlex
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -50,11 +53,549 @@ class OperatorExecution:
     record_history: bool = True
 
 
+@dataclass(frozen=True)
+class SlashCommandSpec:
+    slash: str
+    category: str
+    risk_level: str
+    mode: str
+    requires_typed_confirmation: bool = False
+    confirmation_phrase: str | None = None
+    reversible: bool = True
+    implemented: bool = True
+
+
 class OperatorManager:
     def __init__(self, repo_root: Path | None = None) -> None:
         self.repo_root = (repo_root or Path.cwd()).resolve()
         self._counter = 0
         self.registry = build_operator_registry()
+        self.pending_ttl_seconds = 300
+
+        self.slash_commands: dict[str, SlashCommandSpec] = {
+            "/scan-system": SlashCommandSpec("/scan-system", "read_only_scan", "low", "read_only"),
+            "/scan-cpu": SlashCommandSpec("/scan-cpu", "read_only_scan", "low", "read_only"),
+            "/scan-gpu": SlashCommandSpec("/scan-gpu", "read_only_scan", "low", "read_only"),
+            "/scan-disk": SlashCommandSpec("/scan-disk", "read_only_scan", "low", "read_only"),
+            "/scan-network": SlashCommandSpec("/scan-network", "read_only_scan", "low", "read_only"),
+            "/scan-ports": SlashCommandSpec("/scan-ports", "read_only_scan", "low", "read_only"),
+            "/scan-processes": SlashCommandSpec("/scan-processes", "read_only_scan", "low", "read_only"),
+            "/scan-services": SlashCommandSpec("/scan-services", "read_only_scan", "low", "read_only"),
+            "/scan-docker": SlashCommandSpec("/scan-docker", "read_only_scan", "low", "read_only"),
+            "/scan-vscode": SlashCommandSpec("/scan-vscode", "read_only_scan", "low", "read_only"),
+            "/scan-repo": SlashCommandSpec("/scan-repo", "read_only_scan", "low", "read_only"),
+            "/list-disk": SlashCommandSpec("/list-disk", "read_only_scan", "low", "read_only"),
+            "/list-disks": SlashCommandSpec("/list-disks", "read_only_scan", "low", "read_only"),
+            "/list-drives": SlashCommandSpec("/list-drives", "read_only_scan", "low", "read_only"),
+            "/list-files": SlashCommandSpec("/list-files", "read_only_scan", "low", "read_only"),
+            "/read-file": SlashCommandSpec("/read-file", "read_only_scan", "low", "read_only"),
+            "/search-files": SlashCommandSpec("/search-files", "read_only_scan", "low", "read_only"),
+            "/vscode-open-workspace": SlashCommandSpec("/vscode-open-workspace", "vscode_read_only", "low", "read_only", implemented=False),
+            "/vscode-open-file": SlashCommandSpec("/vscode-open-file", "vscode_read_only", "low", "read_only", implemented=False),
+            "/vscode-search": SlashCommandSpec("/vscode-search", "vscode_read_only", "low", "read_only", implemented=False),
+            "/vscode-diagnostics": SlashCommandSpec("/vscode-diagnostics", "vscode_read_only", "low", "read_only", implemented=False),
+
+            "/delete-file": SlashCommandSpec("/delete-file", "mutation", "destructive", "operator"),
+            "/rename-file": SlashCommandSpec("/rename-file", "mutation", "medium", "operator"),
+            "/move-file": SlashCommandSpec("/move-file", "mutation", "medium", "operator", implemented=False),
+            "/copy-file": SlashCommandSpec("/copy-file", "mutation", "medium", "operator", implemented=False),
+            "/write-file": SlashCommandSpec("/write-file", "mutation", "medium", "operator"),
+            "/append-file": SlashCommandSpec("/append-file", "mutation", "medium", "operator"),
+            "/create-folder": SlashCommandSpec("/create-folder", "mutation", "medium", "operator"),
+            "/delete-folder": SlashCommandSpec("/delete-folder", "mutation", "destructive", "operator", implemented=False),
+            "/apply-patch": SlashCommandSpec("/apply-patch", "mutation", "medium", "operator", implemented=False),
+            "/restart-container": SlashCommandSpec("/restart-container", "runtime_mutation", "medium", "operator"),
+            "/stop-container": SlashCommandSpec("/stop-container", "runtime_mutation", "destructive", "operator", implemented=False),
+            "/start-container": SlashCommandSpec("/start-container", "runtime_mutation", "medium", "operator", implemented=False),
+            "/rebuild-container": SlashCommandSpec("/rebuild-container", "runtime_mutation", "destructive", "operator", implemented=False),
+            "/restart-service": SlashCommandSpec("/restart-service", "runtime_mutation", "destructive", "operator", implemented=False),
+            "/kill-process": SlashCommandSpec("/kill-process", "runtime_mutation", "destructive", "operator", implemented=False),
+            "/git-add": SlashCommandSpec("/git-add", "git_mutation", "medium", "operator", implemented=False),
+            "/git-commit": SlashCommandSpec("/git-commit", "git_mutation", "medium", "operator", implemented=False),
+            "/git-push": SlashCommandSpec("/git-push", "git_mutation", "destructive", "operator", implemented=False),
+            "/git-stash": SlashCommandSpec("/git-stash", "git_mutation", "medium", "operator", implemented=False),
+            "/git-restore": SlashCommandSpec("/git-restore", "git_mutation", "destructive", "operator", implemented=False),
+            "/vscode-apply-patch": SlashCommandSpec("/vscode-apply-patch", "vscode_mutation", "medium", "operator", implemented=False),
+            "/vscode-write-file": SlashCommandSpec("/vscode-write-file", "vscode_mutation", "medium", "operator", implemented=False),
+            "/vscode-create-file": SlashCommandSpec("/vscode-create-file", "vscode_mutation", "medium", "operator", implemented=False),
+
+            "/format-drive": SlashCommandSpec("/format-drive", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="FORMAT {target}", reversible=False, implemented=False),
+            "/partition-info": SlashCommandSpec("/partition-info", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="PARTITION INFO", reversible=False, implemented=False),
+            "/git-reset-hard": SlashCommandSpec("/git-reset-hard", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="RESET HARD", reversible=False, implemented=False),
+            "/git-clean": SlashCommandSpec("/git-clean", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="GIT CLEAN", reversible=False, implemented=False),
+            "/delete-folder-recursive": SlashCommandSpec("/delete-folder-recursive", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="DELETE {target}", reversible=False, implemented=False),
+            "/stop-service": SlashCommandSpec("/stop-service", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="STOP SERVICE", reversible=False, implemented=False),
+            "/start-service": SlashCommandSpec("/start-service", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="START SERVICE", reversible=False, implemented=False),
+            "/change-firewall-rule": SlashCommandSpec("/change-firewall-rule", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="CHANGE FIREWALL", reversible=False, implemented=False),
+            "/registry-edit": SlashCommandSpec("/registry-edit", "high_risk", "high", "operator", requires_typed_confirmation=True, confirmation_phrase="REGISTRY EDIT", reversible=False, implemented=False),
+        }
+
+    def list_slash_commands(self, *, operator_mode: bool) -> list[dict[str, Any]]:
+        commands: list[dict[str, Any]] = []
+        for slash, spec in sorted(self.slash_commands.items(), key=lambda item: item[0]):
+            enabled = spec.mode == "read_only" or operator_mode
+            visible = spec.mode == "read_only" or operator_mode
+            commands.append(
+                {
+                    "slash": slash,
+                    "category": spec.category,
+                    "risk_level": spec.risk_level,
+                    "mode": spec.mode,
+                    "visible": visible,
+                    "enabled": enabled,
+                    "requires_typed_confirmation": spec.requires_typed_confirmation,
+                    "confirmation_phrase": spec.confirmation_phrase,
+                    "implemented": spec.implemented,
+                }
+            )
+        return commands
+
+    @staticmethod
+    def _pending_key() -> str:
+        return "operator_pending_action"
+
+    def get_pending_action(self, session_metadata: dict[str, Any]) -> dict[str, Any] | None:
+        pending = session_metadata.get(self._pending_key())
+        if not isinstance(pending, dict):
+            return None
+        return pending
+
+    def clear_pending_action(self, session_metadata: dict[str, Any]) -> None:
+        session_metadata.pop(self._pending_key(), None)
+
+    def _resolve_target_path(self, raw: str) -> Path:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = self.repo_root / candidate
+        return candidate.resolve()
+
+    def _path_allowed(self, path: Path) -> bool:
+        allowed_roots = [self.repo_root, self.repo_root.parent]
+        return any(root == path or root in path.parents for root in allowed_roots)
+
+    def _parse_slash_command(self, command_text: str) -> tuple[str, list[str]]:
+        if not command_text.strip().startswith("/"):
+            raise ValueError("Slash command must start with '/'.")
+        parts = shlex.split(command_text, posix=False)
+        if not parts:
+            raise ValueError("Command is empty.")
+        return parts[0].lower(), parts[1:]
+
+    def _build_result(
+        self,
+        *,
+        action_name: str,
+        status: str,
+        mode_override: str | None = None,
+        command_preview: str,
+        target: str,
+        stdout: str = "",
+        stderr: str = "",
+        data: dict[str, Any] | None = None,
+        mutates_files: bool = False,
+        mutates_runtime: bool = False,
+        mutates_git: bool = False,
+        requires_approval: bool = False,
+    ) -> OperatorActionResult:
+        now = datetime.now(UTC)
+        mode = mode_override or ("operator" if (mutates_files or mutates_runtime or mutates_git) else "read_only")
+        safety = OperatorSafety(
+            allowed=status != "denied",
+            read_only=not (mutates_files or mutates_runtime or mutates_git),
+            mutates_files=mutates_files,
+            mutates_runtime=mutates_runtime,
+            mutates_git=mutates_git,
+            requires_approval=requires_approval,
+        )
+        return OperatorActionResult(
+            action_id=self._next_action_id(),
+            action_name=action_name,
+            mode=mode,
+            status=status,
+            started_at=now,
+            completed_at=now,
+            command_or_operation=command_preview,
+            target=target,
+            stdout_summary=stdout,
+            stderr_summary=stderr,
+            exit_code=0 if status == "success" else None,
+            data=data or {},
+            safety=safety,
+            receipt_label=f"{action_name} {datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}",
+        )
+
+    def _read_only_scan_result(self, slash: str, args: list[str]) -> OperatorActionResult:
+        if slash == "/scan-repo":
+            return run_action("repo_status", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-system":
+            return run_action("scan_system", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-cpu":
+            return run_action("scan_cpu", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-gpu":
+            return run_action("scan_gpu", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash in {"/scan-disk", "/list-disk", "/list-disks", "/list-drives"}:
+            return run_action("scan_disk", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-network":
+            return run_action("scan_network", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-ports":
+            return run_action("scan_ports", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-processes":
+            return run_action("scan_processes", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-services":
+            return run_action("scan_services", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-docker":
+            return run_action("scan_docker", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/scan-vscode":
+            return run_action("scan_vscode", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/list-files":
+            return run_action("list_project_files", action_id=self._next_action_id(), repo_root=self.repo_root)
+        if slash == "/read-file":
+            if not args:
+                return self._build_result(
+                    action_name="read_file",
+                    status="failed",
+                    command_preview="read project file",
+                    target=str(self.repo_root),
+                    stderr="Missing target path. Usage: /read-file <path>",
+                )
+            return run_action("read_project_file", action_id=self._next_action_id(), repo_root=self.repo_root, target=args[0])
+        if slash == "/search-files":
+            if not args:
+                return self._build_result(
+                    action_name="search_files",
+                    status="failed",
+                    command_preview="search project files",
+                    target=str(self.repo_root),
+                    stderr="Missing search query. Usage: /search-files <text>",
+                )
+            query = args[0].lower()
+            files = sorted(
+                str(path.relative_to(self.repo_root)).replace("\\", "/")
+                for path in self.repo_root.rglob("*")
+                if path.is_file() and query in str(path).lower() and ".git" not in path.parts
+            )[:60]
+            return self._build_result(
+                action_name="search_files",
+                status="success",
+                command_preview=f"search files for '{query}'",
+                target=str(self.repo_root),
+                stdout=f"matches={len(files)}",
+                data={"matches": files},
+            )
+        return self._build_result(
+            action_name=slash.strip("/"),
+            status="failed",
+            command_preview=slash,
+            target=str(self.repo_root),
+            stderr="Action not implemented yet.",
+        )
+
+    def _execute_mutation(self, slash: str, args: list[str]) -> OperatorActionResult:
+        if slash == "/delete-file":
+            if not args:
+                return self._build_result(action_name="delete_file", status="failed", command_preview=slash, target=str(self.repo_root), stderr="Missing path argument.", mutates_files=True)
+            target = self._resolve_target_path(args[0])
+            if not self._path_allowed(target):
+                return self._build_result(action_name="delete_file", status="denied", command_preview=slash, target=str(target), stderr="Denied outside allowed workspace roots.", mutates_files=True)
+            if not target.exists() or not target.is_file():
+                return self._build_result(action_name="delete_file", status="failed", command_preview=slash, target=str(target), stderr="File not found.", mutates_files=True)
+            target.unlink()
+            return self._build_result(action_name="delete_file", status="success", command_preview=f"Remove-Item \"{target}\"", target=str(target), stdout="file deleted", mutates_files=True)
+
+        if slash == "/rename-file":
+            if len(args) < 2:
+                return self._build_result(action_name="rename_file", status="failed", command_preview=slash, target=str(self.repo_root), stderr="Usage: /rename-file <old> <new>", mutates_files=True)
+            src = self._resolve_target_path(args[0])
+            dst = self._resolve_target_path(args[1])
+            if not self._path_allowed(src) or not self._path_allowed(dst):
+                return self._build_result(action_name="rename_file", status="denied", command_preview=slash, target=str(src), stderr="Denied outside allowed workspace roots.", mutates_files=True)
+            if not src.exists() or not src.is_file():
+                return self._build_result(action_name="rename_file", status="failed", command_preview=slash, target=str(src), stderr="Source file not found.", mutates_files=True)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            return self._build_result(action_name="rename_file", status="success", command_preview=f"Rename-Item \"{src}\" \"{dst.name}\"", target=str(dst), stdout="file renamed", mutates_files=True)
+
+        if slash == "/create-folder":
+            if not args:
+                return self._build_result(action_name="create_folder", status="failed", command_preview=slash, target=str(self.repo_root), stderr="Missing folder path.", mutates_files=True)
+            target = self._resolve_target_path(args[0])
+            if not self._path_allowed(target):
+                return self._build_result(action_name="create_folder", status="denied", command_preview=slash, target=str(target), stderr="Denied outside allowed workspace roots.", mutates_files=True)
+            target.mkdir(parents=True, exist_ok=True)
+            return self._build_result(action_name="create_folder", status="success", command_preview=f"New-Item -ItemType Directory -Path \"{target}\"", target=str(target), stdout="folder created", mutates_files=True)
+
+        if slash == "/write-file":
+            if len(args) < 2:
+                return self._build_result(action_name="write_file", status="failed", command_preview=slash, target=str(self.repo_root), stderr="Usage: /write-file <path> <content>", mutates_files=True)
+            target = self._resolve_target_path(args[0])
+            content = " ".join(args[1:])
+            if not self._path_allowed(target):
+                return self._build_result(action_name="write_file", status="denied", command_preview=slash, target=str(target), stderr="Denied outside allowed workspace roots.", mutates_files=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            return self._build_result(action_name="write_file", status="success", command_preview=f"Set-Content \"{target}\"", target=str(target), stdout=f"wrote {len(content)} chars", mutates_files=True)
+
+        if slash == "/append-file":
+            if len(args) < 2:
+                return self._build_result(action_name="append_file", status="failed", command_preview=slash, target=str(self.repo_root), stderr="Usage: /append-file <path> <content>", mutates_files=True)
+            target = self._resolve_target_path(args[0])
+            content = " ".join(args[1:])
+            if not self._path_allowed(target):
+                return self._build_result(action_name="append_file", status="denied", command_preview=slash, target=str(target), stderr="Denied outside allowed workspace roots.", mutates_files=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("a", encoding="utf-8") as handle:
+                handle.write(content)
+            return self._build_result(action_name="append_file", status="success", command_preview=f"Add-Content \"{target}\"", target=str(target), stdout=f"appended {len(content)} chars", mutates_files=True)
+
+        if slash == "/restart-container":
+            if not args:
+                return self._build_result(action_name="restart_container", status="failed", command_preview=slash, target=str(self.repo_root), stderr="Usage: /restart-container <name>", mutates_runtime=True)
+            container_name = args[0]
+            docker_cli = shutil.which("docker")
+            if not docker_cli:
+                return self._build_result(action_name="restart_container", status="failed", command_preview=slash, target=container_name, stderr="Docker CLI unavailable.", mutates_runtime=True)
+            proc = subprocess.run(["docker", "compose", "restart", container_name], cwd=str(self.repo_root), text=True, capture_output=True, check=False)
+            if proc.returncode != 0:
+                return self._build_result(action_name="restart_container", status="failed", command_preview=f"docker compose restart {container_name}", target=container_name, stderr=proc.stderr[:400] or "restart failed", mutates_runtime=True)
+            return self._build_result(action_name="restart_container", status="success", command_preview=f"docker compose restart {container_name}", target=container_name, stdout="container restarted", mutates_runtime=True)
+
+        return self._build_result(
+            action_name=slash.strip("/"),
+            status="failed",
+            command_preview=slash,
+            target=str(self.repo_root),
+            stderr="Action not implemented yet.",
+            mutates_files=True,
+        )
+
+    def stage_slash_command(
+        self,
+        command_text: str,
+        *,
+        operator_mode: bool,
+        session_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = command_text.strip()
+        slash, args = self._parse_slash_command(normalized)
+        spec = self.slash_commands.get(slash)
+        if spec is None:
+            result = self._build_result(
+                action_name="unknown_slash_command",
+                status="failed",
+                command_preview=normalized,
+                target=str(self.repo_root),
+                stderr=f"Unknown slash command: {slash}",
+            )
+            return {
+                "answer": f"Unknown slash command: {slash}",
+                "result": result,
+                "pending_action": None,
+                "executed": False,
+            }
+
+        if spec.mode != "read_only" and not operator_mode:
+            result = self._build_result(
+                action_name=slash.strip("/"),
+                status="denied",
+                command_preview=normalized,
+                target=str(self.repo_root),
+                stderr="Operator Mode is OFF. Mutation slash commands are disabled.",
+                mutates_files=True,
+            )
+            return {
+                "answer": "Operator Mode is OFF. This mutation command is blocked until Operator Mode is enabled.",
+                "result": result,
+                "pending_action": None,
+                "executed": False,
+            }
+
+        if spec.mode == "read_only":
+            result = self._read_only_scan_result(slash, args)
+            return {
+                "answer": self._build_answer(result.action_name, result),
+                "result": result,
+                "pending_action": None,
+                "executed": True,
+            }
+
+        action_id = self._next_action_id()
+        now = datetime.now(UTC)
+        target = args[0] if args else "(no target)"
+        confirmation_phrase = None
+        if spec.requires_typed_confirmation and spec.confirmation_phrase:
+            confirmation_phrase = spec.confirmation_phrase.replace("{target}", target)
+
+        pending_action = {
+            "action_id": action_id,
+            "command_name": slash.strip("/"),
+            "category": spec.category,
+            "target": target,
+            "arguments": args,
+            "mode": "operator",
+            "risk_level": spec.risk_level,
+            "command_preview": normalized,
+            "human_summary": f"Prepare {slash} on {target}",
+            "reversible": spec.reversible,
+            "requires_confirmation": True,
+            "requires_typed_confirmation": spec.requires_typed_confirmation,
+            "confirmation_phrase": confirmation_phrase,
+            "status": "pending",
+            "created_at": now.isoformat(),
+            "expires_at": datetime.fromtimestamp(now.timestamp() + self.pending_ttl_seconds, tz=UTC).isoformat(),
+            "implemented": spec.implemented,
+        }
+        session_metadata[self._pending_key()] = pending_action
+
+        result = OperatorActionResult(
+            action_id=action_id,
+            action_name=slash.strip("/"),
+            mode="high_risk" if spec.risk_level == "high" else "operator",
+            status="pending",
+            started_at=now,
+            completed_at=now,
+            command_or_operation=normalized,
+            target=target,
+            stdout_summary="pending confirmation",
+            stderr_summary="",
+            exit_code=None,
+            data={
+                "risk_level": spec.risk_level,
+                "reversible": spec.reversible,
+                "requires_typed_confirmation": spec.requires_typed_confirmation,
+                "confirmation_phrase": confirmation_phrase,
+                "command_preview": normalized,
+                "status": "pending_confirmation",
+            },
+            safety=OperatorSafety(
+                allowed=True,
+                read_only=False,
+                mutates_files=True,
+                requires_approval=True,
+            ),
+            receipt_label=f"{slash.strip('/')} {action_id}",
+        )
+        answer = "I'm ready to perform this operator action, but I need confirmation first."
+        return {
+            "answer": answer,
+            "result": result,
+            "pending_action": pending_action,
+            "executed": False,
+        }
+
+    def confirm_pending_action(
+        self,
+        pending_action: dict[str, Any] | None,
+        *,
+        typed_confirmation: str | None,
+    ) -> dict[str, Any]:
+        if not pending_action:
+            result = self._build_result(
+                action_name="operator_confirm",
+                status="failed",
+                command_preview="confirm pending operator action",
+                target=str(self.repo_root),
+                stderr="No pending operator action to confirm.",
+            )
+            return {"answer": "No pending operator action to confirm.", "result": result}
+
+        expires_at = str(pending_action.get("expires_at", ""))
+        if expires_at:
+            try:
+                expiry = datetime.fromisoformat(expires_at)
+                if datetime.now(UTC) > expiry:
+                    result = self._build_result(
+                        action_name=str(pending_action.get("command_name", "operator_action")),
+                        status="failed",
+                        command_preview=str(pending_action.get("command_preview", "")),
+                        target=str(pending_action.get("target", str(self.repo_root))),
+                        stderr="Pending action expired.",
+                    )
+                    return {"answer": "Pending action expired. Stage the command again.", "result": result}
+            except Exception:
+                pass
+
+        if pending_action.get("requires_typed_confirmation"):
+            expected = str(pending_action.get("confirmation_phrase") or "").strip()
+            provided = str(typed_confirmation or "").strip()
+            if not expected or provided != expected:
+                result = self._build_result(
+                    action_name=str(pending_action.get("command_name", "operator_action")),
+                    status="failed",
+                    mode_override="high_risk",
+                    command_preview=str(pending_action.get("command_preview", "")),
+                    target=str(pending_action.get("target", str(self.repo_root))),
+                    stderr="Typed confirmation did not match.",
+                    data={"typed_confirmation": "mismatch"},
+                )
+                return {
+                    "answer": "Typed confirmation did not match. Action is still blocked.",
+                    "result": result,
+                }
+
+        slash = "/" + str(pending_action.get("command_name", "")).lstrip("/")
+        args = pending_action.get("arguments", [])
+        spec = self.slash_commands.get(slash)
+        if spec is None:
+            result = self._build_result(
+                action_name=str(pending_action.get("command_name", "operator_action")),
+                status="failed",
+                command_preview=str(pending_action.get("command_preview", "")),
+                target=str(pending_action.get("target", str(self.repo_root))),
+                stderr="Pending command no longer exists.",
+            )
+            return {"answer": "Pending command no longer exists.", "result": result}
+
+        if not spec.implemented:
+            result = self._build_result(
+                action_name=str(pending_action.get("command_name", "operator_action")),
+                status="not_implemented",
+                mode_override="high_risk" if bool(pending_action.get("requires_typed_confirmation")) else "operator",
+                command_preview=str(pending_action.get("command_preview", "")),
+                target=str(pending_action.get("target", str(self.repo_root))),
+                stderr="Action not implemented yet.",
+                data={"typed_confirmation": "matched"} if bool(pending_action.get("requires_typed_confirmation")) else {},
+                mutates_files=True,
+            )
+            return {"answer": "Action not implemented yet.", "result": result}
+
+        result = self._execute_mutation(slash, list(args) if isinstance(args, list) else [])
+        if result.status == "success":
+            answer = f"Operator action {result.action_name} executed successfully."
+        else:
+            answer = self._build_answer(result.action_name, result)
+        return {"answer": answer, "result": result}
+
+    def cancel_pending_action(self, pending_action: dict[str, Any] | None) -> dict[str, Any]:
+        if not pending_action:
+            result = self._build_result(
+                action_name="operator_cancel",
+                status="failed",
+                command_preview="cancel pending operator action",
+                target=str(self.repo_root),
+                stderr="No pending operator action to cancel.",
+            )
+            return {"answer": "No pending operator action to cancel.", "result": result}
+
+        result = OperatorActionResult(
+            action_id=str(pending_action.get("action_id", self._next_action_id())),
+            action_name=str(pending_action.get("command_name", "operator_action")),
+            mode="high_risk" if bool(pending_action.get("requires_typed_confirmation")) else "operator",
+            status="cancelled",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            command_or_operation=str(pending_action.get("command_preview", "cancel")),
+            target=str(pending_action.get("target", str(self.repo_root))),
+            stdout_summary="pending action cancelled",
+            stderr_summary="",
+            exit_code=None,
+            data={"status": "cancelled"},
+            safety=OperatorSafety(allowed=True, read_only=False, requires_approval=True, mutates_files=True),
+            receipt_label=f"{pending_action.get('command_name', 'operator_action')} {pending_action.get('action_id', 'n/a')}",
+        )
+        return {
+            "answer": "Pending operator action was cancelled.",
+            "result": result,
+        }
 
     def _next_action_id(self) -> str:
         self._counter += 1
@@ -215,7 +756,7 @@ class OperatorManager:
         if normalized in {"is the runtime healthy?", "is the runtime healthy"}:
             return "runtime_health", None
         if normalized in {"are containers running?", "are containers running"}:
-            return "docker_compose_ps", None
+            return "scan_docker", None
         if normalized in {
             "what operator tools are available?",
             "what operator tools are available",
@@ -223,6 +764,151 @@ class OperatorManager:
             "show operator environment",
         }:
             return "operator_environment", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "can you scan my system",
+                "scan the local system",
+                "scan my local system",
+                "scan local system",
+                "system scan",
+                "system diagnostics",
+                "hardware scan",
+                "scan host",
+                "host system",
+                "show me the system inside",
+                "show me the system information",
+                "system info",
+                "system information",
+                "local system status",
+            )
+        ):
+            return "scan_system", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "what processor am i running",
+                "what cpu am i running",
+                "scan cpu",
+                "cpu scan",
+                "cpu usage",
+                "cpu load",
+                "cpu temp",
+                "cpu temperature",
+                "cpu speed",
+                "cpu status",
+                "processor status",
+                "processor temperature",
+                "processor usage",
+                "processor speed",
+                "current load on my processor",
+            )
+        ):
+            return "scan_cpu", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "what gpu am i running",
+                "scan gpu",
+                "gpu scan",
+                "gpu usage",
+                "gpu speed",
+                "gpu status",
+                "gpu temp",
+                "gpu temperature",
+                "graphics card status",
+                "graphics temperature",
+                "video card temperature",
+                "vram usage",
+            )
+        ):
+            return "scan_gpu", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "how many drives does the local system have",
+                "how many drives are on the local system",
+                "scan disk",
+                "scan disks",
+                "list disk",
+                "list disks",
+                "list disc",
+                "list discs",
+                "list drives",
+                "show local drives",
+                "disk usage",
+                "drive usage",
+                "disk space",
+                "drive space",
+                "storage space",
+                "how much space is left on the local drive",
+                "free space",
+            )
+        ):
+            return "scan_disk", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "scan network",
+                "network scan",
+                "network diagnostics",
+                "ip configuration",
+                "scan adapters",
+            )
+        ):
+            return "scan_network", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "scan ports",
+                "open ports",
+                "listening ports",
+                "port scan",
+            )
+        ):
+            return "scan_ports", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "scan processes",
+                "running processes",
+                "top processes",
+                "process list",
+            )
+        ):
+            return "scan_processes", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "scan services",
+                "service status",
+                "running services",
+                "windows services",
+            )
+        ):
+            return "scan_services", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "scan docker",
+                "docker scan",
+                "docker status",
+                "docker containers",
+                "container status",
+            )
+        ):
+            return "scan_docker", None
+        if any(
+            phrase in normalized
+            for phrase in (
+                "scan vscode",
+                "vscode status",
+                "vs code status",
+                "vscode extensions",
+                "vs code extensions",
+            )
+        ):
+            return "scan_vscode", None
         if normalized in {"summarize logs.", "summarize logs"}:
             return "logs_summary", None
         if normalized in {"audit memory.", "audit memory"}:
@@ -236,6 +922,17 @@ class OperatorManager:
             return (
                 "Container status cannot be proven from inside xv7-core because Docker CLI/socket is unavailable. "
                 "No action was run beyond the read-only availability check."
+            )
+        if action_name.startswith("scan_") and result.status == "failed":
+            limitation = str(result.data.get("limitation") or "").strip()
+            limitation_lower = limitation.lower()
+            if "bridge is not running" in limitation_lower or "local host scan bridge" in limitation_lower:
+                return "I can check that through the local host scan bridge, but the bridge is not running yet."
+            if limitation:
+                return f"Host scan failed: {limitation}"
+            return (
+                "Host scan failed. "
+                f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
             )
         if result.status == "failed":
             return (
@@ -301,6 +998,60 @@ class OperatorManager:
                 f"docker_cli_available={docker_cli_available}, "
                 f"docker_socket_available={docker_socket_available}."
             )
+        if action_name == "scan_system":
+            scan = result.data.get("result", {})
+            if isinstance(scan, dict):
+                os_name = str(scan.get("os_name") or "unknown")
+                hostname = str(scan.get("hostname") or "unknown")
+                uptime = scan.get("uptime_seconds")
+                return f"System info: host={hostname}; os={os_name}; uptime_seconds={uptime}."
+            return "Host system scan completed."
+        if action_name == "scan_cpu":
+            scan = result.data.get("result", {})
+            if isinstance(scan, dict):
+                name = str(scan.get("name") or "unknown")
+                load = scan.get("load_percent")
+                speed = scan.get("current_clock_mhz")
+                return f"CPU status: {name}; load_percent={load}; current_clock_mhz={speed}."
+            return "CPU scan completed."
+        if action_name == "scan_gpu":
+            scan = result.data.get("result", {})
+            if isinstance(scan, dict):
+                gpus = scan.get("gpus")
+                if isinstance(gpus, list) and gpus:
+                    first = gpus[0] if isinstance(gpus[0], dict) else {}
+                    name = str(first.get("name") or "unknown")
+                    temp = first.get("temperature_c")
+                    util = first.get("utilization_percent")
+                    return f"GPU status: {name}; temperature_c={temp}; utilization_percent={util}; gpu_count={len(gpus)}."
+            return "GPU scan completed."
+        if action_name == "scan_disk":
+            scan = result.data.get("result", {})
+            if isinstance(scan, dict):
+                drives = scan.get("drives")
+                if isinstance(drives, list):
+                    count = len(drives)
+                    preview = []
+                    for item in drives[:4]:
+                        if isinstance(item, dict):
+                            drive = str(item.get("drive") or "?")
+                            free_bytes = item.get("free_bytes")
+                            preview.append(f"{drive} free_bytes={free_bytes}")
+                    preview_text = "; ".join(preview)
+                    return f"Disk status: drives={count}. {preview_text}".strip()
+            return "Disk scan completed."
+        if action_name == "scan_network":
+            return "Network scan completed."
+        if action_name == "scan_ports":
+            return "Port scan completed."
+        if action_name == "scan_processes":
+            return "Process scan completed."
+        if action_name == "scan_services":
+            return "Service scan completed."
+        if action_name == "scan_docker":
+            return "Docker host scan completed."
+        if action_name == "scan_vscode":
+            return "VS Code host scan completed."
         if action_name == "logs_summary":
             logs = result.data.get("logs", [])
             if not logs:
@@ -341,12 +1092,13 @@ class OperatorManager:
         ):
             denied = self._denied_result(
                 question,
-                "B7 is read-only; mutation requests are denied and no action was run.",
+                "Mutation requires Operator Mode plus a staged slash command confirmation flow.",
             )
             return OperatorExecution(
                 result=denied,
                 answer=(
-                    "B7 is read-only right now. I denied that request and did not run any mutation action."
+                    "Only through Operator Mode using a specific slash command, staged confirmation, and your explicit approval. "
+                    "I do not run mutation actions from normal chat."
                 ),
                 record_history=True,
             )

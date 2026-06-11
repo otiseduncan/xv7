@@ -488,6 +488,27 @@ details[open] > .diag-section-title::before {
   cursor: not-allowed;
 }
 
+.operator-mode-toggle {
+  width: 100%;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(120, 53, 15, 0.24);
+  color: #fde68a;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.7rem;
+}
+
+.operator-mode-toggle.operator-mode-on {
+  border-color: rgba(251, 191, 36, 0.85);
+  background: rgba(217, 119, 6, 0.3);
+  color: #fff1a8;
+  box-shadow: 0 0 0.8rem rgba(251, 191, 36, 0.28);
+}
+
 .xv7-control-button.listening {
   border-color: var(--color-primary-glow);
   color: var(--color-primary-glow);
@@ -553,6 +574,13 @@ details[open] > .diag-section-title::before {
 
 .receipt-chip.status-denied,
 .receipt-chip.status-limitation {
+  border-color: rgba(251, 191, 36, 0.7);
+  color: #fde68a;
+}
+
+.receipt-chip.status-pending,
+.receipt-chip.status-cancelled,
+.receipt-chip.status-not_implemented {
   border-color: rgba(251, 191, 36, 0.7);
   color: #fde68a;
 }
@@ -669,6 +697,116 @@ details[open] > .diag-section-title::before {
 .operator-status-badge.status-limitation {
   border-color: rgba(251, 191, 36, 0.75);
   color: #fde68a;
+}
+
+.operator-status-badge.status-pending,
+.operator-status-badge.status-cancelled,
+.operator-status-badge.status-not_implemented {
+  border-color: rgba(251, 191, 36, 0.75);
+  color: #fde68a;
+}
+
+.slash-menu {
+  border: 1px solid var(--color-border);
+  border-radius: 0.8rem;
+  background: rgba(5, 8, 18, 0.94);
+  max-height: 260px;
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+.slash-group {
+  border-top: 1px solid rgba(0, 163, 255, 0.2);
+  padding-top: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.slash-group:first-child {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.slash-group-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.3rem;
+}
+
+.slash-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  border-radius: 0.45rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+.slash-item:hover {
+  border-color: rgba(0, 163, 255, 0.45);
+  background: rgba(3, 26, 51, 0.7);
+}
+
+.slash-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.operator-confirm-card {
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: 0.85rem;
+  background: rgba(120, 53, 15, 0.2);
+  padding: 0.65rem;
+}
+
+.operator-confirm-title {
+  color: #fde68a;
+  font-size: 0.82rem;
+  margin-bottom: 0.4rem;
+}
+
+.operator-confirm-grid {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.55rem;
+}
+
+.operator-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.operator-confirm-exec {
+  border-color: rgba(251, 191, 36, 0.8);
+  color: #fff1a8;
+}
+
+.operator-typed-confirm-wrap {
+  margin-bottom: 0.55rem;
+}
+
+.operator-typed-confirm-label {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: #fde68a;
+  margin-bottom: 0.25rem;
+}
+
+.operator-typed-confirm-input {
+  width: 100%;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: 0.45rem;
+  background: rgba(5, 8, 18, 0.8);
+  color: var(--color-text);
+  font-size: 0.78rem;
+  padding: 0.35rem 0.45rem;
 }
 
 .operator-activity-meta {

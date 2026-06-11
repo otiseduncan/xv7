@@ -1,0 +1,30 @@
+{
+  "record_id": "XV7-FOCUS-0004",
+  "layer": "active_focus",
+  "title": "B9.8 local scan bridge and Operator Mode capability phase",
+  "summary": "We're working on B9.8: local host scan bridge, hardware/system visibility, and Operator Mode local capabilities.",
+  "body": "Current focus is B9.8 local scan bridge and hardware/system visibility for Xoduz. Xoduz is being expanded from a personal AI assistant and technical co-pilot into a safe local operator with read-only scan tools, PowerShell/CMD-backed host visibility, VS Code access planning, and Operator Mode slash commands. Mutation remains blocked unless Operator Mode is active, a specific slash command is selected, and the user confirms the pending action. No internet or external connectors are being added in this phase. Avatar re-enable/polish is deferred until local capability baseline is stable.",
+  "status": "active",
+  "priority": 220,
+  "tags": ["focus", "b9", "b9.8", "local-scan", "operator-mode", "safety"],
+  "facts": [
+    {
+      "statement": "Current focus is B9.8 local host scan bridge, hardware/system visibility, and Operator Mode local capabilities.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.8.2 directive"
+    },
+    {
+      "statement": "Mutation actions remain confirmation-gated and are not allowed from normal chat.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.7 safety model retained"
+    },
+    {
+      "statement": "Avatar work is deferred until local capability baseline is stable.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.8.2 lane ordering"
+    }
+  ],
+  "evidence": [
+    "User directive: Implement B9.8.2 brain/config refresh for local scan and Operator Mode phase."
+  ]
+}

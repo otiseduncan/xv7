@@ -34,7 +34,11 @@ function buildDom() {
     <button id="copyChatButton"></button>
     <div id="copyToast" class="hidden"></div>
     <div id="chatTimeline"></div>
+    <button id="operatorModeToggle"></button>
+    <div id="operatorModeBanner" class="hidden"></div>
+    <div id="operatorConfirmArea" class="hidden"></div>
     <textarea id="promptInput"></textarea>
+    <div id="slashMenu" class="hidden"></div>
     <button id="micButton"></button>
     <button id="sendButton"></button>
     <section id="avatarCard" class="avatar-card">
@@ -164,6 +168,8 @@ function createRuntimeFetchMock(options = {}) {
   return vi.fn(async (url, init = {}) => {
     const method = (init.method || 'GET').toUpperCase();
     const path = new URL(url, 'http://localhost').pathname;
+    const query = new URL(url, 'http://localhost').searchParams;
+    let pendingAction = state.pendingAction || null;
 
     if (path === '/personas') {
       return okJson({
@@ -265,6 +271,173 @@ function createRuntimeFetchMock(options = {}) {
       return okJson({ session_id: 'session-1', current_persona: 'default', metadata: {}, messages: [] });
     }
 
+    if (path === '/api/operator/commands' && method === 'GET') {
+      const operatorMode = query.get('operator_mode') === 'true';
+      return okJson({
+        operator_mode: operatorMode,
+        commands: [
+          { slash: '/scan-repo', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/scan-system', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/scan-cpu', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/scan-gpu', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/scan-disk', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/scan-ports', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/list-disks', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/list-drives', category: 'read_only_scan', mode: 'read_only', risk_level: 'low', visible: true, enabled: true },
+          { slash: '/delete-file', category: 'mutation', mode: 'operator', risk_level: 'destructive', visible: operatorMode, enabled: operatorMode },
+          { slash: '/write-file', category: 'mutation', mode: 'operator', risk_level: 'medium', visible: operatorMode, enabled: operatorMode },
+          { slash: '/format-drive', category: 'high_risk', mode: 'operator', risk_level: 'high', visible: operatorMode, enabled: operatorMode, requires_typed_confirmation: true },
+        ],
+      });
+    }
+
+    if (path === '/api/operator/stage' && method === 'POST') {
+      const body = JSON.parse(init.body || '{}');
+      const command = String(body.command_text || '');
+      const operatorMode = Boolean(body.operator_mode);
+      if (!operatorMode && command.startsWith('/delete-file')) {
+        return okJson({
+          session_id: 'session-1',
+          answer: 'Operator Mode is OFF. This mutation command is blocked until Operator Mode is enabled.',
+          executed: false,
+          pending_action: null,
+          receipt: {
+            action_id: 'OP-DENY',
+            action_name: 'delete_file',
+            status: 'denied',
+            mode: 'operator',
+            target: '/workspace',
+            receipt_label: 'delete_file OP-DENY',
+            read_only: false,
+            summary: 'denied',
+          },
+        });
+      }
+
+      if (command.startsWith('/delete-file')) {
+        pendingAction = {
+          action_id: 'OP-PEND-1',
+          command_name: 'delete-file',
+          target: 'X:/XV7/test-delete.txt',
+          command_preview: command,
+          risk_level: 'destructive',
+          reversible: false,
+          requires_typed_confirmation: false,
+        };
+        state.pendingAction = pendingAction;
+        return okJson({
+          session_id: 'session-1',
+          answer: "I'm ready to perform this operator action, but I need confirmation first.",
+          executed: false,
+          pending_action: pendingAction,
+          receipt: {
+            action_id: 'OP-PEND-1',
+            action_name: 'delete_file',
+            status: 'pending',
+            mode: 'operator',
+            target: 'X:/XV7/test-delete.txt',
+            receipt_label: 'delete_file OP-PEND-1',
+            read_only: false,
+            summary: 'pending confirmation',
+          },
+        });
+      }
+
+      if (command.startsWith('/format-drive')) {
+        pendingAction = {
+          action_id: 'OP-PEND-HIGH',
+          command_name: 'format-drive',
+          target: 'E:',
+          command_preview: command,
+          risk_level: 'high',
+          reversible: false,
+          requires_typed_confirmation: true,
+          confirmation_phrase: 'FORMAT E:',
+        };
+        state.pendingAction = pendingAction;
+        return okJson({
+          session_id: 'session-1',
+          answer: "I'm ready to perform this operator action, but I need confirmation first.",
+          executed: false,
+          pending_action: pendingAction,
+          receipt: {
+            action_id: 'OP-PEND-HIGH',
+            action_name: 'format_drive',
+            status: 'pending',
+            mode: 'high_risk',
+            target: 'E:',
+            receipt_label: 'format_drive OP-PEND-HIGH',
+            read_only: false,
+            summary: 'pending confirmation',
+          },
+        });
+      }
+    }
+
+    if (path === '/api/operator/confirm' && method === 'POST') {
+      const body = JSON.parse(init.body || '{}');
+      const typed = String(body.typed_confirmation || '');
+      if (state.pendingAction?.action_id === 'OP-PEND-HIGH' && typed !== 'FORMAT E:') {
+        return okJson({
+          session_id: 'session-1',
+          answer: 'Typed confirmation did not match. Action is still blocked.',
+          pending_action: state.pendingAction,
+          receipt: {
+            action_id: 'OP-PEND-HIGH',
+            action_name: 'format_drive',
+            status: 'failed',
+            mode: 'high_risk',
+            target: 'E:',
+            receipt_label: 'format_drive OP-PEND-HIGH',
+            read_only: false,
+            summary: 'Typed confirmation did not match.',
+          },
+        });
+      }
+
+      const actionName = state.pendingAction?.action_id === 'OP-PEND-HIGH' ? 'format_drive' : 'delete_file';
+      const status = state.pendingAction?.action_id === 'OP-PEND-HIGH' ? 'not_implemented' : 'success';
+      const target = state.pendingAction?.target || 'unknown';
+      state.pendingAction = null;
+
+      return okJson({
+        session_id: 'session-1',
+        answer: status === 'success' ? 'Operator action delete_file executed successfully.' : 'Action not implemented yet.',
+        pending_action: null,
+        receipt: {
+          action_id: body.action_id,
+          action_name: actionName,
+          status,
+          mode: actionName === 'format_drive' ? 'high_risk' : 'operator',
+          target,
+          receipt_label: `${actionName} ${body.action_id}`,
+          read_only: false,
+          summary: status,
+        },
+      });
+    }
+
+    if (path === '/api/operator/cancel' && method === 'POST') {
+      const body = JSON.parse(init.body || '{}');
+      const target = state.pendingAction?.target || 'unknown';
+      state.pendingAction = null;
+      return okJson({
+        session_id: 'session-1',
+        answer: 'Pending operator action was cancelled.',
+        pending_action: null,
+        receipt: {
+          action_id: body.action_id,
+          action_name: 'delete_file',
+          status: 'cancelled',
+          mode: 'operator',
+          target,
+          receipt_label: `delete_file ${body.action_id}`,
+          read_only: false,
+          summary: 'cancelled',
+        },
+      });
+    }
+
     if (path === '/api/sessions/session-1/messages' && method === 'POST') {
       const body = JSON.parse(init.body || '{}');
       const prompt = String(body.raw_text || '').toLowerCase();
@@ -299,11 +472,11 @@ function createRuntimeFetchMock(options = {}) {
         operatorReceipts = [
           {
             action_id: 'OP-2',
-            action_name: 'docker_compose_ps',
+            action_name: 'scan_docker',
             status: 'failed',
             mode: 'read_only',
             target: '/workspace',
-            receipt_label: 'docker_compose_ps OP-2',
+            receipt_label: 'scan_docker OP-2',
             read_only: true,
             started_at: '2026-06-11T00:00:02Z',
             completed_at: '2026-06-11T00:00:03Z',
@@ -316,6 +489,27 @@ function createRuntimeFetchMock(options = {}) {
         ];
         actionHistory = operatorReceipts;
         answer = 'Container status cannot be proven from inside xv7-core.';
+      } else if (prompt.includes('processor')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-CPU-1',
+            action_name: 'scan_cpu',
+            status: 'failed',
+            mode: 'read_only',
+            target: '/workspace',
+            receipt_label: 'scan_cpu OP-CPU-1',
+            read_only: true,
+            started_at: '2026-06-11T00:00:02Z',
+            completed_at: '2026-06-11T00:00:03Z',
+            exit_code: 503,
+            safety: { allowed: true, read_only: true },
+            summary: 'Local host scan bridge is not running.',
+            limitation: 'Local host scan bridge is not running.',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'I can check that through the local host scan bridge, but the bridge is not running yet.';
       } else if (prompt.includes('delete')) {
         operatorReceipts = [
           {
@@ -608,7 +802,7 @@ describe('ModelProfileControl', () => {
     await flushAsync();
 
     const failedChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
-      (node.textContent || '').includes('docker_compose_ps failed'),
+      (node.textContent || '').includes('scan_docker failed'),
     );
     expect(failedChip).toBeTruthy();
     expect(failedChip.className.includes('status-failed')).toBe(true);
@@ -725,6 +919,149 @@ describe('ModelProfileControl', () => {
       new URL(c[0], 'http://localhost').pathname === '/api/sessions' && (c[1]?.method || '').toUpperCase() === 'POST'
     );
     expect(afterEnter.length).toBe(1);
+  });
+
+  it('renders operator mode toggle with OFF default', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const toggle = document.getElementById('operatorModeToggle');
+    expect(toggle.textContent).toContain('OFF');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(document.getElementById('operatorModeBanner').classList.contains('hidden')).toBe(true);
+  });
+
+  it('slash menu shows scan commands in normal mode and mutation commands in operator mode', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const input = document.getElementById('promptInput');
+    input.value = '/';
+    input.dispatchEvent(new Event('input'));
+    await flushAsync();
+
+    const menuTextNormal = document.getElementById('slashMenu').textContent || '';
+    expect(menuTextNormal).toContain('/scan-repo');
+    expect(menuTextNormal).toContain('/scan-ports');
+    expect(menuTextNormal).toContain('/scan-cpu');
+    expect(menuTextNormal).toContain('/scan-gpu');
+    expect(menuTextNormal).toContain('/scan-disk');
+    expect(menuTextNormal).toContain('/list-disks');
+    expect(menuTextNormal).toContain('/list-drives');
+    expect(menuTextNormal).not.toContain('/delete-file');
+
+    document.getElementById('operatorModeToggle').click();
+    await flushAsync();
+
+    input.value = '/';
+    input.dispatchEvent(new Event('input'));
+    await flushAsync();
+
+    const menuTextOperator = document.getElementById('slashMenu').textContent || '';
+    expect(menuTextOperator).toContain('/delete-file');
+  });
+
+  it('stages delete-file and renders confirmation card before execution', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('operatorModeToggle').click();
+    await flushAsync();
+
+    const input = document.getElementById('promptInput');
+    input.value = '/delete-file X:/XV7/test-delete.txt';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const confirmArea = document.getElementById('operatorConfirmArea');
+    expect(confirmArea.classList.contains('hidden')).toBe(false);
+    expect(confirmArea.textContent).toContain('Pending confirmation');
+
+    const receiptChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').includes('pending_confirmation'),
+    );
+    expect(receiptChip).toBeTruthy();
+  });
+
+  it('natural-language hardware scan failure renders operator receipt without mutation confirmation card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const input = document.getElementById('promptInput');
+    input.value = 'what processor am i running';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const timelineText = document.getElementById('chatTimeline').textContent || '';
+    expect(timelineText.toLowerCase()).toContain('local host scan bridge');
+
+    const receiptChip = [...document.querySelectorAll('.receipt-chip')].find((node) =>
+      (node.textContent || '').includes('scan_cpu failed'),
+    );
+    expect(receiptChip).toBeTruthy();
+
+    expect(document.getElementById('operatorConfirmArea').classList.contains('hidden')).toBe(true);
+  });
+
+  it('cancel button cancels staged action and clears confirmation card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('operatorModeToggle').click();
+    await flushAsync();
+
+    const input = document.getElementById('promptInput');
+    input.value = '/delete-file X:/XV7/test-delete.txt';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cancelButton = [...document.querySelectorAll('#operatorConfirmArea button')].find((node) =>
+      (node.textContent || '').includes('Cancel'),
+    );
+    cancelButton.click();
+    await flushAsync();
+
+    const confirmArea = document.getElementById('operatorConfirmArea');
+    expect(confirmArea.classList.contains('hidden')).toBe(true);
+    expect((document.getElementById('chatTimeline').textContent || '').toLowerCase()).toContain('cancelled');
+  });
+
+  it('high-risk command requires exact typed confirmation phrase', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('operatorModeToggle').click();
+    await flushAsync();
+
+    const input = document.getElementById('promptInput');
+    input.value = '/format-drive E:';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const typedInput = document.querySelector('.operator-typed-confirm-input');
+    expect(typedInput).toBeTruthy();
+    typedInput.value = 'WRONG PHRASE';
+
+    const confirmButton = [...document.querySelectorAll('#operatorConfirmArea button')].find((node) =>
+      (node.textContent || '').includes('Confirm Action'),
+    );
+    confirmButton.click();
+    await flushAsync();
+
+    expect((document.getElementById('chatTimeline').textContent || '').toLowerCase()).toContain('did not match');
+    expect(document.getElementById('operatorConfirmArea').classList.contains('hidden')).toBe(false);
   });
 
   it('disables mic and shows unsupported message when speech recognition is unavailable', async () => {
@@ -1065,6 +1402,8 @@ describe('ModelProfileControl', () => {
 
     const contaminated = [
       'My name is Xoduz — pronounced Exodus.',
+      'Receipts:',
+      '- System: XV7-SYSTEM-0001',
       'Operator receipt: repo_status OP-1 success.',
       'Context receipt: System Prompt XV7-SYSTEM-0001.',
       'Knowledge: XV7-KNOWLEDGE-0002',
@@ -1078,6 +1417,7 @@ describe('ModelProfileControl', () => {
     const spoken = utterance.text;
     expect(spoken).toContain('Exodus');
     expect(spoken).not.toContain('Operator receipt');
+    expect(spoken).not.toContain('Receipts:');
     expect(spoken).not.toContain('Context receipt');
     expect(spoken).not.toContain('System Prompt');
     expect(spoken).not.toContain('XV7-SYSTEM');
@@ -1509,7 +1849,11 @@ describe('ModelProfileControl', () => {
     const copiedText = navigator.clipboard.writeText.mock.calls[0][0];
     expect(copiedText).toContain('User:');
     expect(copiedText).toContain('Xoduz:');
-    expect(copiedText).toContain('Receipt:');
+    expect(copiedText).toContain('Receipts:');
+    expect(copiedText).toContain('- Operator: repo_status success');
+    expect(copiedText).toContain('- Verified: XV7-VERIFIED-0001');
+    expect(copiedText).toContain('- Model: qwen3:8b');
+    expect(copiedText).not.toContain('Receipt:\n');
     expect(copiedText).not.toContain('{"');
     expect(document.getElementById('copyToast').textContent).toContain('Chat copied.');
   });
@@ -1537,8 +1881,27 @@ describe('ModelProfileControl', () => {
     await flushAsync();
     const assistantCopy = navigator.clipboard.writeText.mock.calls.at(-1)[0];
     expect(assistantCopy).toContain('Xoduz:');
-    expect(assistantCopy).toContain('Receipt:');
+    expect(assistantCopy).toContain('Receipts:');
+    expect(assistantCopy).toContain('- Operator: repo_status success');
     expect(document.getElementById('copyToast').textContent).toContain('Copied.');
+  });
+
+  it('visible chat answer does not embed raw receipt text', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = fetchMock;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const assistantText = document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent || '';
+    expect(assistantText).toContain('The repo is on main. The working tree is not clean.');
+    expect(assistantText).not.toContain('Receipt:');
+    expect(assistantText).not.toContain('Operator receipt:');
+    expect(assistantText).not.toContain('Context receipt:');
   });
 
   it('renders system receipt as System label', async () => {
@@ -1700,6 +2063,8 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
     expect(document.getElementById('avatarDiagState').textContent).toBe('idle');
     expect(document.getElementById('avatarDiagClip').textContent).toContain('xoduz-idle.mp4');
+    expect(document.getElementById('avatarDiagClip').textContent).not.toContain('(disabled)');
+    expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-idle.mp4');
   });
 
   it('listening/captured/speaking voice events update avatar state and speaking stop returns idle', async () => {
@@ -1710,12 +2075,15 @@ describe('ModelProfileControl', () => {
 
     window.dispatchEvent(new CustomEvent('xv7:voice-listening-start'));
     expect(document.getElementById('avatarStateText').textContent).toBe('Listening');
+    expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-idle.mp4');
 
     window.dispatchEvent(new CustomEvent('xv7:voice-transcript-captured', { detail: { transcript: 'hello' } }));
     expect(document.getElementById('avatarStateText').textContent).toBe('Captured');
+    expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-idle.mp4');
 
     window.dispatchEvent(new CustomEvent('xv7:voice-speaking-start', { detail: { messageId: 'm1' } }));
     expect(document.getElementById('avatarStateText').textContent).toBe('Speaking');
+    expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-speaking.mp4');
 
     window.dispatchEvent(new CustomEvent('xv7:voice-speaking-stop', { detail: { messageId: 'm1' } }));
     expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
@@ -1730,6 +2098,7 @@ describe('ModelProfileControl', () => {
     document.getElementById('promptInput').value = 'Check the repo.';
     document.getElementById('sendButton').click();
     expect(document.getElementById('avatarStateText').textContent).toBe('Thinking');
+    expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-thinking.mp4');
 
     await flushAsync();
     expect(document.getElementById('avatarStateText').textContent).toBe('Idle');
@@ -1777,7 +2146,7 @@ describe('ModelProfileControl', () => {
     const ui = new Xv7UI();
     await flushAsync();
 
-    ui.avatarClips.idle = './avatar/does-not-exist.mp4';
+    ui.avatarClips.idle = '/avatar/does-not-exist.mp4';
     ui.setAvatarState('idle', 'test-missing-clip');
     document.getElementById('avatarVideo').dispatchEvent(new Event('error'));
 
@@ -1800,5 +2169,29 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('avatarDiagEvent').textContent.length).toBeGreaterThan(0);
     expect(document.getElementById('avatarDiagClip').textContent.length).toBeGreaterThan(0);
     expect(document.getElementById('avatarVoiceLabel').textContent).toContain('Voice:');
+  });
+
+  it('explicit avatar media disable still forces fallback', async () => {
+    document.body.dataset.avatarMedia = 'off';
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const video = document.getElementById('avatarVideo');
+    expect(video.getAttribute('src')).toBeNull();
+    expect(document.getElementById('avatarDiagClip').textContent).toContain('(disabled)');
+    expect(document.getElementById('avatarFallback').classList.contains('hidden')).toBe(false);
+  });
+
+  it('avatar media remains enabled by default without an opt-out flag', async () => {
+    delete document.body.dataset.avatarMedia;
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-idle.mp4');
+    expect(document.getElementById('avatarDiagClip').textContent).not.toContain('(disabled)');
   });
 });

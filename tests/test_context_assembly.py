@@ -17,7 +17,7 @@ def test_active_context_compact_receipt_has_required_layers() -> None:
     structured = context.receipt.get("context_receipts", [])
 
     assert "System Prompt XV7-SYSTEM-0001" in compact
-    assert "Active Focus XV7-FOCUS-0003" in compact
+    assert "Active Focus XV7-FOCUS-0004" in compact
     assert "Verified Status XV7-VERIFIED-0001" in compact
     assert isinstance(structured, list)
     assert all(isinstance(item, dict) for item in structured)
@@ -86,15 +86,15 @@ def test_b4_pass_questions_answer_from_records_with_compact_receipt(
     cases = [
         (
             "Who are you?",
-            "I am Xoduz, the XV7 assistant.",
+            "I am Xoduz",
             "System Prompt XV7-SYSTEM-0001",
             "system_prompt",
             ["Active Focus", "Memory", "Verified Status"],
         ),
         (
             "What are we working on?",
-            "B8.2 brain content fill and communication routing repair",
-            "Active Focus XV7-FOCUS-0003",
+            "B9.8",
+            "Active Focus XV7-FOCUS-0004",
             "active_focus",
             ["System Prompt", "Knowledge", "Memory", "Verified Status"],
         ),

@@ -1,0 +1,25 @@
+{
+  "record_id": "XV7-FOCUS-0001",
+  "layer": "active_focus",
+  "title": "Current active focus",
+  "summary": "Current focus is B4 brain/context integration after B3.2 proof.",
+  "body": "Current project focus: implement B4 XV7 brain/context integration with canonical schema, loader, context assembly, compact receipts, and pass-question behavior verified through local chat path.",
+  "status": "archived",
+  "priority": 100,
+  "tags": ["focus", "b4"],
+  "facts": [
+    {
+      "statement": "We are working on B4 brain/context integration.",
+      "source_type": "user_confirmed",
+      "source_detail": "Current task directive"
+    },
+    {
+      "statement": "B3.2 launch proof is complete before B4 work.",
+      "source_type": "user_confirmed",
+      "source_detail": "Verified baseline"
+    }
+  ],
+  "evidence": [
+    "User baseline explicitly states B3.2 launch polish has been implemented and passing."
+  ]
+}

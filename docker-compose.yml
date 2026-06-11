@@ -172,6 +172,9 @@ services:
       - ASSETS_PATH=${ASSETS_PATH:-/app/shared/assets}
       - XV7_MODEL_PROFILE=${XV7_MODEL_PROFILE:-balanced}
       - XV7_OPERATOR_REPO_ROOT=/workspace
+      - XV7_LOCAL_BRIDGE_URL=${XV7_LOCAL_BRIDGE_URL:-http://host.docker.internal:8765}
+      - XV7_LOCAL_BRIDGE_TOKEN=${XV7_LOCAL_BRIDGE_TOKEN:-xv7-local-bridge-token}
+      - XV7_LOCAL_BRIDGE_TIMEOUT_SECONDS=${XV7_LOCAL_BRIDGE_TIMEOUT_SECONDS:-10}
     depends_on:
       ollama:
         condition: service_healthy

@@ -1,0 +1,31 @@
+{
+  "record_id": "XV7-MEMORY-0002",
+  "layer": "memory",
+  "title": "Otis operator identity and working preferences",
+  "summary": "The user/operator is Otis Duncan.",
+  "body": "User profile memory: the user/operator is Otis Duncan. Working preference memory: keep XV7 records fresh and XV7-native; do not bulk import XV6.1 records.",
+  "memory_type": "user_profile",
+  "status": "active",
+  "priority": 130,
+  "tags": ["user", "identity", "operator", "otis", "memory"],
+  "facts": [
+    {
+      "statement": "The user/operator is Otis Duncan.",
+      "source_type": "user_stated",
+      "source_detail": "B8.2 manual gauntlet requirement"
+    },
+    {
+      "statement": "Do not migrate, copy, or bulk import XV6.1 knowledge records.",
+      "source_type": "user_stated",
+      "source_detail": "Prior user direction preserved"
+    },
+    {
+      "statement": "XV6.1 may be used as historical reference only.",
+      "source_type": "user_stated",
+      "source_detail": "Prior user direction preserved"
+    }
+  ],
+  "evidence": [
+    "User explicitly requested identity memory for Otis Duncan in B8.2."
+  ]
+}

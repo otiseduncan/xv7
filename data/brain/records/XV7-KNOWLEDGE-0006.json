@@ -1,0 +1,35 @@
+{
+  "record_id": "XV7-KNOWLEDGE-0006",
+  "layer": "knowledge",
+  "title": "Local scan bridge and Operator Mode capability roadmap",
+  "summary": "Xoduz is gaining read-only local host scan capability through approved scan tools and a host-side bridge, with confirmation-gated mutation in Operator Mode.",
+  "body": "Xoduz is gaining read-only local scan capability through approved scan tools and a host-side bridge. Local scans include system info, CPU, GPU, disk/drives, network, ports, processes, services, Docker, VS Code, repo, files, and logs. Read-only scans may run in Normal Mode. Mutation actions require Operator Mode, explicit slash commands, staging, confirmation cards, and receipts. High-risk actions require typed confirmation. Xoduz must not claim local scan data unless an operator scan succeeds. If the local bridge is unavailable, she should say the local host scan bridge is not running rather than saying context is missing.",
+  "status": "active",
+  "priority": 215,
+  "tags": ["knowledge", "b9.8", "local-scan", "bridge", "operator-mode", "safety"],
+  "facts": [
+    {
+      "statement": "Read-only local scan actions are the approved route for hardware/system visibility in B9.8.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.8 implementation scope"
+    },
+    {
+      "statement": "Mutation is confirmation-gated and requires Operator Mode plus slash command staging.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.7 confirmation gate"
+    },
+    {
+      "statement": "If the local bridge is unavailable, the assistant should report bridge unavailability instead of missing context.",
+      "source_type": "user_confirmed",
+      "source_detail": "B9.8.1 and B9.8.2 behavior requirement"
+    },
+    {
+      "statement": "Read-only scan capability and confirmation-gated mutation create a safe local operator baseline before avatar/internet expansion.",
+      "source_type": "inferred",
+      "source_detail": "B9.8 phase architecture interpretation"
+    }
+  ],
+  "evidence": [
+    "User directive: B9.8 local scan bridge and Operator Mode local capability phase."
+  ]
+}

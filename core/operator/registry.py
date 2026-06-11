@@ -6,6 +6,18 @@ from typing import Callable
 
 from core.operator.actions.environment import operator_environment
 from core.operator.actions.files import list_project_files, read_project_file
+from core.operator.actions.host_scan import (
+    scan_cpu,
+    scan_disk,
+    scan_docker,
+    scan_gpu,
+    scan_network,
+    scan_ports,
+    scan_processes,
+    scan_services,
+    scan_system,
+    scan_vscode,
+)
 from core.operator.actions.memory import memory_audit
 from core.operator.actions.repo import repo_recent_commits, repo_status
 from core.operator.actions.runtime import docker_compose_ps, logs_summary, runtime_health
@@ -38,6 +50,16 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         "operator_environment": OperatorActionSpec(
             "operator_environment", "read_only", operator_environment
         ),
+        "scan_system": OperatorActionSpec("scan_system", "read_only", scan_system),
+        "scan_cpu": OperatorActionSpec("scan_cpu", "read_only", scan_cpu),
+        "scan_gpu": OperatorActionSpec("scan_gpu", "read_only", scan_gpu),
+        "scan_disk": OperatorActionSpec("scan_disk", "read_only", scan_disk),
+        "scan_network": OperatorActionSpec("scan_network", "read_only", scan_network),
+        "scan_ports": OperatorActionSpec("scan_ports", "read_only", scan_ports),
+        "scan_processes": OperatorActionSpec("scan_processes", "read_only", scan_processes),
+        "scan_services": OperatorActionSpec("scan_services", "read_only", scan_services),
+        "scan_docker": OperatorActionSpec("scan_docker", "read_only", scan_docker),
+        "scan_vscode": OperatorActionSpec("scan_vscode", "read_only", scan_vscode),
         "logs_summary": OperatorActionSpec("logs_summary", "read_only", logs_summary),
         "memory_audit": OperatorActionSpec("memory_audit", "read_only", memory_audit),
     }

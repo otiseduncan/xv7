@@ -13,6 +13,7 @@ from core.operator.actions.memory import memory_audit
 from core.operator.actions.repo import repo_status
 from core.operator.actions.runtime import docker_compose_ps, runtime_health
 from core.operator.manager import OperatorManager
+from core.operator.schema import OperatorActionResult, OperatorSafety
 
 
 class _Proc:
@@ -67,6 +68,24 @@ def test_repo_status_handles_missing_git_binary(
     assert result.safety.read_only is True
 
 
+def test_repo_status_handles_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def _raise_timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=["git", "status", "--porcelain"], timeout=8)
+
+    monkeypatch.setattr("core.operator.actions.repo.subprocess.run", _raise_timeout)
+
+    result = repo_status(action_id="OP-20260611-0100", repo_root=tmp_path)
+    assert result.status == "failed"
+    assert result.exit_code == 124
+    assert "timed out" in result.stderr_summary
+    assert "limitation" in result.stderr_summary
+    assert result.safety.allowed is True
+    assert result.safety.read_only is True
+
+
 def test_read_project_file_denies_outside_repo_root(tmp_path: Path) -> None:
     inside = tmp_path / "safe.txt"
     inside.write_text("ok", encoding="utf-8")
@@ -87,7 +106,7 @@ def test_operator_manager_denies_mutation_request() -> None:
 
     assert handled is not None
     assert handled.result.status == "denied"
-    assert "read-only" in handled.answer.lower()
+    assert "operator mode" in handled.answer.lower()
 
 
 def test_operator_manager_allows_prompt_writing_requests() -> None:
@@ -104,6 +123,127 @@ def test_operator_manager_allows_vs_code_prompt_generation_request() -> None:
     handled = manager.try_handle_chat("Write a VS Code prompt for B8.2")
 
     assert handled is None
+
+
+def test_operator_manager_routes_disk_typo_intent_to_scan_disk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = OperatorManager(repo_root=Path.cwd())
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        now = datetime.now(UTC)
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name=action_name,
+            status="success",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="test",
+            target=str(repo_root),
+            stdout_summary="ok",
+            stderr_summary="",
+            exit_code=0,
+            data={},
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"{action_name} {action_id}",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = manager.try_handle_chat("please list disc usage")
+    assert handled is not None
+    assert handled.result.action_name == "scan_disk"
+
+
+def test_operator_manager_routes_hardware_temperature_to_cpu_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = OperatorManager(repo_root=Path.cwd())
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        now = datetime.now(UTC)
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name=action_name,
+            status="success",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="test",
+            target=str(repo_root),
+            stdout_summary="ok",
+            stderr_summary="",
+            exit_code=0,
+            data={},
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"{action_name} {action_id}",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = manager.try_handle_chat("what is my cpu temperature")
+    assert handled is not None
+    assert handled.result.action_name == "scan_cpu"
+
+
+@pytest.mark.parametrize(
+    "prompt,expected_action",
+    [
+        ("how many drives does the local system have", "scan_disk"),
+        ("what processor am I running", "scan_cpu"),
+        ("what's the current load on my processor", "scan_cpu"),
+        ("what's the status of my gpu temperature and speed", "scan_gpu"),
+        ("show me the system information", "scan_system"),
+        ("list disc", "scan_disk"),
+    ],
+)
+def test_operator_manager_routes_b981_hardware_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+    prompt: str,
+    expected_action: str,
+) -> None:
+    manager = OperatorManager(repo_root=Path.cwd())
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        now = datetime.now(UTC)
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name=action_name,
+            status="success",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="test",
+            target=str(repo_root),
+            stdout_summary="ok",
+            stderr_summary="",
+            exit_code=0,
+            data={},
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"{action_name} {action_id}",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = manager.try_handle_chat(prompt)
+    assert handled is not None
+    assert handled.result.action_name == expected_action
 
 
 @pytest.mark.parametrize(

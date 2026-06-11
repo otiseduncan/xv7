@@ -188,6 +188,48 @@ def test_failed_operator_action_is_honest_and_includes_receipt(
     assert metadata.get("live_repo_check") is not True
 
 
+def test_timed_out_repo_check_returns_honest_failure_receipt_without_hanging(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    def _run_action_timeout(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "repo_status"
+        return _result(
+            action_name="repo_status",
+            status="failed",
+            action_id=action_id,
+            stderr_summary="limitation: repo status check timed out after 8s",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action_timeout)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Check the repo."},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "failed" in answer
+    assert "timed out" in answer
+    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    assert operator_receipts
+    assert operator_receipts[0].get("action_name") == "repo_status"
+    assert "timed out" in str(operator_receipts[0].get("limitation") or operator_receipts[0].get("summary") or "").lower()
+    assert payload.get("metadata", {}).get("live_repo_check") is not True
+
+
 def test_are_containers_running_does_not_fake_proof_when_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -202,28 +244,28 @@ def test_are_containers_running_does_not_fake_proof_when_unavailable(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "docker_compose_ps"
+        assert action_name == "scan_docker"
         now = datetime.now(UTC)
         return OperatorActionResult(
             action_id=action_id,
-            action_name="docker_compose_ps",
+            action_name="scan_docker",
             status="failed",
             started_at=now,
             completed_at=now,
-            command_or_operation="read-only availability check for docker compose ps",
+            command_or_operation="POST http://host.docker.internal:8765/scan/docker",
             target=str(repo_root),
             stdout_summary="",
             stderr_summary=(
-                "Container status cannot be proven from inside xv7-core because Docker CLI/socket is unavailable. "
-                "No action was run beyond the read-only availability check."
+                "Local host scan bridge is not running or unreachable. "
+                "Start the local bridge service to enable host-level scans."
             ),
-            exit_code=127,
+            exit_code=503,
             data={
-                "docker_cli_available": False,
-                "docker_socket_available": False,
+                "bridge_available": False,
+                "limitation": "Local host scan bridge is not running.",
             },
             safety=OperatorSafety(allowed=True),
-            receipt_label=f"docker_compose_ps {action_id}",
+            receipt_label=f"scan_docker {action_id}",
         )
 
     monkeypatch.setattr("core.operator.manager.run_action", _run_action_compose_unavailable)
@@ -235,8 +277,117 @@ def test_are_containers_running_does_not_fake_proof_when_unavailable(
     )
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"]
-    assert "cannot be proven" in answer.lower()
+    assert "local host scan bridge" in answer.lower()
+    assert "not running yet" in answer.lower()
     assert "Operator receipt:" not in answer
+
+
+def test_processor_prompt_routes_to_scan_cpu_and_reports_bridge_unavailable_with_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    def _run_action_bridge_unavailable(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "scan_cpu"
+        now = datetime.now(UTC)
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name="scan_cpu",
+            status="failed",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="POST http://host.docker.internal:8765/scan/cpu",
+            target=str(repo_root),
+            stdout_summary="",
+            stderr_summary=(
+                "Local host scan bridge is not running or unreachable. "
+                "Start the local bridge service to enable host-level scans."
+            ),
+            exit_code=503,
+            data={
+                "bridge_available": False,
+                "limitation": "Local host scan bridge is not running.",
+            },
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"scan_cpu {action_id}",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action_bridge_unavailable)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "what processor am i running"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "local host scan bridge" in answer
+    assert "not running yet" in answer
+    assert "context required" not in answer
+    assert "Operator receipt:" not in answer
+    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    assert operator_receipts
+    assert operator_receipts[0].get("action_name") == "scan_cpu"
+    assert operator_receipts[0].get("status") == "failed"
+
+
+def test_can_you_scan_my_system_routes_to_scan_system_and_not_context_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    def _run_action_bridge_unavailable(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "scan_system"
+        now = datetime.now(UTC)
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name="scan_system",
+            status="failed",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="POST http://host.docker.internal:8765/scan/system",
+            target=str(repo_root),
+            stdout_summary="",
+            stderr_summary="Local host scan bridge is not running.",
+            exit_code=503,
+            data={"bridge_available": False, "limitation": "Local host scan bridge is not running."},
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"scan_system {action_id}",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action_bridge_unavailable)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "can you scan my system"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "local host scan bridge" in answer
+    assert "context required" not in answer
+    operator_receipts = payload.get("metadata", {}).get("last_assistant_payload", {}).get("operator_receipts", [])
+    assert operator_receipts
+    assert operator_receipts[0].get("action_name") == "scan_system"
 
 
 def test_operator_tools_available_includes_receipt(

@@ -22,8 +22,9 @@ xv7
 | Service     | Purpose                        | Default Port |
 |-------------|--------------------------------|-------------|
 | `ollama`    | Local LLM inference engine     | 11434       |
-| `open-webui`| Browser-based chat interface   | 3000        |
-| `core`      | xv7 Python orchestration API   | 8000        |
+| `xv7-frontend` | Browser-based xv7 SPA       | 3000        |
+| `open-webui`   | Optional Open WebUI         | 8080        |
+| `xv7-core`     | xv7 Python orchestration API| 8000        |
 
 ---
 
@@ -129,6 +130,21 @@ mypy core/ --ignore-missing-imports
 | `config/system.yml`    | App-level settings (logging, DB, cache)         |
 | `config/models.yml`    | Model registry, auto-pull list, prompts         |
 | `docker-compose.yml`   | Multi-container orchestration                   |
+
+## Canonical Brain Records
+
+Canonical brain records live in `data/brain/records/*.json` and are committed on purpose.
+Runtime-generated memory, vector, and log artifacts remain outside that tracked canonical set.
+If you need to override the canonical record location at runtime, set `XV7_BRAIN_RECORDS_PATH`.
+
+## Pre-Avatar Status
+
+The current avatar clips are shipped in `public/avatar/`, and avatar media playback is enabled by default when the mapped clips exist.
+Fallback orb behavior is still available for missing clips, clip load failures, or an explicit opt-out flag.
+
+## Roadmap Notes
+
+The current roadmap lanes for Core Brain, Voice and Avatar, Everyday Assistant, Communications, Personal Context, and Technical Operator are documented in `docs/XODUZ_ROADMAP.md`.
 
 ---
 
