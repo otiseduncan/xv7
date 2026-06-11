@@ -178,7 +178,9 @@ def docker_compose_ps(*, action_id: str, repo_root: Path) -> OperatorActionResul
     started = datetime.now(UTC)
     docker_cli_path = shutil.which("docker")
     docker_socket_path = Path("/var/run/docker.sock")
-    socket_available = _docker_socket_usable(docker_socket_path)
+    socket_available = bool(docker_cli_path) and _docker_socket_usable(
+        docker_socket_path
+    )
 
     if not docker_cli_path or not socket_available:
         completed = datetime.now(UTC)
