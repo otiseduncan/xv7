@@ -385,23 +385,26 @@ def test_natural_language_intent_pipeline_updates_working_state(
         turn3.get("metadata", {}).get("active_focus", {}).get("id", "")
     ).startswith("XV7-FOCUS-")
 
-    # Turn 4: correction is treated as learning signal, not protected mutation.
+    # Turn 4: ambiguous correction requests clarification.
     turn4 = outputs[3]
-    assert "high-priority tuning input" in turn4["messages"][-1]["content"].lower()
+    assert "tell me the exact behavior" in turn4["messages"][-1]["content"].lower()
     p4 = turn4.get("metadata", {}).get("answer_provenance", {})
-    assert p4.get("brain_answer_source") == "user_correction"
+    assert p4.get("brain_answer_source") == "learning_clarification_pending"
 
-    # Turn 5: communication preference is applied.
+    # Turn 5: communication preference is captured as a learned rule.
     turn5 = outputs[4]
-    assert "communication preference" in turn5["messages"][-1]["content"].lower()
+    assert (
+        "saved that as a communication preference"
+        in turn5["messages"][-1]["content"].lower()
+    )
     p5 = turn5.get("metadata", {}).get("answer_provenance", {})
-    assert p5.get("brain_answer_source") == "communication_preference"
+    assert p5.get("brain_answer_source") == "learning_rule_saved"
 
-    # Turn 6: explicit correction statement about build ownership is accepted as correction.
+    # Turn 6: explicit correction statement about build ownership requests clarification.
     turn6 = outputs[5]
-    assert "high-priority tuning input" in turn6["messages"][-1]["content"].lower()
+    assert "tell me the exact behavior" in turn6["messages"][-1]["content"].lower()
     p6 = turn6.get("metadata", {}).get("answer_provenance", {})
-    assert p6.get("brain_answer_source") == "user_correction"
+    assert p6.get("brain_answer_source") == "learning_clarification_pending"
 
     # Turn 7: focus recall reflects user-updated focus.
     turn7 = outputs[6]

@@ -34,13 +34,24 @@ class BrainContextManager:
         return " ".join(question.lower().strip().split())
 
     @staticmethod
+    def _layer_selection_priority(record: BrainRecord) -> int:
+        tags = {str(tag).lower() for tag in record.tags}
+        if record.layer in {BrainLayer.MEMORY, BrainLayer.KNOWLEDGE} and (
+            "learned-rule" in tags or "otis-learning" in tags
+        ):
+            return record.priority - 1000
+        return record.priority
+
+    @staticmethod
     def _highest_priority_by_layer(
         records: list[BrainRecord],
     ) -> dict[BrainLayer, BrainRecord]:
         result: dict[BrainLayer, BrainRecord] = {}
         for record in records:
             current = result.get(record.layer)
-            if current is None or record.priority > current.priority:
+            if current is None or BrainContextManager._layer_selection_priority(
+                record
+            ) > BrainContextManager._layer_selection_priority(current):
                 result[record.layer] = record
         return result
 

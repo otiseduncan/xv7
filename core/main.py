@@ -4,6 +4,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal
 from uuid import UUID
@@ -112,7 +113,84 @@ class BrainRecordUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1)
     body: str | None = Field(default=None, min_length=1)
     tags: list[str] | None = None
-    status: Literal["active", "archived"] | None = None
+    status: (
+        Literal[
+            "active",
+            "pending",
+            "pending_review",
+            "disabled",
+            "archived",
+        ]
+        | None
+    ) = None
+    relevance_state: (
+        Literal[
+            "current",
+            "historical",
+            "superseded",
+            "expired",
+            "needs_review",
+        ]
+        | None
+    ) = None
+    superseded_by: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+    applies_when: str | None = None
+    review_reason: str | None = None
+    last_reviewed_at: str | None = None
+
+
+class BrainRecordRelevanceUpdateRequest(BaseModel):
+    """Payload for setting brain record relevance lifecycle state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    relevance_state: Literal[
+        "current",
+        "historical",
+        "superseded",
+        "expired",
+        "needs_review",
+    ]
+    superseded_by: str | None = None
+    review_reason: str | None = None
+    applies_when: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+
+
+class BrainRecordApplyRecommendationRequest(BaseModel):
+    """Explicit approval payload for a staged hygiene recommendation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation_type: Literal[
+        "mark_historical_via_runtime_override",
+        "split_record",
+    ]
+    approve: bool = True
+    operational_title: str | None = None
+    operational_summary: str | None = None
+    operational_body: str | None = None
+    tags: list[str] | None = None
+    layer: BrainLayer | None = None
+
+
+class BrainRecordSplitRequest(BaseModel):
+    """Payload for explicit split of mixed records into historical + current operational."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operational_title: str | None = None
+    operational_summary: str | None = None
+    operational_body: str | None = None
+    tags: list[str] | None = None
+    layer: BrainLayer | None = None
+    review_reason: str | None = None
+    applies_when: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
 
 
 memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
@@ -199,12 +277,130 @@ def _summary_from_body(body: str) -> str:
     return cleaned[:157].rstrip() + "..."
 
 
+def _status_label(status: str) -> str:
+    normalized = str(status or "").lower()
+    if normalized in {"pending", "pending_review"}:
+        return "pending"
+    if normalized == "disabled":
+        return "disabled"
+    if normalized == "archived":
+        return "archived"
+    return "active"
+
+
+def _brain_hygiene_classification(record: BrainRecord) -> dict[str, Any]:
+    text_blob = " ".join(
+        [
+            record.title,
+            record.summary,
+            record.body,
+            " ".join(record.tags),
+            " ".join(record.evidence),
+        ]
+    ).lower()
+    flags: list[str] = []
+    recommendations: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    effective_relevance = record.relevance_state
+
+    has_phase_ref = bool(re.search(r"\bb\d+(?:\.\d+)?\b", text_blob))
+    has_milestone_done = any(
+        token in text_blob
+        for token in (
+            "completed",
+            "passed",
+            "verified",
+            "proven",
+            "milestone",
+            "done",
+            "shipped",
+            "phase",
+        )
+    )
+    has_operational_rule = any(
+        token in text_blob
+        for token in (
+            "from now on",
+            "current",
+            "in progress",
+            "must",
+            "always",
+            "operator mode",
+            "working priority",
+            "active focus",
+            "should",
+            "bridge",
+        )
+    )
+
+    if has_phase_ref:
+        flags.append("old_phase_reference")
+        reasons.append("Contains legacy B-phase references.")
+    if has_milestone_done:
+        flags.append("completed_milestone")
+        reasons.append("Contains completed/passed milestone language.")
+    if has_phase_ref and has_milestone_done:
+        flags.append("historical_candidate")
+        if record.relevance_state == "current":
+            effective_relevance = "historical"
+            recommendations.append(
+                {
+                    "type": "mark_historical_via_runtime_override",
+                    "record_id": record.record_id,
+                    "approval_required": True,
+                    "reason": "Contains old completed milestones without current-only scoping.",
+                    "payload": {
+                        "relevance_state": "historical",
+                        "review_reason": "Contains completed or passed phase milestone references.",
+                    },
+                }
+            )
+
+    if has_phase_ref and has_milestone_done and has_operational_rule:
+        flags.append("mixed_historical_and_operational")
+        flags.append("mixed_historical_and_current")
+        effective_relevance = "needs_review"
+        reasons.append(
+            "Contains old completed milestones and current operational bridge rule content."
+        )
+        recommendations.append(
+            {
+                "type": "split_record",
+                "record_id": record.record_id,
+                "approval_required": True,
+                "reason": "Split historical milestones from current operational behavior.",
+                "steps": [
+                    "Mark existing record as historical or superseded via runtime override",
+                    "Create a smaller current operational rule record via runtime override",
+                ],
+            }
+        )
+
+    if record.valid_until:
+        try:
+            until = datetime.fromisoformat(record.valid_until.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if until < now and record.relevance_state in {"current", "needs_review"}:
+                flags.append("expired_window")
+                effective_relevance = "expired"
+        except Exception:
+            pass
+
+    return {
+        "effective_relevance_state": effective_relevance,
+        "flags": flags,
+        "recommended_actions": recommendations,
+        "reason": " ".join(dict.fromkeys(reasons)),
+    }
+
+
 def _serialize_brain_record(
     *,
     record: BrainRecord,
     source: str,
     path: Path,
 ) -> dict[str, Any]:
+    hygiene = _brain_hygiene_classification(record)
     return {
         "record_id": record.record_id,
         "layer": record.layer.value,
@@ -212,13 +408,124 @@ def _serialize_brain_record(
         "summary": record.summary,
         "body": record.body,
         "status": record.status,
+        "status_label": _status_label(record.status),
+        "relevance_state": record.relevance_state,
+        "effective_relevance_state": hygiene["effective_relevance_state"],
+        "superseded_by": record.superseded_by,
+        "valid_from": record.valid_from,
+        "valid_until": record.valid_until,
+        "applies_when": record.applies_when,
+        "review_reason": record.review_reason,
+        "last_reviewed_at": record.last_reviewed_at,
         "priority": record.priority,
         "tags": list(record.tags),
         "source": source,
         "writable": source == "runtime_override",
+        "source_label": "runtime_override" if source == "runtime_override" else "seed",
+        "hygiene_flags": hygiene["flags"],
+        "hygiene_recommendations": hygiene["recommended_actions"],
+        "hygiene_reason": hygiene.get("reason", ""),
         "updated_at": brain_context_manager.loader.record_updated_at(path),
         "raw_record": record.model_dump(mode="json"),
     }
+
+
+def _layer_token(layer: BrainLayer) -> str:
+    return {
+        BrainLayer.MEMORY: "MEMORY",
+        BrainLayer.KNOWLEDGE: "KNOWLEDGE",
+        BrainLayer.VERIFIED_STATUS: "VERIFIED",
+        BrainLayer.ACTIVE_FOCUS: "FOCUS",
+        BrainLayer.SYSTEM_PROMPT: "SYSTEM",
+    }[layer]
+
+
+def _next_record_id_for_layer(layer: BrainLayer) -> str:
+    token = _layer_token(layer)
+    records = brain_context_manager.loader.load_records()
+    max_index = 0
+    for record in records:
+        match = re.match(rf"^XV7-{token}-(\d{{4}})$", record.record_id)
+        if match is None:
+            continue
+        max_index = max(max_index, int(match.group(1)))
+    return f"XV7-{token}-{max_index + 1:04d}"
+
+
+def _split_record_to_current_operational(
+    *,
+    record: BrainRecord,
+    operational_title: str | None,
+    operational_summary: str | None,
+    operational_body: str | None,
+    tags: list[str] | None,
+    layer: BrainLayer | None,
+    review_reason: str | None,
+    applies_when: str | None,
+    valid_from: str | None,
+    valid_until: str | None,
+) -> tuple[BrainRecord, BrainRecord]:
+    target_layer = layer or record.layer
+    new_record_id = _next_record_id_for_layer(target_layer)
+
+    body = (operational_body or record.body or "").strip()
+    if not body:
+        body = record.summary.strip()
+
+    title = (operational_title or "").strip()
+    if not title:
+        title = f"Operational: {record.title}"
+
+    summary = (operational_summary or "").strip() or _summary_from_body(body)
+
+    raw_tags = tags if tags is not None else list(record.tags)
+    normalized_tags: list[str] = []
+    for tag in raw_tags:
+        cleaned = str(tag).strip().lower().replace(" ", "-")
+        if cleaned and cleaned not in normalized_tags:
+            normalized_tags.append(cleaned)
+    for required in ("runtime", "split-derived", "current-operational"):
+        if required not in normalized_tags:
+            normalized_tags.append(required)
+    for remove_tag in ("historical", "superseded", "deactivated"):
+        if remove_tag in normalized_tags:
+            normalized_tags.remove(remove_tag)
+
+    created = BrainRecord.model_validate(
+        {
+            "record_id": new_record_id,
+            "layer": target_layer.value,
+            "title": title,
+            "summary": summary,
+            "body": body,
+            "status": "active",
+            "relevance_state": "current",
+            "priority": max(record.priority, 200),
+            "tags": normalized_tags,
+            "facts": list(record.facts),
+            "evidence": [
+                *list(record.evidence),
+                f"split_from={record.record_id}",
+            ],
+            "applies_when": applies_when,
+            "valid_from": valid_from,
+            "valid_until": valid_until,
+        }
+    )
+
+    historical = record.model_copy(
+        update={
+            "relevance_state": "historical",
+            "superseded_by": created.record_id,
+            "review_reason": review_reason
+            or "Split into historical context plus current operational rule.",
+            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+    brain_context_manager.loader.save_runtime_override(historical)
+    brain_context_manager.loader.save_runtime_override(created)
+    return historical, created
 
 
 ACTIVE_FOCUS_UPDATE_PREFIXES = (
@@ -247,6 +554,9 @@ INTENT_CLASSES = {
     "user_correction",
     "communication_preference",
     "workflow_habit_learning",
+    "hallucination_guard",
+    "answer_style_preference",
+    "diagnostic_rule",
     "protected_mutation_request",
     "status_question",
     "normal_question",
@@ -258,7 +568,10 @@ PROTECTED_MUTATION_PATTERN = re.compile(
     r"delete|remove|drop|destroy|format|wipe|erase|"
     r"shutdown|restart service|reset hard|git reset|"
     r"truncate|overwrite|force remove|rm -rf|"
-    r"delete the memory database|delete memory database"
+    r"delete the memory database|delete memory database|"
+    r"bypass safety|disable safety|ignore confirmations|"
+    r"expose secrets|leak secrets|"
+    r"rewrite system identity|change your identity"
     r")\b",
     flags=re.IGNORECASE,
 )
@@ -276,6 +589,9 @@ STATUS_QUESTION_PATTERN = re.compile(
 CORRECTION_PREFIXES = (
     "no, that is wrong",
     "no that is wrong",
+    "no, that's not what i meant",
+    "that's not what i meant",
+    "you screwed up",
     "that is wrong",
     "you're wrong",
     "you are wrong",
@@ -286,6 +602,9 @@ COMMUNICATION_PREFERENCE_MARKERS = (
     "i don't want",
     "i do not want",
     "i want you to",
+    "don't say it that way",
+    "dont say it that way",
+    "remember i prefer",
     "prefer",
     "keep answers",
     "don't over-explain",
@@ -294,6 +613,7 @@ COMMUNICATION_PREFERENCE_MARKERS = (
 )
 
 WORKFLOW_HABIT_MARKERS = (
+    "we always",
     "my habits",
     "my workflow",
     "my workflows",
@@ -301,6 +621,45 @@ WORKFLOW_HABIT_MARKERS = (
     "how i build",
     "how i make decisions",
     "the way i work",
+)
+
+HALLUCINATION_GUARD_MARKERS = (
+    "before guessing",
+    "don't guess",
+    "do not guess",
+    "verify",
+    "proof first",
+    "check proof first",
+)
+
+ANSWER_STYLE_MARKERS = (
+    "direct answers",
+    "keep it direct",
+    "be concise",
+    "short answers",
+    "unless i ask",
+    "don't dump",
+    "do not dump",
+)
+
+DIAGNOSTIC_RULE_MARKERS = (
+    "when i ask about",
+    "github status",
+    "repo status",
+    "actions",
+    "ci status",
+    "rebuild before",
+    "live testing",
+)
+
+LEARNING_PROTECTED_PATTERN = re.compile(
+    r"\b("
+    r"bypass safety|disable safety|ignore confirmations|"
+    r"authorize destructive actions|expose secrets|leak secrets|"
+    r"rewrite system identity|change your identity|"
+    r"pretend ci is green|claim verified without proof"
+    r")\b",
+    flags=re.IGNORECASE,
 )
 
 
@@ -417,6 +776,7 @@ def _extract_after_prefixes(normalized: str, prefixes: tuple[str, ...]) -> str:
 
 def _classify_speech_act(question: str) -> str:
     normalized = _normalize_intent_text(question)
+    is_question = STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?")
 
     if _extract_active_focus_instruction(question) is not None:
         return "active_focus_update"
@@ -427,6 +787,29 @@ def _classify_speech_act(question: str) -> str:
     if "you are not responsible for building yourself" in normalized:
         return "user_correction"
 
+    if is_question and not any(
+        marker in normalized
+        for marker in (
+            "when i ask about",
+            "from now on",
+            "i want you to",
+            "remember i prefer",
+            "check proof first",
+            "do not guess",
+            "don't guess",
+        )
+    ):
+        return "status_question"
+
+    if any(marker in normalized for marker in HALLUCINATION_GUARD_MARKERS):
+        return "hallucination_guard"
+
+    if any(marker in normalized for marker in ANSWER_STYLE_MARKERS):
+        return "answer_style_preference"
+
+    if any(marker in normalized for marker in DIAGNOSTIC_RULE_MARKERS):
+        return "diagnostic_rule"
+
     if any(marker in normalized for marker in WORKFLOW_HABIT_MARKERS):
         return "workflow_habit_learning"
 
@@ -436,7 +819,7 @@ def _classify_speech_act(question: str) -> str:
     if PROTECTED_MUTATION_PATTERN.search(normalized):
         return "protected_mutation_request"
 
-    if STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?"):
+    if is_question:
         return "status_question"
 
     if IMPLEMENTATION_TASK_PATTERN.search(normalized):
@@ -458,6 +841,111 @@ def _extract_preference_text(question: str) -> str:
 def _extract_workflow_habit_text(question: str) -> str:
     normalized = _normalize_intent_text(question)
     return normalized.strip(" .!?")
+
+
+def _speech_act_to_learning_layer(speech_act: str) -> BrainLayer:
+    if speech_act in {
+        "workflow_habit_learning",
+        "hallucination_guard",
+        "diagnostic_rule",
+    }:
+        return BrainLayer.KNOWLEDGE
+    return BrainLayer.MEMORY
+
+
+def _speech_act_confidence(speech_act: str, text: str) -> float:
+    normalized = _normalize_intent_text(text)
+    if speech_act in {"hallucination_guard", "diagnostic_rule"}:
+        return 0.9
+    if speech_act == "workflow_habit_learning":
+        return 0.84
+    if speech_act == "answer_style_preference":
+        return 0.88
+    if speech_act == "communication_preference":
+        return 0.86
+    if speech_act == "user_correction":
+        if "instead" in normalized or "not asking" in normalized:
+            return 0.87
+        return 0.7
+    return 0.65
+
+
+def _needs_learning_clarification(speech_act: str, text: str) -> bool:
+    normalized = _normalize_intent_text(text)
+    emotional_only = {
+        "you screwed up",
+        "no",
+        "wrong",
+        "bad",
+    }
+    if speech_act == "user_correction" and normalized in emotional_only:
+        return True
+    if len(normalized) < 24:
+        return True
+    if not any(
+        token in normalized
+        for token in (
+            "when",
+            "if",
+            "instead",
+            "prefer",
+            "don't",
+            "do not",
+            "always",
+            "before",
+            "unless",
+            "should",
+        )
+    ):
+        return True
+    return False
+
+
+def _is_emotional_unclear_feedback(text: str) -> bool:
+    normalized = _normalize_intent_text(text)
+    if len(normalized.split()) > 8:
+        return False
+    return any(
+        token in normalized
+        for token in (
+            "screwed up",
+            "wrong",
+            "bad",
+            "not what i meant",
+        )
+    )
+
+
+def _learning_protected_boundary(text: str) -> bool:
+    return bool(LEARNING_PROTECTED_PATTERN.search(_normalize_intent_text(text)))
+
+
+def _learning_rule_tags(speech_act: str, proof_required: bool) -> list[str]:
+    tags = ["learning", speech_act.replace("_", "-")]
+    if speech_act in {"answer_style_preference", "communication_preference"}:
+        tags.append("communication")
+    if speech_act in {"workflow_habit_learning", "diagnostic_rule"}:
+        tags.append("workflow")
+    if speech_act == "hallucination_guard":
+        tags.append("proof-guard")
+    if proof_required:
+        tags.append("proof-required")
+    return tags
+
+
+def _learning_rule_title(speech_act: str, lesson_text: str) -> str:
+    prefix = {
+        "user_correction": "Correction",
+        "communication_preference": "Communication Preference",
+        "workflow_habit_learning": "Workflow Habit",
+        "hallucination_guard": "Hallucination Guard",
+        "answer_style_preference": "Answer Style",
+        "diagnostic_rule": "Diagnostic Rule",
+    }.get(speech_act, "Learned Rule")
+    clipped = " ".join(lesson_text.split())
+    if len(clipped) > 84:
+        clipped = clipped[:81].rstrip() + "..."
+    return f"{prefix}: {clipped}"
 
 
 def _append_learning_signal(
@@ -495,6 +983,93 @@ def _intent_context_receipt(
         ],
         "record_ids": [record_id],
     }
+
+
+def _learning_context_receipt(
+    *,
+    learning_layer: BrainLayer,
+    learned_record_id: str,
+    proof_required: bool,
+) -> dict[str, Any]:
+    compact_parts = [
+        f"Memory: {learned_record_id}"
+        if learning_layer == BrainLayer.MEMORY
+        else "Memory: -",
+        f"Knowledge: {learned_record_id}"
+        if learning_layer == BrainLayer.KNOWLEDGE
+        else "Knowledge: -",
+        "Focus: -",
+        "Proof: required" if proof_required else "Proof: none",
+    ]
+    return {
+        "compact": "; ".join(compact_parts),
+        "context_receipts": [
+            {
+                "layer": learning_layer.value,
+                "record_id": learned_record_id,
+                "status": "active",
+                "source": "direct_user_instruction",
+            }
+        ],
+        "record_ids": [learned_record_id],
+    }
+
+
+def _active_learned_rules(records: list[BrainRecord]) -> list[BrainRecord]:
+    out: list[BrainRecord] = []
+    for record in records:
+        if record.status != "active":
+            continue
+        tags = {str(tag).lower() for tag in record.tags}
+        if "learned-rule" in tags or "otis-learning" in tags:
+            out.append(record)
+    return out
+
+
+def _learned_rules_prompt(records: list[BrainRecord]) -> str:
+    active = _active_learned_rules(records)
+    if not active:
+        return ""
+
+    lines = [
+        "--- LEARNED USER RULES (DURABLE) ---",
+        "Apply these learned behavior rules unless they conflict with safety boundaries:",
+    ]
+    for record in active[:10]:
+        lines.append(f"- {record.record_id}: {record.summary}")
+    lines.append("-------------------------------------")
+    return "\n".join(lines)
+
+
+def _applies_learned_rule(
+    question: str,
+    records: list[BrainRecord],
+) -> tuple[str | None, BrainRecord | None]:
+    normalized = _normalize_intent_text(question)
+    ci_or_github_status_prompt = bool(
+        re.search(
+            r"\b(github\s+actions?|ci\s+status|build\s+status|checks?\s+status|did\s+ci|is\s+ci)\b",
+            normalized,
+        )
+    )
+
+    # Never replace explicit operator-history/status introspection prompts.
+    if re.search(
+        r"\b(operator\s+actions?|what\s+did\s+you\s+just\s+check|last\s+operator\s+receipt)\b",
+        normalized,
+    ):
+        return None, None
+
+    for record in _active_learned_rules(records):
+        tags = {str(tag).lower() for tag in record.tags}
+        if (
+            "proof-required" in tags or "proof-guard" in tags
+        ) and ci_or_github_status_prompt:
+            return (
+                "Understood. Per your learned diagnostic rule, I will require proof before claiming CI/GitHub status. I do not have live proof in this turn.",
+                record,
+            )
+    return None, None
 
 
 def _focus_violates_protected_rules(focus_text: str) -> bool:
@@ -972,6 +1547,18 @@ async def runtime_active_context() -> dict[str, Any]:
 async def runtime_brain_records(
     layer: BrainLayer | None = None,
     include_archived: bool = True,
+    pending_only: bool = False,
+    learned_only: bool = False,
+    relevance: Literal[
+        "current",
+        "historical",
+        "superseded",
+        "expired",
+        "needs_review",
+    ]
+    | None = None,
+    history_only: bool = False,
+    review_only: bool = False,
 ) -> dict[str, Any]:
     entries = brain_context_manager.loader.load_records_with_source()
     records: list[dict[str, Any]] = []
@@ -979,9 +1566,53 @@ async def runtime_brain_records(
     for record, source, path in entries:
         if layer is not None and record.layer != layer:
             continue
-        if not include_archived and record.status != "active":
+        if pending_only and record.status not in {"pending", "pending_review"}:
             continue
-        records.append(_serialize_brain_record(record=record, source=source, path=path))
+        if not include_archived and record.status not in {
+            "active",
+            "pending",
+            "pending_review",
+        }:
+            continue
+        if learned_only:
+            tags = {str(tag).lower() for tag in record.tags}
+            if "learned-rule" not in tags and "otis-learning" not in tags:
+                continue
+        serialized = _serialize_brain_record(record=record, source=source, path=path)
+        effective_relevance = serialized.get(
+            "effective_relevance_state", record.relevance_state
+        )
+        stored_relevance = str(
+            serialized.get("relevance_state", record.relevance_state)
+        )
+        status_label = serialized.get("status_label", _status_label(record.status))
+
+        if relevance is not None and effective_relevance != relevance:
+            continue
+        if history_only and not (
+            stored_relevance in {"historical", "superseded", "expired"}
+            or effective_relevance in {"historical", "superseded", "expired"}
+        ):
+            continue
+        if review_only and not (
+            status_label == "pending"
+            or stored_relevance == "needs_review"
+            or effective_relevance == "needs_review"
+            or bool(serialized.get("hygiene_recommendations"))
+            or any(
+                str(flag).lower()
+                in {
+                    "old_phase_reference",
+                    "completed_milestone",
+                    "mixed_historical_and_operational",
+                    "mixed_historical_and_current",
+                }
+                for flag in (serialized.get("hygiene_flags") or [])
+            )
+        ):
+            continue
+
+        records.append(serialized)
 
     return {
         "count": len(records),
@@ -1023,6 +1654,20 @@ async def update_runtime_brain_record(
         ]
     if payload.status is not None:
         updates["status"] = payload.status
+    if payload.relevance_state is not None:
+        updates["relevance_state"] = payload.relevance_state
+    if payload.superseded_by is not None:
+        updates["superseded_by"] = payload.superseded_by.strip() or None
+    if payload.valid_from is not None:
+        updates["valid_from"] = payload.valid_from.strip() or None
+    if payload.valid_until is not None:
+        updates["valid_until"] = payload.valid_until.strip() or None
+    if payload.applies_when is not None:
+        updates["applies_when"] = payload.applies_when.strip() or None
+    if payload.review_reason is not None:
+        updates["review_reason"] = payload.review_reason.strip() or None
+    if payload.last_reviewed_at is not None:
+        updates["last_reviewed_at"] = payload.last_reviewed_at.strip() or None
 
     updated = record.model_copy(update=updates)
     brain_context_manager.loader.save_runtime_override(updated)
@@ -1057,6 +1702,254 @@ async def set_active_runtime_brain_record(record_id: str) -> dict[str, Any]:
         raise RuntimeError(f"Activated record not found after save: {record_id}")
     saved_record, source, path = refreshed
     return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/approve",
+    dependencies=[Depends(require_api_key)],
+)
+async def approve_runtime_brain_record(record_id: str) -> dict[str, Any]:
+    updated = brain_context_manager.loader.approve_record(record_id)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Approved record not found after save: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/reject",
+    dependencies=[Depends(require_api_key)],
+)
+async def reject_runtime_brain_record(record_id: str) -> dict[str, Any]:
+    updated = brain_context_manager.loader.reject_record(record_id)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Rejected record not found after save: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/mark-current",
+    dependencies=[Depends(require_api_key)],
+)
+async def mark_current_runtime_brain_record(record_id: str) -> dict[str, Any]:
+    found = brain_context_manager.loader.get_record_with_source(record_id)
+    if found is None:
+        raise ValueError(f"Record not found: {record_id}")
+    record, _, _ = found
+    updated = record.model_copy(
+        update={
+            "status": "active",
+            "relevance_state": "current",
+            "superseded_by": None,
+            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    brain_context_manager.loader.save_runtime_override(updated)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Record not found after update: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/mark-historical",
+    dependencies=[Depends(require_api_key)],
+)
+async def mark_historical_runtime_brain_record(record_id: str) -> dict[str, Any]:
+    found = brain_context_manager.loader.get_record_with_source(record_id)
+    if found is None:
+        raise ValueError(f"Record not found: {record_id}")
+    record, _, _ = found
+    updated = record.model_copy(
+        update={
+            "relevance_state": "historical",
+            "review_reason": record.review_reason or "Marked historical by operator.",
+            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    brain_context_manager.loader.save_runtime_override(updated)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Record not found after update: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/mark-superseded",
+    dependencies=[Depends(require_api_key)],
+)
+async def mark_superseded_runtime_brain_record(
+    record_id: str,
+    payload: BrainRecordRelevanceUpdateRequest,
+) -> dict[str, Any]:
+    if payload.relevance_state != "superseded":
+        raise ValueError("mark-superseded requires relevance_state='superseded'.")
+
+    found = brain_context_manager.loader.get_record_with_source(record_id)
+    if found is None:
+        raise ValueError(f"Record not found: {record_id}")
+    record, _, _ = found
+
+    updated = record.model_copy(
+        update={
+            "relevance_state": "superseded",
+            "status": "disabled",
+            "superseded_by": payload.superseded_by,
+            "review_reason": payload.review_reason or "Superseded by newer record.",
+            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    brain_context_manager.loader.save_runtime_override(updated)
+    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
+    if refreshed is None:
+        raise RuntimeError(f"Record not found after update: {record_id}")
+    saved_record, source, path = refreshed
+    return _serialize_brain_record(record=saved_record, source=source, path=path)
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/apply-recommendation",
+    dependencies=[Depends(require_api_key)],
+)
+async def apply_runtime_brain_record_recommendation(
+    record_id: str,
+    payload: BrainRecordApplyRecommendationRequest,
+) -> dict[str, Any]:
+    found = brain_context_manager.loader.get_record_with_source(record_id)
+    if found is None:
+        raise ValueError(f"Record not found: {record_id}")
+    record, _, _ = found
+
+    if not payload.approve:
+        return {
+            "record_id": record_id,
+            "applied": False,
+            "recommendation_type": payload.recommendation_type,
+            "status": "rejected",
+        }
+
+    if payload.recommendation_type == "mark_historical_via_runtime_override":
+        updated = record.model_copy(
+            update={
+                "relevance_state": "historical",
+                "review_reason": "Approved hygiene recommendation: historical.",
+                "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        brain_context_manager.loader.save_runtime_override(updated)
+        refreshed = brain_context_manager.loader.get_record_with_source(record_id)
+        if refreshed is None:
+            raise RuntimeError(f"Record not found after update: {record_id}")
+        saved_record, source, path = refreshed
+        return {
+            "record": _serialize_brain_record(
+                record=saved_record,
+                source=source,
+                path=path,
+            ),
+            "applied": True,
+            "recommendation_type": payload.recommendation_type,
+            "status": "applied",
+        }
+
+    if payload.recommendation_type == "split_record":
+        historical, created = _split_record_to_current_operational(
+            record=record,
+            operational_title=payload.operational_title,
+            operational_summary=payload.operational_summary,
+            operational_body=payload.operational_body,
+            tags=payload.tags,
+            layer=payload.layer,
+            review_reason="Approved hygiene recommendation: split applied.",
+            applies_when=None,
+            valid_from=None,
+            valid_until=None,
+        )
+        historical_refreshed = brain_context_manager.loader.get_record_with_source(
+            historical.record_id
+        )
+        created_refreshed = brain_context_manager.loader.get_record_with_source(
+            created.record_id
+        )
+        if historical_refreshed is None or created_refreshed is None:
+            raise RuntimeError(f"Split records not found after update: {record_id}")
+        historical_record, historical_source, historical_path = historical_refreshed
+        created_record, created_source, created_path = created_refreshed
+        return {
+            "record": _serialize_brain_record(
+                record=historical_record,
+                source=historical_source,
+                path=historical_path,
+            ),
+            "created_record": _serialize_brain_record(
+                record=created_record,
+                source=created_source,
+                path=created_path,
+            ),
+            "applied": True,
+            "recommendation_type": payload.recommendation_type,
+            "status": "applied",
+        }
+
+    raise ValueError(f"Unsupported recommendation type: {payload.recommendation_type}")
+
+
+@app.post(
+    "/runtime/brain/records/{record_id}/split",
+    dependencies=[Depends(require_api_key)],
+)
+async def split_runtime_brain_record(
+    record_id: str,
+    payload: BrainRecordSplitRequest,
+) -> dict[str, Any]:
+    found = brain_context_manager.loader.get_record_with_source(record_id)
+    if found is None:
+        raise ValueError(f"Record not found: {record_id}")
+    record, _, _ = found
+
+    historical, created = _split_record_to_current_operational(
+        record=record,
+        operational_title=payload.operational_title,
+        operational_summary=payload.operational_summary,
+        operational_body=payload.operational_body,
+        tags=payload.tags,
+        layer=payload.layer,
+        review_reason=payload.review_reason,
+        applies_when=payload.applies_when,
+        valid_from=payload.valid_from,
+        valid_until=payload.valid_until,
+    )
+
+    historical_refreshed = brain_context_manager.loader.get_record_with_source(
+        historical.record_id
+    )
+    created_refreshed = brain_context_manager.loader.get_record_with_source(
+        created.record_id
+    )
+    if historical_refreshed is None or created_refreshed is None:
+        raise RuntimeError(f"Split records not found after update: {record_id}")
+
+    historical_record, historical_source, historical_path = historical_refreshed
+    created_record, created_source, created_path = created_refreshed
+
+    return {
+        "applied": True,
+        "source_record": _serialize_brain_record(
+            record=historical_record,
+            source=historical_source,
+            path=historical_path,
+        ),
+        "created_record": _serialize_brain_record(
+            record=created_record,
+            source=created_source,
+            path=created_path,
+        ),
+    }
 
 
 @app.get("/personas")
@@ -1248,52 +2141,218 @@ async def add_session_message(
         if isinstance(item, dict) and str(item.get("action_id", ""))
     ]
 
-    if intent_class == "user_correction":
-        correction_text = _extract_correction_text(payload.raw_text)
-        persisted = True
-        record_id = "MEMORY-UNAVAILABLE"
-        try:
-            record = persistent_memory_manager.create_active_memory(
-                content=f"User correction (high priority): {correction_text}",
-                source="user_explicit",
-                memory_type="correction",
-                tags=["learning", "correction", "high-priority"],
-                confidence=0.98,
+    if intent_class in {
+        "user_correction",
+        "communication_preference",
+        "workflow_habit_learning",
+        "hallucination_guard",
+        "answer_style_preference",
+        "diagnostic_rule",
+    }:
+        if intent_class == "user_correction":
+            lesson_text = _extract_correction_text(payload.raw_text)
+        elif intent_class == "workflow_habit_learning":
+            lesson_text = _extract_workflow_habit_text(payload.raw_text)
+        else:
+            lesson_text = _extract_preference_text(payload.raw_text)
+
+        protected_boundary = (
+            intent_class == "protected_mutation_request"
+            or _learning_protected_boundary(payload.raw_text)
+        )
+        requires_confirmation = False
+        confidence = _speech_act_confidence(intent_class, lesson_text)
+
+        if protected_boundary:
+            visible_text = (
+                "I cannot auto-learn that rule because it would cross a protected boundary "
+                "(safety, destructive authority, secrets, or unverified truth claims)."
             )
-            record_id = record.id
-        except Exception:
-            persisted = False
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt={
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: protected-boundary",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "intent_router",
+                    "brain_answer_source": "learning_protected_boundary",
+                    "intent_class": intent_class,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=["protected learning boundary"],
+                action_history_refs=action_history_refs,
+            )
+            assistant_payload.update(
+                {
+                    "speech_act": intent_class,
+                    "learned_record_id": None,
+                    "learning_layer": None,
+                    "learning_status": "rejected",
+                    "source_user_message": payload.raw_text,
+                    "confidence": confidence,
+                    "requires_confirmation": True,
+                    "protected_boundary": True,
+                }
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+        if _is_emotional_unclear_feedback(lesson_text) or _needs_learning_clarification(
+            intent_class, lesson_text
+        ):
+            requires_confirmation = True
+            visible_text = "I understand. Tell me the exact behavior you want changed in one sentence, and I will save that as a learned rule."
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt={
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: pending-clarification",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "intent_router",
+                    "brain_answer_source": "learning_clarification_pending",
+                    "intent_class": intent_class,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=action_history_refs,
+            )
+            assistant_payload.update(
+                {
+                    "speech_act": intent_class,
+                    "learned_record_id": None,
+                    "learning_layer": None,
+                    "learning_status": "pending_clarification",
+                    "source_user_message": payload.raw_text,
+                    "confidence": confidence,
+                    "requires_confirmation": True,
+                    "protected_boundary": False,
+                }
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+        learning_layer = _speech_act_to_learning_layer(intent_class)
+        proof_required = intent_class in {"hallucination_guard", "diagnostic_rule"}
+        learning_status = "active" if confidence >= 0.8 else "pending_review"
+        memory_type = (
+            "diagnostic_rule"
+            if intent_class == "diagnostic_rule"
+            else "hallucination_guard"
+            if intent_class == "hallucination_guard"
+            else "answer_style"
+            if intent_class == "answer_style_preference"
+            else "workflow_rule"
+            if intent_class == "workflow_habit_learning"
+            else "preference"
+        )
+
+        learned = brain_context_manager.loader.create_learned_rule_record(
+            layer=learning_layer,
+            title=_learning_rule_title(intent_class, lesson_text),
+            summary=lesson_text,
+            body=f"Learned rule from Otis conversation: {lesson_text}",
+            tags=_learning_rule_tags(intent_class, proof_required),
+            source_user_message=payload.raw_text,
+            confidence=confidence,
+            memory_type=memory_type,
+            status=learning_status,
+            proof_required=proof_required,
+        )
 
         _append_learning_signal(
             session_state.metadata,
             {
-                "type": "user_correction",
-                "content": correction_text,
+                "type": intent_class,
+                "content": lesson_text,
                 "source": "direct_user_instruction",
+                "record_id": learned.record_id,
+                "status": learning_status,
             },
         )
 
-        persistence_label = "saved" if persisted else "session-only"
-        visible_text = (
-            "Understood. I will treat that correction as high-priority tuning input and apply it immediately, "
-            "unless protected rules are involved."
+        learning_label = (
+            "communication/workflow rule"
+            if learning_layer == BrainLayer.KNOWLEDGE
+            else "communication preference"
         )
+        visible_text = f"Understood. I saved that as a {learning_label} and will apply it going forward."
+
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
-            context_receipt=_intent_context_receipt(
-                intent_class="user_correction",
-                record_id=record_id,
-                source="direct_user_instruction",
-                persistence=persistence_label,
-                status="applied",
+            context_receipt=_learning_context_receipt(
+                learning_layer=learning_layer,
+                learned_record_id=learned.record_id,
+                proof_required=proof_required,
             ),
             operator_receipts=[],
-            memory_receipts=[f"Memory: {record_id}"] if persisted else [],
+            memory_receipts=[f"{learning_layer.value}: {learned.record_id}"],
             model_use_receipt={},
             policy_provenance={
                 "answer_source": "brain_policy",
                 "policy_source": "intent_router",
-                "brain_answer_source": "user_correction",
+                "brain_answer_source": "learning_rule_saved",
                 "intent_class": intent_class,
                 "request_id": str(uuid4()),
                 "session_id": str(session_id),
@@ -1302,156 +2361,20 @@ async def add_session_message(
             warnings=[],
             action_history_refs=action_history_refs,
         )
-        updated_state = await memory_manager.add_message(
-            session_id=session_id,
-            role="assistant",
-            raw_text=visible_text,
-            message_metadata=assistant_payload,
-        )
-        assistant_message = updated_state.messages[-1]
-        vector_memory_receipt = await persist_vector_memory_round_trip(
-            vector_store,
-            session_id=str(session_id),
-            user_role=user_role,
-            user_content=user_visible_content,
-            assistant_role=assistant_message.role,
-            assistant_content=assistant_message.content,
-        )
-        updated_state.metadata["answer_provenance"] = assistant_payload[
-            "policy_provenance"
-        ]
-        updated_state.metadata["vector_memory"] = vector_memory_receipt
-        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
-        updated_state.metadata["last_assistant_payload"] = assistant_payload
-        await memory_manager.update_session(updated_state)
-        return updated_state
-
-    if intent_class == "communication_preference":
-        preference_text = _extract_preference_text(payload.raw_text)
-        persisted = True
-        record_id = "MEMORY-UNAVAILABLE"
-        try:
-            record = persistent_memory_manager.create_active_memory(
-                content=f"Communication preference: {preference_text}",
-                source="user_explicit",
-                memory_type="user_preference",
-                tags=["learning", "communication", "preference"],
-                confidence=0.96,
-            )
-            record_id = record.id
-        except Exception:
-            persisted = False
-
-        _append_learning_signal(
-            session_state.metadata,
+        assistant_payload.update(
             {
-                "type": "communication_preference",
-                "content": preference_text,
-                "source": "direct_user_instruction",
-            },
+                "speech_act": intent_class,
+                "learned_record_id": learned.record_id,
+                "learning_layer": learning_layer.value,
+                "learning_status": learning_status,
+                "source_user_message": payload.raw_text,
+                "confidence": confidence,
+                "requires_confirmation": requires_confirmation,
+                "protected_boundary": False,
+                "source_record_ids": [learned.record_id],
+            }
         )
 
-        persistence_label = "saved" if persisted else "session-only"
-        visible_text = "Understood. I recorded that as a communication preference and will use it as working behavior going forward."
-        assistant_payload = build_assistant_payload(
-            visible_text=visible_text,
-            context_receipt=_intent_context_receipt(
-                intent_class="communication_preference",
-                record_id=record_id,
-                source="direct_user_instruction",
-                persistence=persistence_label,
-                status="applied",
-            ),
-            operator_receipts=[],
-            memory_receipts=[f"Memory: {record_id}"] if persisted else [],
-            model_use_receipt={},
-            policy_provenance={
-                "answer_source": "brain_policy",
-                "policy_source": "intent_router",
-                "brain_answer_source": "communication_preference",
-                "intent_class": intent_class,
-                "request_id": str(uuid4()),
-                "session_id": str(session_id),
-                "runtime_model_inference_proven": False,
-            },
-            warnings=[],
-            action_history_refs=action_history_refs,
-        )
-        updated_state = await memory_manager.add_message(
-            session_id=session_id,
-            role="assistant",
-            raw_text=visible_text,
-            message_metadata=assistant_payload,
-        )
-        assistant_message = updated_state.messages[-1]
-        vector_memory_receipt = await persist_vector_memory_round_trip(
-            vector_store,
-            session_id=str(session_id),
-            user_role=user_role,
-            user_content=user_visible_content,
-            assistant_role=assistant_message.role,
-            assistant_content=assistant_message.content,
-        )
-        updated_state.metadata["answer_provenance"] = assistant_payload[
-            "policy_provenance"
-        ]
-        updated_state.metadata["vector_memory"] = vector_memory_receipt
-        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
-        updated_state.metadata["last_assistant_payload"] = assistant_payload
-        await memory_manager.update_session(updated_state)
-        return updated_state
-
-    if intent_class == "workflow_habit_learning":
-        workflow_text = _extract_workflow_habit_text(payload.raw_text)
-        persisted = True
-        record_id = "MEMORY-UNAVAILABLE"
-        try:
-            record = persistent_memory_manager.create_active_memory(
-                content=f"Workflow/habit learning signal: {workflow_text}",
-                source="user_explicit",
-                memory_type="workflow_note",
-                tags=["learning", "workflow", "habits"],
-                confidence=0.96,
-            )
-            record_id = record.id
-        except Exception:
-            persisted = False
-
-        _append_learning_signal(
-            session_state.metadata,
-            {
-                "type": "workflow_habit_learning",
-                "content": workflow_text,
-                "source": "direct_user_instruction",
-            },
-        )
-
-        persistence_label = "saved" if persisted else "session-only"
-        visible_text = "Understood. I recorded that as workflow/habit learning and will adapt to it as current working behavior."
-        assistant_payload = build_assistant_payload(
-            visible_text=visible_text,
-            context_receipt=_intent_context_receipt(
-                intent_class="workflow_habit_learning",
-                record_id=record_id,
-                source="direct_user_instruction",
-                persistence=persistence_label,
-                status="applied",
-            ),
-            operator_receipts=[],
-            memory_receipts=[f"Memory: {record_id}"] if persisted else [],
-            model_use_receipt={},
-            policy_provenance={
-                "answer_source": "brain_policy",
-                "policy_source": "intent_router",
-                "brain_answer_source": "workflow_habit_learning",
-                "intent_class": intent_class,
-                "request_id": str(uuid4()),
-                "session_id": str(session_id),
-                "runtime_model_inference_proven": False,
-            },
-            warnings=[],
-            action_history_refs=action_history_refs,
-        )
         updated_state = await memory_manager.add_message(
             session_id=session_id,
             role="assistant",
@@ -1864,6 +2787,85 @@ async def add_session_message(
             0,
             ConversationMessage(role="system", content=focus_prompt),
         )
+
+    learned_records = brain_context_manager.loader.load_records()
+    learned_prompt = _learned_rules_prompt(learned_records)
+    if learned_prompt:
+        inference_state.messages.insert(
+            0,
+            ConversationMessage(role="system", content=learned_prompt),
+        )
+
+    learned_answer, learned_record = _applies_learned_rule(
+        payload.raw_text,
+        learned_records,
+    )
+    if learned_answer and learned_record is not None:
+        learning_layer = learned_record.layer
+        visible_text = sanitize_visible_answer_text(learned_answer)
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt(
+                _learning_context_receipt(
+                    learning_layer=learning_layer,
+                    learned_record_id=learned_record.record_id,
+                    proof_required="proof-required"
+                    in {str(tag).lower() for tag in learned_record.tags},
+                ),
+                session_state.metadata,
+            ),
+            operator_receipts=[],
+            memory_receipts=[f"{learning_layer.value}: {learned_record.record_id}"],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "learned_rules",
+                "brain_answer_source": "learned_rule_applied",
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+                "learned_record_id": learned_record.record_id,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        assistant_payload.update(
+            {
+                "speech_act": "learned_rule_applied",
+                "learned_record_id": learned_record.record_id,
+                "learning_layer": learned_record.layer.value,
+                "learning_status": learned_record.status,
+                "source_user_message": payload.raw_text,
+                "confidence": 1.0,
+                "requires_confirmation": False,
+                "protected_boundary": False,
+                "source_record_ids": [learned_record.record_id],
+            }
+        )
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
 
     operator_action = operator_manager.try_handle_chat(
         payload.raw_text,

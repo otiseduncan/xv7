@@ -114,15 +114,68 @@
           <div class="diag-section-body space-y-2">
             <div class="flex items-center justify-between gap-2">
               <p id="brainRecordsStatus" class="text-[11px] text-slate-500">No records loaded.</p>
-              <button id="brainRecordsRefreshButton" type="button" class="xv7-control-button px-2 py-1 text-[10px]">Refresh</button>
             </div>
 
-            <div id="brainRecordsTabs" class="brain-record-tabs" role="tablist" aria-label="Brain record layers">
-              <button type="button" data-layer="active_focus" class="xv7-control-button is-active">Focus</button>
-              <button type="button" data-layer="memory" class="xv7-control-button">Memory</button>
-              <button type="button" data-layer="knowledge" class="xv7-control-button">Knowledge</button>
-              <button type="button" data-layer="verified_status" class="xv7-control-button">Verified</button>
-              <button type="button" data-layer="system_prompt" class="xv7-control-button">System</button>
+            <div class="brain-record-calm">
+              <p class="brain-record-calm-row"><span>active focus</span><span id="brainNowFocus">No active focus record.</span></p>
+              <p class="brain-record-calm-row"><span>record counts</span><span id="brainNowCounts">current=0 | review=0 | history=0 | library=0</span></p>
+              <p class="brain-record-calm-row"><span>selected records</span><span id="brainNowSelectedRecords">-</span></p>
+              <p class="brain-record-calm-row"><span>selected answer</span><span id="brainNowAnswerMeta">response_mode=- | focus_applied=- | fallback_used=- | model_used=policy_only</span></p>
+            </div>
+
+            <div id="brainRecordsViews" class="brain-record-tabs" role="tablist" aria-label="Brain record views">
+              <button type="button" data-view="now" class="xv7-control-button is-active">NOW</button>
+              <button type="button" data-view="review" class="xv7-control-button">REVIEW</button>
+              <button type="button" data-view="history" class="xv7-control-button">HISTORY</button>
+              <button type="button" data-view="library" class="xv7-control-button">LIBRARY</button>
+            </div>
+
+            <div id="brainReviewToolbar" class="hidden">
+              <button id="brainRecordsApplyCleanupButton" type="button" class="xv7-control-button">Apply approved cleanup (0)</button>
+            </div>
+
+            <div id="brainLibraryControls" class="brain-record-library hidden">
+              <label for="brainLibraryLayerFilter">Layer</label>
+              <select id="brainLibraryLayerFilter" class="xv7-control-button">
+                <option value="all">All</option>
+                <option value="active_focus">Focus</option>
+                <option value="memory">Memory</option>
+                <option value="knowledge">Knowledge</option>
+                <option value="verified_status">Verified</option>
+                <option value="system_prompt">System</option>
+              </select>
+
+              <label for="brainLibraryStatusFilter">Status</label>
+              <select id="brainLibraryStatusFilter" class="xv7-control-button">
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="disabled">Disabled</option>
+                <option value="archived">Archived</option>
+                <option value="all">All</option>
+              </select>
+
+              <label for="brainLibraryRelevanceFilter">Relevance</label>
+              <select id="brainLibraryRelevanceFilter" class="xv7-control-button">
+                <option value="all">All</option>
+                <option value="current">Current</option>
+                <option value="needs_review">Needs review</option>
+                <option value="historical">Historical</option>
+                <option value="superseded">Superseded</option>
+                <option value="expired">Expired</option>
+              </select>
+
+              <label for="brainLibrarySourceFilter">Source</label>
+              <select id="brainLibrarySourceFilter" class="xv7-control-button">
+                <option value="all">All</option>
+                <option value="runtime">Runtime</option>
+                <option value="seed">Seed</option>
+              </select>
+
+              <label for="brainLibrarySearch">Search</label>
+              <input id="brainLibrarySearch" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none" placeholder="Search id, title, summary, tags" />
+
+              <label class="brain-record-toggle"><input id="brainLibraryShowArchived" type="checkbox" /> Show archived</label>
+              <label class="brain-record-toggle"><input id="brainLibraryShowRawJson" type="checkbox" /> Show raw JSON</label>
             </div>
 
             <ul id="brainRecordsList" class="space-y-2 text-xs text-slate-200">
@@ -152,6 +205,9 @@
               <label class="brain-record-editor-label" for="brainRecordEditorStatus">Status</label>
               <select id="brainRecordEditorStatus" class="w-full rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1.5 text-xs text-slate-100 outline-none">
                 <option value="active">active</option>
+                <option value="pending">pending</option>
+                <option value="pending_review">pending_review</option>
+                <option value="disabled">disabled</option>
                 <option value="archived">archived</option>
               </select>
 

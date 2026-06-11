@@ -46,10 +46,33 @@ class BrainRecord(BaseModel):
             "preference",
             "project_note",
             "working_memory",
+            "workflow_rule",
+            "diagnostic_rule",
+            "answer_style",
+            "hallucination_guard",
         ]
         | None
     ) = None
-    status: Literal["active", "archived"] = "active"
+    status: Literal[
+        "active",
+        "pending",
+        "pending_review",
+        "disabled",
+        "archived",
+    ] = "active"
+    relevance_state: Literal[
+        "current",
+        "historical",
+        "superseded",
+        "expired",
+        "needs_review",
+    ] = "current"
+    superseded_by: str | None = Field(default=None, pattern=r"^XV7-[A-Z]+-\d{4}$")
+    valid_from: str | None = None
+    valid_until: str | None = None
+    applies_when: str | None = None
+    review_reason: str | None = None
+    last_reviewed_at: str | None = None
     priority: int = 0
     tags: list[str] = Field(default_factory=list)
     facts: list[BrainFact] = Field(default_factory=list)

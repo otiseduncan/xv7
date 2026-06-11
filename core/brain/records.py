@@ -101,17 +101,37 @@ class BrainRecordLoader:
             .replace("+00:00", "Z")
         )
 
+    @staticmethod
+    def _selection_priority(record: BrainRecord) -> int:
+        """Keep learned-rule overlays from overshadowing canonical layer records."""
+        tags = {str(tag).lower() for tag in record.tags}
+        if record.layer in {BrainLayer.MEMORY, BrainLayer.KNOWLEDGE} and (
+            "learned-rule" in tags or "otis-learning" in tags
+        ):
+            return record.priority - 1000
+        return record.priority
+
     def load_active_records(
         self, *, layer: BrainLayer | None = None
     ) -> list[BrainRecord]:
         records = [r for r in self.load_records() if r.status == "active"]
         if layer is not None:
             records = [r for r in records if r.layer == layer]
-        return sorted(records, key=lambda r: (r.layer.value, -r.priority, r.record_id))
+        return sorted(
+            records,
+            key=lambda r: (r.layer.value, -self._selection_priority(r), r.record_id),
+        )
 
     @staticmethod
     def _focus_index(record_id: str) -> int:
         match = re.match(r"^XV7-FOCUS-(\d{4})$", record_id)
+        if match is None:
+            return 0
+        return int(match.group(1))
+
+    @staticmethod
+    def _record_index(record_id: str, token: str) -> int:
+        match = re.match(rf"^XV7-{token}-(\d{{4}})$", record_id)
         if match is None:
             return 0
         return int(match.group(1))
@@ -139,6 +159,73 @@ class BrainRecordLoader:
         self._save_record(record)
         return record
 
+    def create_learned_rule_record(
+        self,
+        *,
+        layer: BrainLayer,
+        title: str,
+        summary: str,
+        body: str,
+        tags: list[str],
+        source_user_message: str,
+        confidence: float,
+        memory_type: str | None,
+        status: str,
+        proof_required: bool,
+    ) -> BrainRecord:
+        token = {
+            BrainLayer.MEMORY: "MEMORY",
+            BrainLayer.KNOWLEDGE: "KNOWLEDGE",
+            BrainLayer.VERIFIED_STATUS: "VERIFIED",
+            BrainLayer.ACTIVE_FOCUS: "FOCUS",
+            BrainLayer.SYSTEM_PROMPT: "SYSTEM",
+        }[layer]
+
+        records = self.load_records()
+        max_index = max(
+            [self._record_index(record.record_id, token) for record in records],
+            default=0,
+        )
+        record_id = f"XV7-{token}-{max_index + 1:04d}"
+
+        normalized_tags = []
+        for tag in tags:
+            cleaned = str(tag).strip().lower().replace(" ", "-")
+            if cleaned and cleaned not in normalized_tags:
+                normalized_tags.append(cleaned)
+        for required in ("learned-rule", "runtime", "otis-learning"):
+            if required not in normalized_tags:
+                normalized_tags.append(required)
+        if proof_required and "proof-required" not in normalized_tags:
+            normalized_tags.append("proof-required")
+
+        rule = BrainRecord.model_validate(
+            {
+                "record_id": record_id,
+                "layer": layer.value,
+                "title": title,
+                "summary": summary,
+                "body": body,
+                "memory_type": memory_type,
+                "status": status,
+                "priority": 220 if status == "active" else 180,
+                "tags": normalized_tags,
+                "facts": [
+                    {
+                        "statement": summary,
+                        "source_type": "direct_user_instruction",
+                        "source_detail": source_user_message,
+                    }
+                ],
+                "evidence": [
+                    f"User instruction: {source_user_message}",
+                    f"confidence={confidence:.2f}",
+                ],
+            }
+        )
+        self._save_record(rule)
+        return rule
+
     def archive_record(self, record_id: str) -> BrainRecord:
         found = self.get_record_with_source(record_id)
         if found is None:
@@ -151,8 +238,51 @@ class BrainRecordLoader:
 
         updated = record.model_copy(
             update={
-                "status": "archived",
+                "status": "disabled",
                 "tags": archived_tags,
+                "relevance_state": "historical",
+            }
+        )
+        self._save_record(updated)
+        return updated
+
+    def reject_record(self, record_id: str) -> BrainRecord:
+        found = self.get_record_with_source(record_id)
+        if found is None:
+            raise ValueError(f"Record not found: {record_id}")
+
+        record, _, _ = found
+        updated_tags = list(record.tags)
+        if "rejected" not in updated_tags:
+            updated_tags.append("rejected")
+
+        updated = record.model_copy(
+            update={
+                "status": "archived",
+                "tags": updated_tags,
+                "relevance_state": "superseded"
+                if record.relevance_state == "current"
+                else record.relevance_state,
+            }
+        )
+        self._save_record(updated)
+        return updated
+
+    def approve_record(self, record_id: str) -> BrainRecord:
+        found = self.get_record_with_source(record_id)
+        if found is None:
+            raise ValueError(f"Record not found: {record_id}")
+
+        record, _, _ = found
+        updated_tags = [tag for tag in record.tags if tag != "rejected"]
+        if "approved" not in updated_tags:
+            updated_tags.append("approved")
+
+        updated = record.model_copy(
+            update={
+                "status": "active",
+                "tags": updated_tags,
+                "relevance_state": "current",
             }
         )
         self._save_record(updated)
@@ -179,8 +309,10 @@ class BrainRecordLoader:
                 archived_tags.append("superseded")
             archived = record.model_copy(
                 update={
-                    "status": "archived",
+                    "status": "disabled",
                     "tags": archived_tags,
+                    "relevance_state": "superseded",
+                    "superseded_by": target.record_id,
                 }
             )
             self._save_record(archived)
@@ -190,6 +322,8 @@ class BrainRecordLoader:
             update={
                 "status": "active",
                 "tags": active_tags,
+                "relevance_state": "current",
+                "superseded_by": None,
             }
         )
         self._save_record(updated)
