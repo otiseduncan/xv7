@@ -114,14 +114,56 @@ class Xv7UI {
   /** @type {boolean} */
   diagnosticsDrawerOpen = false;
 
-  /** @type {'system_prompt'|'active_focus'|'knowledge'|'memory'|'verified_status'} */
-  brainRecordsLayer = 'active_focus';
+  /** @type {'now'|'review'|'history'|'library'} */
+  brainRecordsView = 'now';
+
+  /** @type {{layer:string,status:string,relevance:string,source:string,search:string,showArchived:boolean,showRawJson:boolean}} */
+  brainRecordsFilters = {
+    layer: 'all',
+    status: 'active',
+    relevance: 'all',
+    source: 'all',
+    search: '',
+    showArchived: false,
+    showRawJson: false,
+  };
 
   /** @type {Array<any>} */
   brainRecords = [];
 
+  /** @type {Array<any>} */
+  brainReviewRecords = [];
+
+  /** @type {Array<any>} */
+  brainHistoryRecords = [];
+
+  /** @type {{current:number,review:number,history:number,library:number,reviewBackend:number,historyBackend:number}} */
+  brainRecordCounts = {
+    current: 0,
+    review: 0,
+    history: 0,
+    library: 0,
+    reviewBackend: 0,
+    historyBackend: 0,
+  };
+
+  /** @type {Record<string, string>} */
+  approvedCleanupRecommendations = {};
+
+  /** @type {any | null} */
+  latestAssistantMeta = null;
+
+  /** @type {{recordIds:string[],activeFocusId:string,activeFocusSummary:string,prompt:string}|null} */
+  activeContextSnapshot = null;
+
+  /** @type {number} */
+  brainRecordsLastRefreshAt = 0;
+
   /** @type {boolean} */
   brainRecordBusy = false;
+
+  /** @type {number} */
+  brainRecordsStaleMs = 15000;
 
   /** @type {string | null} */
   brainRecordEditorId = null;
@@ -269,7 +311,21 @@ class Xv7UI {
       brainRecordsStatus: document.getElementById('brainRecordsStatus'),
       brainRecordsRefreshButton: document.getElementById('brainRecordsRefreshButton'),
       brainRecordsList: document.getElementById('brainRecordsList'),
-      brainRecordsTabs: document.getElementById('brainRecordsTabs'),
+      brainRecordsViews: document.getElementById('brainRecordsViews'),
+      brainNowCounts: document.getElementById('brainNowCounts'),
+      brainReviewToolbar: document.getElementById('brainReviewToolbar'),
+      brainRecordsApplyCleanupButton: document.getElementById('brainRecordsApplyCleanupButton'),
+      brainNowFocus: document.getElementById('brainNowFocus'),
+      brainNowSelectedRecords: document.getElementById('brainNowSelectedRecords'),
+      brainNowAnswerMeta: document.getElementById('brainNowAnswerMeta'),
+      brainLibraryControls: document.getElementById('brainLibraryControls'),
+      brainLibraryLayerFilter: document.getElementById('brainLibraryLayerFilter'),
+      brainLibraryStatusFilter: document.getElementById('brainLibraryStatusFilter'),
+      brainLibraryRelevanceFilter: document.getElementById('brainLibraryRelevanceFilter'),
+      brainLibrarySourceFilter: document.getElementById('brainLibrarySourceFilter'),
+      brainLibrarySearch: document.getElementById('brainLibrarySearch'),
+      brainLibraryShowArchived: document.getElementById('brainLibraryShowArchived'),
+      brainLibraryShowRawJson: document.getElementById('brainLibraryShowRawJson'),
       brainRecordEditor: document.getElementById('brainRecordEditor'),
       brainRecordEditorId: document.getElementById('brainRecordEditorId'),
       brainRecordEditorLayer: document.getElementById('brainRecordEditorLayer'),
@@ -446,21 +502,46 @@ class Xv7UI {
       });
     }
 
-    if (this.els.brainRecordsRefreshButton) {
-      this.els.brainRecordsRefreshButton.addEventListener('click', () => {
-        void this.refreshBrainRecords();
+    if (this.els.brainRecordsViews) {
+      this.els.brainRecordsViews.addEventListener('click', (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest('button[data-view]') : null;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const view = String(target.dataset.view || '').trim();
+        if (!view) return;
+        this.brainRecordsView = /** @type {'now'|'review'|'history'|'library'} */ (view);
+        this.renderBrainRecordsViews();
+        this.renderBrainRecordsList();
+        if (this.isBrainRecordsStale()) {
+          void this.refreshBrainRecords();
+        }
       });
     }
 
-    if (this.els.brainRecordsTabs) {
-      this.els.brainRecordsTabs.addEventListener('click', (event) => {
-        const target = event.target instanceof HTMLElement ? event.target.closest('button[data-layer]') : null;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const layer = String(target.dataset.layer || '').trim();
-        if (!layer) return;
-        this.brainRecordsLayer = layer;
-        this.renderBrainRecordsTabs();
-        void this.refreshBrainRecords();
+    if (this.els.brainRecordsApplyCleanupButton) {
+      this.els.brainRecordsApplyCleanupButton.addEventListener('click', () => {
+        void this.applyApprovedCleanup();
+      });
+    }
+
+    [
+      this.els.brainLibraryLayerFilter,
+      this.els.brainLibraryStatusFilter,
+      this.els.brainLibraryRelevanceFilter,
+      this.els.brainLibrarySourceFilter,
+      this.els.brainLibraryShowArchived,
+      this.els.brainLibraryShowRawJson,
+    ].forEach((control) => {
+      if (!control) return;
+      control.addEventListener('change', () => {
+        this.syncBrainLibraryFiltersFromUi();
+        this.renderBrainRecordsList();
+      });
+    });
+
+    if (this.els.brainLibrarySearch) {
+      this.els.brainLibrarySearch.addEventListener('input', () => {
+        this.syncBrainLibraryFiltersFromUi();
+        this.renderBrainRecordsList();
       });
     }
 
@@ -534,7 +615,7 @@ class Xv7UI {
     await this.refreshSlashCommands();
     await this.refreshBrainRecords();
     this.renderOperatorModeUi();
-    this.renderBrainRecordsTabs();
+    this.renderBrainRecordsViews();
     this.loadVoicePreferences();
     this.setupVoiceInput();
     this.setupVoiceOutput();
@@ -1249,6 +1330,10 @@ class Xv7UI {
     if (role === 'assistant') {
       copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
       this.appendWhyThisAnswerDrawer(article, messageMetadata);
+      if (messageMetadata && typeof messageMetadata === 'object') {
+        this.latestAssistantMeta = messageMetadata;
+        this.updateBrainRecordsCalmSummary();
+      }
     }
 
     if (reasoning && reasoning.trim()) {
@@ -1409,10 +1494,16 @@ class Xv7UI {
 
     const fields = [
       ['intent_class', policy.intent_class || meta.intent_class],
+      ['speech_act', meta.speech_act || '-'],
       ['response_mode', policy.response_mode || meta.response_mode || '-'],
       ['model_used', modelUseReceipt.model_tag || meta.model_used || 'policy_only'],
       ['fallback_used', this.boolText(meta.fallback_used)],
       ['fallback_reason', meta.fallback_reason || policy.brain_answer_source || '-'],
+      ['learned_record_id', meta.learned_record_id || '-'],
+      ['learning_layer', meta.learning_layer || '-'],
+      ['learning_status', meta.learning_status || '-'],
+      ['requires_confirmation', this.boolText(meta.requires_confirmation)],
+      ['protected_boundary', this.boolText(meta.protected_boundary)],
       ['selected_layers', selectedLayers.length ? selectedLayers.join(', ') : '-'],
       ['source_record_ids', sourceRecordIds.length ? sourceRecordIds.join(', ') : '-'],
       ['active_focus_id', policy.active_focus_id || meta.active_focus_id || '-'],
@@ -1579,15 +1670,363 @@ class Xv7UI {
     });
   }
 
-  renderBrainRecordsTabs() {
-    const tabMount = this.els.brainRecordsTabs;
+  renderBrainRecordsViews() {
+    const tabMount = this.els.brainRecordsViews;
     if (!tabMount) return;
-    const buttons = tabMount.querySelectorAll('button[data-layer]');
+    const counts = this.brainRecordCounts;
+    const viewLabels = {
+      now: `NOW (${counts.current})`,
+      review: `REVIEW (${counts.review})`,
+      history: `HISTORY (${counts.history})`,
+      library: `LIBRARY (${counts.library})`,
+    };
+    const buttons = tabMount.querySelectorAll('button[data-view]');
     buttons.forEach((button) => {
-      const isActive = button.dataset.layer === this.brainRecordsLayer;
+      const viewKey = String(button.dataset.view || '').trim();
+      if (viewKey && Object.prototype.hasOwnProperty.call(viewLabels, viewKey)) {
+        button.textContent = viewLabels[viewKey];
+      }
+      const isActive = button.dataset.view === this.brainRecordsView;
       button.classList.toggle('is-active', isActive);
       button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     });
+
+    if (this.els.brainLibraryControls) {
+      this.els.brainLibraryControls.classList.toggle('hidden', this.brainRecordsView !== 'library');
+    }
+
+    if (this.els.brainReviewToolbar) {
+      const approvedCount = Object.keys(this.approvedCleanupRecommendations).length;
+      const showToolbar = this.brainRecordsView === 'review' && approvedCount > 0;
+      this.els.brainReviewToolbar.classList.toggle('hidden', !showToolbar);
+    }
+
+    if (this.els.brainRecordsApplyCleanupButton) {
+      const approvedCount = Object.keys(this.approvedCleanupRecommendations).length;
+      this.els.brainRecordsApplyCleanupButton.textContent = `Apply approved cleanup (${approvedCount})`;
+    }
+
+    this.syncBrainLibraryFiltersFromUi();
+  }
+
+  syncBrainLibraryFiltersFromUi() {
+    this.brainRecordsFilters.layer = String(this.els.brainLibraryLayerFilter?.value || 'all');
+    this.brainRecordsFilters.status = String(this.els.brainLibraryStatusFilter?.value || 'active');
+    this.brainRecordsFilters.relevance = String(this.els.brainLibraryRelevanceFilter?.value || 'all');
+    this.brainRecordsFilters.source = String(this.els.brainLibrarySourceFilter?.value || 'all');
+    this.brainRecordsFilters.search = String(this.els.brainLibrarySearch?.value || '').trim().toLowerCase();
+    this.brainRecordsFilters.showArchived = Boolean(this.els.brainLibraryShowArchived?.checked);
+    this.brainRecordsFilters.showRawJson = Boolean(this.els.brainLibraryShowRawJson?.checked);
+  }
+
+  pendingLearnedCount() {
+    return this.brainRecordCounts.review;
+  }
+
+  isPendingLearnedRecord(record) {
+    const tags = new Set((Array.isArray(record?.tags) ? record.tags : []).map((tag) => String(tag).toLowerCase()));
+    const status = String(record?.status_label || record?.status || '').toLowerCase();
+    return status === 'pending' && (tags.has('learned-rule') || tags.has('otis-learning'));
+  }
+
+  normalizeRecordSource(record) {
+    return String(record?.source || '').toLowerCase() === 'runtime_override' ? 'runtime' : 'seed';
+  }
+
+  recordStatusLabel(record) {
+    const status = String(record?.status_label || record?.status || '').toLowerCase();
+    const tags = new Set((Array.isArray(record?.tags) ? record.tags : []).map((tag) => String(tag).toLowerCase()));
+    if (status === 'active') return 'ACTIVE';
+    if (status === 'pending' || status === 'pending_review') return 'PENDING';
+    if (status === 'disabled' || (status === 'archived' && tags.has('deactivated'))) return 'DISABLED';
+    if (status === 'archived') return 'ARCHIVED';
+    return String(status || 'ARCHIVED').toUpperCase();
+  }
+
+  recordRelevanceLabel(record) {
+    const relevance = String(record?.effective_relevance_state || record?.relevance_state || 'current').toLowerCase();
+    if (relevance === 'needs_review') return 'NEEDS REVIEW';
+    return relevance.replace('_', ' ').toUpperCase();
+  }
+
+  sourceStatusLabel(record) {
+    return this.normalizeRecordSource(record) === 'runtime' ? 'RUNTIME OVERRIDE' : 'SEED';
+  }
+
+  sourceRuntime(record) {
+    return this.normalizeRecordSource(record) === 'runtime';
+  }
+
+  primaryHygieneRecommendation(record) {
+    const recs = Array.isArray(record?.hygiene_recommendations) ? record.hygiene_recommendations : [];
+    if (!recs.length) return null;
+    const split = recs.find((item) => String(item?.type || '') === 'split_record');
+    if (split) return split;
+    return recs[0];
+  }
+
+  isReviewCandidate(record) {
+    const status = String(record?.status_label || record?.status || '').toLowerCase();
+    const storedRelevance = String(record?.relevance_state || '').toLowerCase();
+    const effectiveRelevance = String(record?.effective_relevance_state || storedRelevance || '').toLowerCase();
+    const recs = Array.isArray(record?.hygiene_recommendations) ? record.hygiene_recommendations : [];
+    const flags = new Set((Array.isArray(record?.hygiene_flags) ? record.hygiene_flags : []).map((item) => String(item).toLowerCase()));
+
+    return (
+      status === 'pending'
+      || status === 'pending_review'
+      || storedRelevance === 'needs_review'
+      || effectiveRelevance === 'needs_review'
+      || recs.length > 0
+      || flags.has('old_phase_reference')
+      || flags.has('completed_milestone')
+      || flags.has('mixed_historical_and_current')
+      || flags.has('mixed_historical_and_operational')
+    );
+  }
+
+  isHistoryCandidate(record) {
+    const storedRelevance = String(record?.relevance_state || '').toLowerCase();
+    const effectiveRelevance = String(record?.effective_relevance_state || storedRelevance || '').toLowerCase();
+    return (
+      storedRelevance === 'historical'
+      || storedRelevance === 'superseded'
+      || storedRelevance === 'expired'
+      || effectiveRelevance === 'historical'
+      || effectiveRelevance === 'superseded'
+      || effectiveRelevance === 'expired'
+    );
+  }
+
+  filteredLibraryRecords() {
+    const f = this.brainRecordsFilters;
+    return this.brainRecords.filter((record) => {
+      const layer = String(record?.layer || '');
+      const source = this.normalizeRecordSource(record);
+      const statusLabel = this.recordStatusLabel(record).toLowerCase();
+      const relevance = String(record?.effective_relevance_state || record?.relevance_state || '').toLowerCase();
+      const rawStatus = String(record?.status || '').toLowerCase();
+      const searchBlob = [
+        record?.record_id,
+        record?.title,
+        record?.summary,
+        record?.body,
+        record?.relevance_state,
+        record?.effective_relevance_state,
+        Array.isArray(record?.tags) ? record.tags.join(' ') : '',
+      ]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ');
+
+      if (f.layer !== 'all' && layer !== f.layer) return false;
+      if (f.source !== 'all' && source !== f.source) return false;
+
+      if (!f.showArchived && (statusLabel === 'archived' || statusLabel === 'disabled')) return false;
+
+      if (f.status !== 'all') {
+        if (f.status === 'active' && statusLabel !== 'active') return false;
+        if (f.status === 'pending' && statusLabel !== 'pending') return false;
+        if (f.status === 'disabled' && statusLabel !== 'disabled') return false;
+        if (f.status === 'archived' && statusLabel !== 'archived') return false;
+      }
+
+      if (f.relevance !== 'all' && relevance !== f.relevance) return false;
+
+      if (rawStatus === 'archived' && f.status === 'active') return false;
+
+      if (f.search && !searchBlob.includes(f.search)) return false;
+      return true;
+    });
+  }
+
+  nowViewRecords() {
+    const active = this.brainRecords.filter((record) => {
+      const status = this.recordStatusLabel(record) === 'ACTIVE';
+      const relevance = String(record?.effective_relevance_state || record?.relevance_state || '').toLowerCase();
+      return status && relevance === 'current';
+    });
+    const byLayer = {
+      system_prompt: [],
+      active_focus: [],
+      memory: [],
+      knowledge: [],
+      verified_status: [],
+    };
+
+    active.forEach((record) => {
+      const layer = String(record?.layer || '');
+      if (layer in byLayer) byLayer[layer].push(record);
+    });
+
+    const nowRecords = [
+      ...byLayer.system_prompt,
+      ...byLayer.active_focus,
+      ...byLayer.memory,
+      ...byLayer.knowledge,
+      ...byLayer.verified_status,
+    ];
+
+    const pushIfMissing = (record) => {
+      const recordId = String(record?.record_id || '').trim();
+      if (!recordId) return;
+      const exists = nowRecords.some((item) => String(item?.record_id || '') === recordId);
+      if (!exists) nowRecords.push(record);
+    };
+
+    const selectedIds = Array.isArray(this.latestAssistantMeta?.source_record_ids)
+      ? this.latestAssistantMeta.source_record_ids.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    selectedIds.forEach((recordId) => {
+      const found = this.brainRecords.find((record) => String(record?.record_id || '') === String(recordId));
+      if (found) pushIfMissing(found);
+    });
+
+    const activeContextIds = Array.isArray(this.activeContextSnapshot?.recordIds)
+      ? this.activeContextSnapshot.recordIds.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    activeContextIds.forEach((recordId) => {
+      const found = this.brainRecords.find((record) => String(record?.record_id || '') === String(recordId));
+      if (found) pushIfMissing(found);
+    });
+
+    const focusId = String(
+      this.latestAssistantMeta?.active_focus_id
+      || this.latestAssistantMeta?.policy_provenance?.active_focus_id
+      || this.activeContextSnapshot?.activeFocusId
+      || '',
+    ).trim();
+    if (focusId) {
+      const focusRecord = this.brainRecords.find((record) => String(record?.record_id || '') === focusId);
+      if (focusRecord) {
+        const isActive = this.recordStatusLabel(focusRecord) === 'ACTIVE';
+        const relevance = String(focusRecord?.effective_relevance_state || focusRecord?.relevance_state || '').toLowerCase();
+        const alreadyIncluded = nowRecords.some((record) => String(record?.record_id || '') === focusId);
+        if (isActive && relevance === 'current' && !alreadyIncluded) {
+          nowRecords.unshift(focusRecord);
+        }
+      } else {
+        const focusSummary = String(
+          this.activeContextSnapshot?.activeFocusSummary
+          || this.latestAssistantMeta?.active_focus_summary
+          || this.latestAssistantMeta?.policy_provenance?.current_focus?.summary
+          || this.latestAssistantMeta?.active_focus_text
+          || '',
+        ).trim();
+        const virtualFocus = {
+          record_id: focusId,
+          layer: 'active_focus',
+          title: focusSummary || 'Active Focus',
+          summary: focusSummary || 'Active focus from current context.',
+          body: focusSummary || 'Active focus from current context.',
+          status: 'active',
+          status_label: 'active',
+          relevance_state: 'current',
+          effective_relevance_state: 'current',
+          source: 'active_context',
+          updated_at: '-',
+          tags: ['active-context', 'virtual'],
+          writable: false,
+          raw_record: {
+            record_id: focusId,
+            layer: 'active_focus',
+            summary: focusSummary || 'Active focus from current context.',
+            source: 'active_context',
+            virtual: true,
+          },
+          __virtual_now_focus: true,
+        };
+        nowRecords.unshift(virtualFocus);
+      }
+    }
+
+    return nowRecords;
+  }
+
+  isBrainRecordsStale() {
+    if (!this.brainRecordsLastRefreshAt) return true;
+    return (Date.now() - this.brainRecordsLastRefreshAt) > this.brainRecordsStaleMs;
+  }
+
+  historyViewRecords() {
+    return this.brainRecords.filter((record) => this.isHistoryCandidate(record));
+  }
+
+  computeBrainRecordCounts(reviewBackendCount = 0, historyBackendCount = 0) {
+    const review = Number.isFinite(reviewBackendCount) ? reviewBackendCount : this.brainReviewRecords.length;
+    const history = Number.isFinite(historyBackendCount) ? historyBackendCount : this.brainHistoryRecords.length;
+    const current = this.nowViewRecords().length;
+    this.brainRecordCounts = {
+      current,
+      review,
+      history,
+      library: this.brainRecords.length,
+      reviewBackend: reviewBackendCount,
+      historyBackend: historyBackendCount,
+    };
+  }
+
+  buildReviewDiagnostics(frontendReviewCount) {
+    const reasons = [];
+    const backendReviewCount = Number(this.brainRecordCounts.reviewBackend || 0);
+    if (backendReviewCount === 0) {
+      reasons.push('no records returned by backend review_only');
+    }
+    if (backendReviewCount > 0 && this.brainReviewRecords.length === 0) {
+      reasons.push('frontend binding dropped backend review_only records');
+    }
+    if (backendReviewCount > 0 && frontendReviewCount === 0) {
+      reasons.push('frontend filter excluded computed candidate');
+    }
+
+    const hasHygieneSignals = this.brainRecords.some((record) => {
+      const flags = Array.isArray(record?.hygiene_flags) ? record.hygiene_flags : [];
+      const recs = Array.isArray(record?.hygiene_recommendations) ? record.hygiene_recommendations : [];
+      const storedRelevance = String(record?.relevance_state || '').toLowerCase();
+      const effectiveRelevance = String(record?.effective_relevance_state || storedRelevance || '').toLowerCase();
+      return flags.length > 0 || recs.length > 0 || storedRelevance === 'needs_review' || effectiveRelevance === 'needs_review';
+    });
+    if (!hasHygieneSignals) {
+      reasons.push('hygiene classifier found no flags');
+    }
+    return reasons;
+  }
+
+  updateBrainRecordsCalmSummary() {
+    const activeFocus = this.brainRecords.find(
+      (record) => String(record?.layer || '') === 'active_focus' && this.recordStatusLabel(record) === 'ACTIVE',
+    );
+    if (this.els.brainNowFocus) {
+      if (activeFocus) {
+        this.els.brainNowFocus.textContent = `${activeFocus.record_id} • ${activeFocus.title || activeFocus.summary || '-'}`;
+      } else {
+        const activeFocusId = String(this.activeContextSnapshot?.activeFocusId || '').trim();
+        const activeFocusSummary = String(this.activeContextSnapshot?.activeFocusSummary || '').trim();
+        this.els.brainNowFocus.textContent = activeFocusId
+          ? `${activeFocusId} • ${activeFocusSummary || 'Active focus from current context.'}`
+          : 'No active focus record.';
+      }
+    }
+
+    const sourceRecordIds = Array.isArray(this.latestAssistantMeta?.source_record_ids)
+      ? this.latestAssistantMeta.source_record_ids.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    if (this.els.brainNowSelectedRecords) {
+      this.els.brainNowSelectedRecords.textContent = sourceRecordIds.length ? sourceRecordIds.join(', ') : '-';
+    }
+
+    const responseMode = String(this.latestAssistantMeta?.response_mode || this.latestAssistantMeta?.policy_provenance?.response_mode || '-');
+    const focusApplied = this.boolText(this.latestAssistantMeta?.focus_applied ?? this.latestAssistantMeta?.policy_provenance?.focus_applied);
+    const fallbackUsed = this.boolText(this.latestAssistantMeta?.fallback_used);
+    const modelUsed = String(this.latestAssistantMeta?.model_use_receipt?.model_tag || this.latestAssistantMeta?.model_used || 'policy_only');
+
+    if (this.els.brainNowAnswerMeta) {
+      this.els.brainNowAnswerMeta.textContent = `response_mode=${responseMode} | focus_applied=${focusApplied} | fallback_used=${fallbackUsed} | model_used=${modelUsed}`;
+    }
+
+    if (this.els.brainNowCounts) {
+      const counts = this.brainRecordCounts;
+      this.els.brainNowCounts.textContent = `current=${counts.current} | review=${counts.review} | history=${counts.history} | library=${counts.library}`;
+    }
   }
 
   async refreshBrainRecords() {
@@ -1598,17 +2037,54 @@ class Xv7UI {
     }
 
     try {
-      const payload = await this.fetchJson(
-        `/runtime/brain/records?layer=${encodeURIComponent(this.brainRecordsLayer)}&include_archived=true`,
-        { method: 'GET' },
-      );
+      this.syncBrainLibraryFiltersFromUi();
+      const [payload, reviewPayload, historyPayload] = await Promise.all([
+        this.fetchJson('/runtime/brain/records?include_archived=true', { method: 'GET' }),
+        this.fetchJson('/runtime/brain/records?include_archived=true&review_only=true', { method: 'GET' }),
+        this.fetchJson('/runtime/brain/records?include_archived=true&history_only=true', { method: 'GET' }),
+      ]);
+      let activeContextPayload = null;
+      try {
+        activeContextPayload = await this.fetchJson('/runtime/context/active', { method: 'GET' });
+      } catch {
+        activeContextPayload = null;
+      }
       this.brainRecords = Array.isArray(payload?.records) ? payload.records : [];
+      const reviewRecords = Array.isArray(reviewPayload?.records) ? reviewPayload.records : [];
+      const historyRecords = Array.isArray(historyPayload?.records) ? historyPayload.records : [];
+      const activeContextReceipts = Array.isArray(activeContextPayload?.receipt?.context_receipts)
+        ? activeContextPayload.receipt.context_receipts
+        : [];
+      const activeContextRecordIds = Array.isArray(activeContextPayload?.receipt?.record_ids)
+        ? activeContextPayload.receipt.record_ids
+        : [];
+      const activeFocusReceipt = activeContextReceipts.find((item) => String(item?.layer || '') === 'active_focus');
+      this.activeContextSnapshot = {
+        recordIds: activeContextRecordIds
+          .filter((item) => typeof item === 'string' && item.trim())
+          .map((item) => String(item)),
+        activeFocusId: String(activeFocusReceipt?.record_id || '').trim(),
+        activeFocusSummary: String(activeFocusReceipt?.summary || activeContextPayload?.compact_receipt || '').trim(),
+        prompt: String(activeContextPayload?.prompt || '').trim(),
+      };
+      this.brainReviewRecords = reviewRecords;
+      this.brainHistoryRecords = historyRecords;
+      this.computeBrainRecordCounts(reviewRecords.length, historyRecords.length);
+      this.brainRecordsLastRefreshAt = Date.now();
+      this.updateBrainRecordsCalmSummary();
+      this.renderBrainRecordsViews();
       this.renderBrainRecordsList();
       if (this.els.brainRecordsStatus) {
-        this.els.brainRecordsStatus.textContent = `${this.brainRecords.length} record(s) in ${this.brainRecordsLayer}`;
+        const counts = this.brainRecordCounts;
+        this.els.brainRecordsStatus.textContent = `current=${counts.current} review=${counts.review} history=${counts.history} library=${counts.library}`;
       }
     } catch (error) {
       this.brainRecords = [];
+      this.brainReviewRecords = [];
+      this.brainHistoryRecords = [];
+      this.activeContextSnapshot = null;
+      this.computeBrainRecordCounts(0, 0);
+      this.renderBrainRecordsViews();
       this.renderBrainRecordsList();
       if (this.els.brainRecordsStatus) {
         this.els.brainRecordsStatus.textContent = `Records unavailable: ${this.humanizeError(error)}`;
@@ -1623,15 +2099,65 @@ class Xv7UI {
     if (!mount) return;
     mount.innerHTML = '';
 
-    if (!this.brainRecords.length) {
+    this.updateBrainRecordsCalmSummary();
+
+    let recordsToRender = [];
+    if (this.brainRecordsView === 'review') {
+      recordsToRender = this.brainReviewRecords;
+    } else if (this.brainRecordsView === 'history') {
+      recordsToRender = this.brainHistoryRecords;
+    } else if (this.brainRecordsView === 'library') {
+      recordsToRender = this.filteredLibraryRecords();
+    } else {
+      recordsToRender = this.nowViewRecords();
+    }
+
+    if (!recordsToRender.length) {
       const li = document.createElement('li');
       li.className = 'rounded border border-dashed border-xv7-line px-2 py-1.5 text-slate-500';
-      li.textContent = 'No records found for this layer.';
+      li.textContent = this.brainRecordsView === 'review'
+        ? 'No review candidates.'
+        : this.brainRecordsView === 'history'
+          ? 'No historical records.'
+        : this.brainRecordsView === 'library'
+          ? 'No records match current library filters.'
+          : 'No active stack records.';
+
+      if (this.brainRecordsView === 'review') {
+        const reasons = this.buildReviewDiagnostics(0);
+        if (reasons.length) {
+          const details = document.createElement('div');
+          details.className = 'mt-2 text-[11px] text-slate-400';
+          details.textContent = `Diagnostic: ${reasons.join('; ')}`;
+          li.append(details);
+        }
+      } else if (this.brainRecordsView === 'history') {
+        const backendHistoryCount = Number(this.brainRecordCounts.historyBackend || 0);
+        if (backendHistoryCount > 0) {
+          const details = document.createElement('div');
+          details.className = 'mt-2 text-[11px] text-slate-400';
+          details.textContent = 'Diagnostic: backend history_only returned records but frontend rendered none.';
+          li.append(details);
+        }
+      } else if (this.brainRecordsView === 'now') {
+        const focusId = String(
+          this.latestAssistantMeta?.active_focus_id
+          || this.latestAssistantMeta?.policy_provenance?.active_focus_id
+          || this.activeContextSnapshot?.activeFocusId
+          || '',
+        ).trim();
+        if (focusId) {
+          const details = document.createElement('div');
+          details.className = 'mt-2 text-[11px] text-red-300';
+          details.textContent = 'Diagnostic: Active focus exists but was not bound into NOW records.';
+          li.append(details);
+        }
+      }
       mount.append(li);
       return;
     }
 
-    this.brainRecords.forEach((record) => {
+    recordsToRender.forEach((record) => {
       const li = document.createElement('li');
       li.className = 'brain-record-card';
 
@@ -1641,26 +2167,155 @@ class Xv7UI {
 
       const meta = document.createElement('div');
       meta.className = 'brain-record-meta';
-      meta.textContent = `status=${record.status || '-'} | source=${record.source || '-'} | updated=${record.updated_at || '-'}`;
+      meta.textContent = `${this.recordStatusLabel(record)} | ${this.recordRelevanceLabel(record)} | ${this.sourceStatusLabel(record)} | layer=${record.layer || '-'} | updated=${record.updated_at || '-'}`;
 
       const summary = document.createElement('div');
       summary.className = 'brain-record-summary';
       summary.textContent = String(record.summary || record.body || '').slice(0, 180) || '-';
 
+      let reasonNode = null;
+      const hygieneReason = String(record?.hygiene_reason || '').trim();
+      if (hygieneReason) {
+        const reason = document.createElement('div');
+        reason.className = 'brain-record-summary';
+        reason.textContent = `Reason: ${hygieneReason}`;
+        reasonNode = reason;
+      }
+
       const actions = document.createElement('div');
       actions.className = 'brain-record-actions';
 
+      const isVirtualNowFocus = Boolean(record?.__virtual_now_focus);
       const viewButton = this.makeBrainRecordAction('View', () => this.openBrainRecordEditor(record, true));
-      const editButton = this.makeBrainRecordAction('Edit', () => this.openBrainRecordEditor(record, false));
-      const deactivateButton = this.makeBrainRecordAction('Deactivate', () => {
-        void this.deactivateBrainRecord(record.record_id);
+      const editButton = this.makeBrainRecordAction('Edit / Tune', () => this.openBrainRecordEditor(record, false));
+      const recommendation = this.primaryHygieneRecommendation(record);
+      const recommendationType = recommendation ? String(recommendation.type || '') : '';
+      const approveButton = this.makeBrainRecordAction('Approve', () => {
+        void this.approveBrainRecord(record.record_id);
       });
-      const setActiveButton = this.makeBrainRecordAction('Set Active', () => {
-        void this.setBrainRecordActive(record.record_id);
+      const rejectButton = this.makeBrainRecordAction('Reject', () => {
+        void this.rejectBrainRecord(record.record_id);
+      });
+      const restoreButton = this.makeBrainRecordAction('Restore / Mark Current', () => {
+        void this.markBrainRecordCurrent(record.record_id);
       });
 
-      actions.append(viewButton, editButton, deactivateButton, setActiveButton);
-      li.append(title, meta, summary, actions);
+      const moreActions = [
+        {
+          label: this.sourceRuntime(record) ? 'Edit' : 'Copy/Edit Runtime Override',
+          onClick: () => this.openBrainRecordEditor(record, false),
+          enabled: true,
+        },
+        {
+          label: this.sourceRuntime(record) ? 'Set Active' : 'Set Active via Runtime Override',
+          onClick: () => {
+            void this.setBrainRecordActive(record.record_id);
+          },
+          enabled: !this.isRecordCurrent(record),
+        },
+        {
+          label: 'Mark Current',
+          onClick: () => {
+            void this.markBrainRecordCurrent(record.record_id);
+          },
+          enabled: !this.isRecordCurrent(record),
+        },
+        {
+          label: 'Mark Historical',
+          onClick: () => {
+            void this.markBrainRecordHistorical(record.record_id);
+          },
+          enabled: !this.isRecordHistorical(record),
+        },
+        {
+          label: 'Mark Superseded',
+          onClick: () => {
+            void this.markBrainRecordSuperseded(record.record_id);
+          },
+          enabled: String(record?.effective_relevance_state || record?.relevance_state || '').toLowerCase() !== 'superseded',
+        },
+        {
+          label: this.sourceRuntime(record) ? 'Disable' : 'Disable via Runtime Override',
+          onClick: () => {
+            void this.deactivateBrainRecord(record.record_id);
+          },
+          enabled: !this.isRecordDisabled(record),
+        },
+        {
+          label: this.approvedCleanupRecommendations[String(record.record_id || '')] ? 'Approved for cleanup' : 'Approve Recommendation',
+          onClick: () => {
+            if (!recommendationType) return;
+            this.toggleApprovedCleanup(record, recommendationType);
+          },
+          enabled: Boolean(recommendationType),
+        },
+        {
+          label: 'Apply Hygiene Recommendation',
+          onClick: () => {
+            if (!recommendationType) return;
+            void this.applyBrainRecordRecommendation(record.record_id, recommendationType);
+          },
+          enabled: Boolean(recommendationType),
+        },
+        {
+          label: 'Split to Current Rule',
+          onClick: () => {
+            void this.splitBrainRecord(record);
+          },
+          enabled: this.shouldShowSplitAction(record),
+        },
+        {
+          label: 'Raw JSON',
+          onClick: () => this.openBrainRecordEditor(record, true),
+          enabled: true,
+        },
+        {
+          label: 'Advanced Details',
+          onClick: () => this.openBrainRecordEditor(record, true),
+          enabled: true,
+        },
+      ];
+      const moreMenu = this.makeBrainRecordMoreMenu(record, moreActions);
+
+      if (this.brainRecordsView === 'review') {
+        actions.append(viewButton);
+        if (this.isRecordReviewActionable(record)) {
+          actions.append(approveButton, rejectButton);
+        }
+        actions.append(moreMenu);
+      } else if (this.brainRecordsView === 'history') {
+        actions.append(viewButton);
+        if (!this.isRecordCurrent(record)) {
+          actions.append(restoreButton);
+        }
+        actions.append(moreMenu);
+      } else if (this.brainRecordsView === 'library') {
+        actions.append(viewButton, editButton, moreMenu);
+      } else {
+        actions.append(viewButton);
+        if (!isVirtualNowFocus) {
+          actions.append(editButton);
+        }
+      }
+
+      if (this.brainRecordsView === 'library' && this.brainRecordsFilters.showRawJson) {
+        const raw = document.createElement('pre');
+        raw.className = 'brain-record-raw';
+        raw.textContent = JSON.stringify(record.raw_record || {}, null, 2);
+        if (reasonNode) {
+          li.append(title, meta, summary, reasonNode, actions, raw);
+        } else {
+          li.append(title, meta, summary, actions, raw);
+        }
+        mount.append(li);
+        return;
+      }
+
+      if (reasonNode) {
+        li.append(title, meta, summary, reasonNode, actions);
+      } else {
+        li.append(title, meta, summary, actions);
+      }
       mount.append(li);
     });
   }
@@ -1673,6 +2328,59 @@ class Xv7UI {
     button.disabled = this.brainRecordBusy;
     button.addEventListener('click', onClick);
     return button;
+  }
+
+  isRecordCurrent(record) {
+    const relevance = String(record?.effective_relevance_state || record?.relevance_state || '').toLowerCase();
+    return relevance === 'current';
+  }
+
+  isRecordHistorical(record) {
+    const relevance = String(record?.effective_relevance_state || record?.relevance_state || '').toLowerCase();
+    return relevance === 'historical' || relevance === 'superseded' || relevance === 'expired';
+  }
+
+  isRecordDisabled(record) {
+    const status = String(record?.status_label || record?.status || '').toLowerCase();
+    return status === 'disabled' || status === 'archived';
+  }
+
+  isRecordReviewActionable(record) {
+    const status = String(record?.status_label || record?.status || '').toLowerCase();
+    const relevance = String(record?.effective_relevance_state || record?.relevance_state || '').toLowerCase();
+    return status === 'pending' || status === 'pending_review' || relevance === 'needs_review';
+  }
+
+  shouldShowSplitAction(record) {
+    const recommendation = this.primaryHygieneRecommendation(record);
+    if (String(recommendation?.type || '') === 'split_record') return true;
+    const flags = new Set((Array.isArray(record?.hygiene_flags) ? record.hygiene_flags : []).map((item) => String(item).toLowerCase()));
+    return flags.has('mixed_historical_and_current') || flags.has('mixed_historical_and_operational');
+  }
+
+  makeBrainRecordMoreMenu(record, actions) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'brain-record-more';
+
+    const menu = document.createElement('div');
+    menu.className = 'brain-record-more-menu hidden';
+    menu.dataset.recordId = String(record?.record_id || '');
+
+    const toggle = this.makeBrainRecordAction('More', () => {
+      const currentlyHidden = menu.classList.contains('hidden');
+      if (currentlyHidden && !menu.childElementCount) {
+        actions.forEach((actionDef) => {
+          if (!actionDef || actionDef.enabled === false) return;
+          const action = this.makeBrainRecordAction(actionDef.label, actionDef.onClick);
+          action.classList.add('brain-record-more-action');
+          menu.append(action);
+        });
+      }
+      menu.classList.toggle('hidden');
+    });
+
+    wrapper.append(toggle, menu);
+    return wrapper;
   }
 
   openBrainRecordEditor(record, readOnly) {
@@ -1717,7 +2425,7 @@ class Xv7UI {
     if (!this.brainRecordEditorId) return;
 
     const payload = {
-      layer: this.els.brainRecordEditorLayer?.value || this.brainRecordsLayer,
+      layer: this.els.brainRecordEditorLayer?.value || 'memory',
       title: this.els.brainRecordEditorTitle?.value || '',
       body: this.els.brainRecordEditorBody?.value || '',
       tags: String(this.els.brainRecordEditorTags?.value || '')
@@ -1761,6 +2469,154 @@ class Xv7UI {
     try {
       this.brainRecordBusy = true;
       await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/set-active`, { method: 'POST' });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  async approveBrainRecord(recordId) {
+    if (!recordId) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/approve`, { method: 'POST' });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  async rejectBrainRecord(recordId) {
+    if (!recordId) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/reject`, { method: 'POST' });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  async markBrainRecordCurrent(recordId) {
+    if (!recordId) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/mark-current`, { method: 'POST' });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  async markBrainRecordHistorical(recordId) {
+    if (!recordId) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/mark-historical`, { method: 'POST' });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  async markBrainRecordSuperseded(recordId) {
+    if (!recordId) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/mark-superseded`, {
+        method: 'POST',
+        body: JSON.stringify({ relevance_state: 'superseded' }),
+      });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  async applyBrainRecordRecommendation(recordId, recommendationType) {
+    if (!recordId || !recommendationType) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/apply-recommendation`, {
+        method: 'POST',
+        body: JSON.stringify({ recommendation_type: recommendationType, approve: true }),
+      });
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+    }
+  }
+
+  toggleApprovedCleanup(record, recommendationType) {
+    const recordId = String(record?.record_id || '');
+    if (!recordId || !recommendationType) return;
+    if (this.approvedCleanupRecommendations[recordId]) {
+      delete this.approvedCleanupRecommendations[recordId];
+    } else {
+      this.approvedCleanupRecommendations[recordId] = recommendationType;
+    }
+    this.updateBrainRecordsCalmSummary();
+    this.renderBrainRecordsViews();
+    this.renderBrainRecordsList();
+  }
+
+  async applyApprovedCleanup() {
+    const entries = Object.entries(this.approvedCleanupRecommendations);
+    if (!entries.length) {
+      this.showAlert('No approved cleanup recommendations selected.', false, 1800);
+      return;
+    }
+
+    this.brainRecordBusy = true;
+    try {
+      for (const [recordId, recommendationType] of entries) {
+        await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/apply-recommendation`, {
+          method: 'POST',
+          body: JSON.stringify({
+            recommendation_type: recommendationType,
+            approve: true,
+          }),
+        });
+      }
+      this.approvedCleanupRecommendations = {};
+      await this.refreshBrainRecords();
+    } catch (error) {
+      this.showAlert(this.humanizeError(error), true, 2200);
+    } finally {
+      this.brainRecordBusy = false;
+      this.updateBrainRecordsCalmSummary();
+      this.renderBrainRecordsViews();
+    }
+  }
+
+  async splitBrainRecord(record) {
+    const recordId = String(record?.record_id || '');
+    if (!recordId) return;
+    try {
+      this.brainRecordBusy = true;
+      await this.fetchJson(`/runtime/brain/records/${encodeURIComponent(recordId)}/split`, {
+        method: 'POST',
+        body: JSON.stringify({
+          operational_title: `Operational: ${String(record?.title || '').trim() || recordId}`,
+          operational_body: String(record?.body || '').trim(),
+          tags: Array.isArray(record?.tags) ? record.tags : [],
+          layer: record?.layer || 'knowledge',
+        }),
+      });
       await this.refreshBrainRecords();
     } catch (error) {
       this.showAlert(this.humanizeError(error), true, 2200);

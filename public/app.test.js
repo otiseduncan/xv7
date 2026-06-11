@@ -121,14 +121,51 @@ function buildDom() {
     <button id="diagnosticsToggleButton"></button>
     <button id="diagnosticsCloseButton"></button>
     <p id="brainRecordsStatus"></p>
-    <button id="brainRecordsRefreshButton"></button>
-    <div id="brainRecordsTabs">
-      <button data-layer="active_focus"></button>
-      <button data-layer="memory"></button>
-      <button data-layer="knowledge"></button>
-      <button data-layer="verified_status"></button>
-      <button data-layer="system_prompt"></button>
+    <div id="brainRecordsViews">
+      <button data-view="now"></button>
+      <button data-view="review"></button>
+      <button data-view="history"></button>
+      <button data-view="library"></button>
     </div>
+    <p id="brainNowCounts"></p>
+    <div id="brainReviewToolbar" class="hidden">
+      <button id="brainRecordsApplyCleanupButton"></button>
+    </div>
+    <p id="brainNowFocus"></p>
+    <p id="brainNowSelectedRecords"></p>
+    <p id="brainNowAnswerMeta"></p>
+    <div id="brainLibraryControls" class="hidden"></div>
+    <select id="brainLibraryLayerFilter">
+      <option value="all">all</option>
+      <option value="active_focus">active_focus</option>
+      <option value="memory">memory</option>
+      <option value="knowledge">knowledge</option>
+      <option value="verified_status">verified_status</option>
+      <option value="system_prompt">system_prompt</option>
+    </select>
+    <select id="brainLibraryStatusFilter">
+      <option value="active">active</option>
+      <option value="pending">pending</option>
+      <option value="disabled">disabled</option>
+      <option value="archived">archived</option>
+      <option value="all">all</option>
+    </select>
+    <select id="brainLibraryRelevanceFilter">
+      <option value="all">all</option>
+      <option value="current">current</option>
+      <option value="needs_review">needs_review</option>
+      <option value="historical">historical</option>
+      <option value="superseded">superseded</option>
+      <option value="expired">expired</option>
+    </select>
+    <select id="brainLibrarySourceFilter">
+      <option value="all">all</option>
+      <option value="runtime">runtime</option>
+      <option value="seed">seed</option>
+    </select>
+    <input id="brainLibrarySearch" />
+    <input id="brainLibraryShowArchived" type="checkbox" />
+    <input id="brainLibraryShowRawJson" type="checkbox" />
     <ul id="brainRecordsList"></ul>
     <div id="brainRecordEditor" class="hidden"></div>
     <span id="brainRecordEditorId"></span>
@@ -157,6 +194,9 @@ function createRuntimeFetchMock(options = {}) {
         summary: 'Keep communication continuity and avoid fallback drift.',
         body: 'Focus on communication continuity and deterministic routing.',
         status: 'active',
+        status_label: 'active',
+        relevance_state: 'current',
+        effective_relevance_state: 'current',
         priority: 300,
         tags: ['focus', 'communication'],
         source: 'runtime_override',
@@ -173,7 +213,146 @@ function createRuntimeFetchMock(options = {}) {
           tags: ['focus', 'communication'],
         },
       },
+      {
+        record_id: 'XV7-SYSTEM-0001',
+        layer: 'system_prompt',
+        title: 'Identity baseline',
+        summary: 'System identity and answer contract.',
+        body: 'Core system prompt baseline.',
+        status: 'active',
+        status_label: 'active',
+        relevance_state: 'current',
+        effective_relevance_state: 'current',
+        priority: 320,
+        tags: ['seed'],
+        source: 'seed',
+        writable: false,
+        updated_at: '2026-06-11T00:00:05Z',
+        raw_record: {
+          record_id: 'XV7-SYSTEM-0001',
+          layer: 'system_prompt',
+          title: 'Identity baseline',
+          summary: 'System identity and answer contract.',
+          body: 'Core system prompt baseline.',
+          status: 'active',
+          priority: 320,
+          tags: ['seed'],
+        },
+      },
+      {
+        record_id: 'XV7-MEMORY-0002',
+        layer: 'memory',
+        title: 'Communication preference',
+        summary: 'Keep status answers concise unless debug requested.',
+        body: 'Active memory preference.',
+        status: 'active',
+        status_label: 'active',
+        relevance_state: 'current',
+        effective_relevance_state: 'current',
+        priority: 240,
+        tags: ['runtime', 'learned-rule'],
+        source: 'runtime_override',
+        writable: true,
+        updated_at: '2026-06-11T00:00:06Z',
+        raw_record: {
+          record_id: 'XV7-MEMORY-0002',
+          layer: 'memory',
+          title: 'Communication preference',
+          summary: 'Keep status answers concise unless debug requested.',
+          body: 'Active memory preference.',
+          status: 'active',
+          priority: 240,
+          tags: ['runtime', 'learned-rule'],
+        },
+      },
+      {
+        record_id: 'XV7-VERIFIED-0001',
+        layer: 'verified_status',
+        title: 'Verified milestones and current phase status',
+        summary: 'Verified: B9.5 and B9.7 passed; current in progress: B9.8 local bridge hardening.',
+        body: 'Proven: B3.2 passed, B9.5 passed, B9.7 passed. Current in progress: B9.8 local bridge behavior.',
+        status: 'active',
+        status_label: 'active',
+        relevance_state: 'current',
+        effective_relevance_state: 'needs_review',
+        hygiene_reason: 'Contains old completed milestones and current operational bridge rule content.',
+        hygiene_flags: ['old_phase_reference', 'completed_milestone', 'mixed_historical_and_current'],
+        hygiene_recommendations: [
+          { type: 'split_record', record_id: 'XV7-VERIFIED-0001' },
+          { type: 'mark_historical_via_runtime_override', record_id: 'XV7-VERIFIED-0001' },
+        ],
+        priority: 210,
+        tags: ['seed'],
+        source: 'seed',
+        writable: false,
+        updated_at: '2026-06-11T00:00:08Z',
+        raw_record: {
+          record_id: 'XV7-VERIFIED-0001',
+          layer: 'verified_status',
+          title: 'Verified milestones and current phase status',
+          summary: 'Verified: B9.5 and B9.7 passed; current in progress: B9.8 local bridge hardening.',
+          body: 'Proven: B3.2 passed, B9.5 passed, B9.7 passed. Current in progress: B9.8 local bridge behavior.',
+          status: 'active',
+          priority: 210,
+          tags: ['seed'],
+        },
+      },
+      {
+        record_id: 'XV7-KNOWLEDGE-0007',
+        layer: 'knowledge',
+        title: 'Require proof before CI claims',
+        summary: 'When asked about CI status, require GitHub Actions proof before claiming state.',
+        body: 'Learned diagnostic rule: verify Actions before claiming CI status.',
+        status: 'pending_review',
+        status_label: 'pending',
+        relevance_state: 'needs_review',
+        effective_relevance_state: 'needs_review',
+        priority: 180,
+        tags: ['learned-rule', 'proof-required', 'diagnostic-rule'],
+        source: 'runtime_override',
+        writable: true,
+        updated_at: '2026-06-11T00:00:10Z',
+        raw_record: {
+          record_id: 'XV7-KNOWLEDGE-0007',
+          layer: 'knowledge',
+          title: 'Require proof before CI claims',
+          summary: 'When asked about CI status, require GitHub Actions proof before claiming state.',
+          body: 'Learned diagnostic rule: verify Actions before claiming CI status.',
+          status: 'pending_review',
+          priority: 180,
+          tags: ['learned-rule', 'proof-required', 'diagnostic-rule'],
+        },
+      },
+      {
+        record_id: 'XV7-KNOWLEDGE-0003',
+        layer: 'knowledge',
+        title: 'Legacy archived seed',
+        summary: 'Historical archived seed record.',
+        body: 'Old seed record.',
+        status: 'archived',
+        status_label: 'archived',
+        relevance_state: 'historical',
+        effective_relevance_state: 'historical',
+        priority: 90,
+        tags: ['seed'],
+        source: 'seed',
+        writable: false,
+        updated_at: '2026-06-11T00:00:11Z',
+        raw_record: {
+          record_id: 'XV7-KNOWLEDGE-0003',
+          layer: 'knowledge',
+          title: 'Legacy archived seed',
+          summary: 'Historical archived seed record.',
+          body: 'Old seed record.',
+          status: 'archived',
+          priority: 90,
+          tags: ['seed'],
+        },
+      },
     ],
+    activeContextFocusId: options.activeContextFocusId || '',
+    activeContextFocusSummary: options.activeContextFocusSummary || '',
+    activeContextRecordIds: Array.isArray(options.activeContextRecordIds) ? options.activeContextRecordIds : [],
   };
 
   const profiles = {
@@ -485,8 +664,63 @@ function createRuntimeFetchMock(options = {}) {
 
     if (path === '/runtime/brain/records' && method === 'GET') {
       const layer = String(query.get('layer') || '');
-      const records = state.brainRecords.filter((item) => !layer || item.layer === layer);
+      const pendingOnly = query.get('pending_only') === 'true';
+      const learnedOnly = query.get('learned_only') === 'true';
+      const relevance = String(query.get('relevance') || '');
+      const historyOnly = query.get('history_only') === 'true';
+      const reviewOnly = query.get('review_only') === 'true';
+      const records = state.brainRecords.filter((item) => {
+        if (layer && item.layer !== layer) return false;
+        if (pendingOnly && !['pending_review', 'pending'].includes(item.status)) return false;
+        if (learnedOnly && !item.tags.includes('learned-rule')) return false;
+        if (relevance && String(item.effective_relevance_state || item.relevance_state || '') !== relevance) return false;
+        if (historyOnly) {
+          const rs = String(item.relevance_state || '');
+          const re = String(item.effective_relevance_state || rs || '');
+          if (!['historical', 'superseded', 'expired'].includes(rs) && !['historical', 'superseded', 'expired'].includes(re)) return false;
+        }
+        if (reviewOnly) {
+          const rs = String(item.relevance_state || '');
+          const r = String(item.effective_relevance_state || rs || '');
+          const s = String(item.status_label || item.status || '');
+          const flags = new Set((Array.isArray(item.hygiene_flags) ? item.hygiene_flags : []).map((flag) => String(flag).toLowerCase()));
+          const hasRec = Array.isArray(item.hygiene_recommendations) && item.hygiene_recommendations.length > 0;
+          const hasFlag = (
+            flags.has('old_phase_reference')
+            || flags.has('completed_milestone')
+            || flags.has('mixed_historical_and_current')
+            || flags.has('mixed_historical_and_operational')
+          );
+          if (!(r === 'needs_review' || rs === 'needs_review' || s === 'pending' || s === 'pending_review' || hasRec || hasFlag)) return false;
+        }
+        return true;
+      });
       return okJson({ count: records.length, records });
+    }
+
+    if (path === '/runtime/context/active' && method === 'GET') {
+      const focusId = String(state.activeContextFocusId || '');
+      const focusSummary = String(state.activeContextFocusSummary || '').trim();
+      const recordIds = [...state.activeContextRecordIds];
+      if (focusId && !recordIds.includes(focusId)) {
+        recordIds.push(focusId);
+      }
+      return okJson({
+        prompt: '',
+        compact_receipt: focusSummary,
+        receipt: {
+          record_ids: recordIds,
+          context_receipts: focusId
+            ? [
+              {
+                layer: 'active_focus',
+                record_id: focusId,
+                summary: focusSummary,
+              },
+            ]
+            : [],
+        },
+      });
     }
 
     if (path.startsWith('/runtime/brain/records/') && method === 'PUT') {
@@ -500,6 +734,11 @@ function createRuntimeFetchMock(options = {}) {
       current.summary = String(current.body || '').slice(0, 160);
       current.tags = Array.isArray(body.tags) ? body.tags : current.tags;
       current.status = body.status || current.status;
+      current.status_label = current.status === 'pending_review' ? 'pending' : current.status;
+      if (body.relevance_state) {
+        current.relevance_state = body.relevance_state;
+        current.effective_relevance_state = body.relevance_state;
+      }
       current.raw_record = {
         ...current.raw_record,
         layer: current.layer,
@@ -517,6 +756,9 @@ function createRuntimeFetchMock(options = {}) {
       const current = state.brainRecords.find((item) => item.record_id === recordId);
       if (!current) return errorText(404, 'Record not found');
       current.status = 'archived';
+      current.status_label = 'disabled';
+      current.relevance_state = 'historical';
+      current.effective_relevance_state = 'historical';
       current.raw_record = { ...current.raw_record, status: 'archived' };
       return okJson(current);
     }
@@ -526,12 +768,118 @@ function createRuntimeFetchMock(options = {}) {
       state.brainRecords.forEach((item) => {
         if (item.layer === 'active_focus') {
           item.status = item.record_id === recordId ? 'active' : 'archived';
+          item.status_label = item.status;
+          item.relevance_state = item.record_id === recordId ? 'current' : 'superseded';
+          item.effective_relevance_state = item.relevance_state;
           item.raw_record = { ...item.raw_record, status: item.status };
         }
       });
       const updated = state.brainRecords.find((item) => item.record_id === recordId);
       if (!updated) return errorText(404, 'Record not found');
       return okJson(updated);
+    }
+
+    if (path.endsWith('/approve') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.status = 'active';
+      current.status_label = 'active';
+      current.relevance_state = 'current';
+      current.effective_relevance_state = 'current';
+      current.raw_record = { ...current.raw_record, status: 'active' };
+      return okJson(current);
+    }
+
+    if (path.endsWith('/reject') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.status = 'archived';
+      current.status_label = 'archived';
+      current.relevance_state = 'historical';
+      current.effective_relevance_state = 'historical';
+      current.raw_record = { ...current.raw_record, status: 'archived' };
+      return okJson(current);
+    }
+
+    if (path.endsWith('/mark-current') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.status = 'active';
+      current.status_label = 'active';
+      current.relevance_state = 'current';
+      current.effective_relevance_state = 'current';
+      return okJson(current);
+    }
+
+    if (path.endsWith('/mark-historical') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.relevance_state = 'historical';
+      current.effective_relevance_state = 'historical';
+      return okJson(current);
+    }
+
+    if (path.endsWith('/mark-superseded') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.status = 'disabled';
+      current.status_label = 'disabled';
+      current.relevance_state = 'superseded';
+      current.effective_relevance_state = 'superseded';
+      return okJson(current);
+    }
+
+    if (path.endsWith('/apply-recommendation') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      const body = JSON.parse(init.body || '{}');
+      if (String(body.recommendation_type || '') === 'split_record') {
+        current.relevance_state = 'historical';
+        current.effective_relevance_state = 'historical';
+        current.hygiene_recommendations = [];
+        const created = {
+          ...current,
+          record_id: 'XV7-KNOWLEDGE-0998',
+          layer: 'knowledge',
+          title: 'Operational: Bridge status rule',
+          status: 'active',
+          status_label: 'active',
+          relevance_state: 'current',
+          effective_relevance_state: 'current',
+          hygiene_flags: [],
+          hygiene_recommendations: [],
+        };
+        state.brainRecords.push(created);
+        return okJson({ record: current, created_record: created, applied: true, recommendation_type: 'split_record' });
+      }
+      current.relevance_state = 'historical';
+      current.effective_relevance_state = 'historical';
+      return okJson({ record: current, applied: true, recommendation_type: 'mark_historical_via_runtime_override' });
+    }
+
+    if (path.endsWith('/split') && method === 'POST') {
+      const recordId = decodeURIComponent(path.split('/').at(-2) || '');
+      const current = state.brainRecords.find((item) => item.record_id === recordId);
+      if (!current) return errorText(404, 'Record not found');
+      current.relevance_state = 'historical';
+      current.effective_relevance_state = 'historical';
+      const created = {
+        ...current,
+        record_id: 'XV7-KNOWLEDGE-0999',
+        title: `Operational: ${current.title}`,
+        status: 'active',
+        status_label: 'active',
+        relevance_state: 'current',
+        effective_relevance_state: 'current',
+      };
+      state.brainRecords.push(created);
+      return okJson({ applied: true, source_record: current, created_record: created });
     }
 
     if (path === '/api/sessions/session-1/messages' && method === 'POST') {
@@ -2189,7 +2537,7 @@ describe('ModelProfileControl', () => {
     expect(drawer?.textContent || '').toContain('Focus');
   });
 
-  it('loads brain records in diagnostics and switches tab layer', async () => {
+  it('renders NOW/REVIEW/HISTORY and LIBRARY relevance filters with lifecycle actions', async () => {
     global.fetch = createRuntimeFetchMock();
     new Xv7UI();
     await flushAsync();
@@ -2199,14 +2547,205 @@ describe('ModelProfileControl', () => {
 
     const cards = [...document.querySelectorAll('.brain-record-card')];
     expect(cards.length).toBeGreaterThan(0);
-    expect(cards[0].textContent || '').toContain('XV7-FOCUS-0005');
 
-    const memoryTab = document.querySelector('#brainRecordsTabs button[data-layer="memory"]');
-    expect(memoryTab).toBeTruthy();
-    memoryTab.click();
+    expect(document.getElementById('brainRecordsOpenLibraryButton')).toBeNull();
+    expect(document.getElementById('brainRecordsAnalyzeButton')).toBeNull();
+    expect(document.getElementById('brainRecordsPendingLink')).toBeNull();
+    expect(document.getElementById('brainRecordsRefreshButton')).toBeNull();
+    expect((document.getElementById('brainNowCounts').textContent || '')).toContain('current=');
+    expect((document.getElementById('brainNowCounts').textContent || '')).toContain('review=');
+    expect(document.getElementById('brainReviewToolbar').classList.contains('hidden')).toBe(true);
+
+    const nowText = document.getElementById('brainRecordsList').textContent || '';
+    expect(nowText).toContain('XV7-SYSTEM-0001');
+    expect(nowText).toContain('XV7-FOCUS-0005');
+    expect(nowText).not.toContain('XV7-VERIFIED-0001');
+    expect(nowText).toContain('Edit / Tune');
+    expect(nowText).not.toContain('Approve');
+    expect(nowText).not.toContain('Reject');
+    expect((document.getElementById('brainRecordsStatus').textContent || '').toLowerCase()).toContain('current=');
+    expect((document.querySelector('#brainRecordsViews button[data-view="review"]')?.textContent || '')).toContain('REVIEW (2)');
+    expect((document.querySelector('#brainRecordsViews button[data-view="history"]')?.textContent || '')).toContain('HISTORY (1)');
+    expect((document.querySelector('#brainRecordsViews button[data-view="library"]')?.textContent || '')).toContain('LIBRARY (6)');
+    expect((document.querySelector('#brainRecordsViews button[data-view="now"]')?.textContent || '')).toContain('NOW (3)');
+    expect(document.getElementById('brainRecordsList').textContent || '').not.toContain('XV7-KNOWLEDGE-0007');
+    expect(document.getElementById('brainRecordsList').textContent || '').not.toContain('XV7-KNOWLEDGE-0003');
+
+    const reviewView = document.querySelector('#brainRecordsViews button[data-view="review"]');
+    expect(reviewView).toBeTruthy();
+    reviewView.click();
     await flushAsync();
 
-    expect(document.getElementById('brainRecordsStatus').textContent).toContain('memory');
+    const reviewText = document.getElementById('brainRecordsList').textContent || '';
+    expect(reviewText).toContain('XV7-KNOWLEDGE-0007');
+    expect(reviewText).toContain('XV7-VERIFIED-0001');
+    expect(reviewText).not.toContain('XV7-FOCUS-0005');
+    expect(reviewText).toContain('Approve');
+    expect(reviewText).toContain('Reject');
+    expect(reviewText).toContain('More');
+    expect(reviewText).not.toContain('Mark Historical');
+    expect(reviewText).not.toContain('Split to Current Rule');
+    expect(reviewText).toContain('Reason: Contains old completed milestones and current operational bridge rule content.');
+
+    const reviewMoreButton = [...document.querySelectorAll('.brain-record-actions button')]
+      .find((button) => (button.textContent || '') === 'More');
+    expect(reviewMoreButton).toBeTruthy();
+    reviewMoreButton.click();
+    await flushAsync();
+
+    const approveCleanupButton = [...document.querySelectorAll('.brain-record-more-action')]
+      .find((button) => (button.textContent || '').includes('Approve Recommendation'));
+    expect(approveCleanupButton).toBeTruthy();
+    approveCleanupButton.click();
+    await flushAsync();
+
+    const applyCleanupButton = document.getElementById('brainRecordsApplyCleanupButton');
+    expect(applyCleanupButton).toBeTruthy();
+    expect(document.getElementById('brainReviewToolbar').classList.contains('hidden')).toBe(false);
+    expect((applyCleanupButton.textContent || '')).toContain('(1)');
+    applyCleanupButton.click();
+    await flushAsync();
+
+    const nowViewAfterCleanup = document.querySelector('#brainRecordsViews button[data-view="now"]');
+    expect(nowViewAfterCleanup).toBeTruthy();
+    nowViewAfterCleanup.click();
+    await flushAsync();
+    const nowAfterCleanupText = document.getElementById('brainRecordsList').textContent || '';
+    expect(nowAfterCleanupText).toContain('XV7-KNOWLEDGE-0998');
+
+    const reviewViewAfterCleanup = document.querySelector('#brainRecordsViews button[data-view="review"]');
+    expect(reviewViewAfterCleanup).toBeTruthy();
+    reviewViewAfterCleanup.click();
+    await flushAsync();
+
+    const historyView = document.querySelector('#brainRecordsViews button[data-view="history"]');
+    expect(historyView).toBeTruthy();
+    historyView.click();
+    await flushAsync();
+
+    const historyText = document.getElementById('brainRecordsList').textContent || '';
+    expect(historyText).toContain('XV7-VERIFIED-0001');
+    expect(historyText).toContain('Restore / Mark Current');
+    expect(historyText).toContain('More');
+    expect(historyText).not.toContain('Mark Superseded');
+    expect(document.getElementById('brainReviewToolbar').classList.contains('hidden')).toBe(true);
+
+    const libraryView = document.querySelector('#brainRecordsViews button[data-view="library"]');
+    expect(libraryView).toBeTruthy();
+    libraryView.click();
+    await flushAsync();
+
+    expect(document.getElementById('brainLibraryControls').classList.contains('hidden')).toBe(false);
+    const libraryText = document.getElementById('brainRecordsList').textContent || '';
+    expect(libraryText).toContain('XV7-SYSTEM-0001');
+    expect(libraryText).toContain('CURRENT');
+    expect(libraryText).toContain('Edit / Tune');
+    expect(libraryText).toContain('More');
+    expect(libraryText).not.toContain('Copy/Edit Runtime Override');
+    expect(libraryText).not.toContain('XV7-KNOWLEDGE-0003');
+
+    document.getElementById('brainLibraryShowArchived').checked = true;
+    document.getElementById('brainLibraryShowArchived').dispatchEvent(new Event('change'));
+    await flushAsync();
+
+    document.getElementById('brainLibraryStatusFilter').value = 'all';
+    document.getElementById('brainLibraryStatusFilter').dispatchEvent(new Event('change'));
+    await flushAsync();
+
+    expect(document.getElementById('brainRecordsList').textContent || '').toContain('XV7-KNOWLEDGE-0003');
+
+    document.getElementById('brainLibraryRelevanceFilter').value = 'needs_review';
+    document.getElementById('brainLibraryRelevanceFilter').dispatchEvent(new Event('change'));
+    await flushAsync();
+    const relevanceText = document.getElementById('brainRecordsList').textContent || '';
+    expect(relevanceText).toContain('XV7-KNOWLEDGE-0007');
+    expect(relevanceText).not.toContain('XV7-SYSTEM-0001');
+
+    document.getElementById('brainLibraryRelevanceFilter').value = 'all';
+    document.getElementById('brainLibraryRelevanceFilter').dispatchEvent(new Event('change'));
+    await flushAsync();
+
+    document.getElementById('brainLibrarySearch').value = 'proof before ci';
+    document.getElementById('brainLibrarySearch').dispatchEvent(new Event('input'));
+    await flushAsync();
+
+    const filteredText = document.getElementById('brainRecordsList').textContent || '';
+    expect(filteredText).toContain('XV7-KNOWLEDGE-0007');
+    expect(filteredText).not.toContain('XV7-FOCUS-0005');
+
+    document.getElementById('brainLibrarySearch').value = '';
+    document.getElementById('brainLibrarySearch').dispatchEvent(new Event('input'));
+    await flushAsync();
+
+    const reviewViewAgain = document.querySelector('#brainRecordsViews button[data-view="review"]');
+    expect(reviewViewAgain).toBeTruthy();
+    reviewViewAgain.click();
+    await flushAsync();
+
+    const reviewMoreButtonAgain = [...document.querySelectorAll('.brain-record-actions button')]
+      .find((button) => (button.textContent || '') === 'More');
+    expect(reviewMoreButtonAgain).toBeTruthy();
+    reviewMoreButtonAgain.click();
+    await flushAsync();
+
+    const splitButton = [...document.querySelectorAll('.brain-record-more-action')]
+      .find((button) => (button.textContent || '').includes('Split to Current Rule'));
+    expect(splitButton).toBeTruthy();
+    splitButton.click();
+    await flushAsync();
+
+    const libraryViewAgain = document.querySelector('#brainRecordsViews button[data-view="library"]');
+    expect(libraryViewAgain).toBeTruthy();
+    libraryViewAgain.click();
+    await flushAsync();
+
+    const libraryMoreButton = [...document.querySelectorAll('.brain-record-actions button')]
+      .find((button) => (button.textContent || '') === 'More');
+    expect(libraryMoreButton).toBeTruthy();
+    libraryMoreButton.click();
+    await flushAsync();
+
+    const rawJsonButton = [...document.querySelectorAll('.brain-record-more-action')]
+      .find((button) => (button.textContent || '').includes('Raw JSON'));
+    expect(rawJsonButton).toBeTruthy();
+    rawJsonButton.click();
+    await flushAsync();
+
+    const calls = global.fetch.mock.calls.map(([url, init]) => ({
+      url: String(url),
+      method: String(init?.method || 'GET').toUpperCase(),
+    }));
+    expect(calls.some((call) => call.method === 'POST' && call.url.includes('/runtime/brain/records/XV7-VERIFIED-0001/apply-recommendation'))).toBe(true);
+    expect(calls.some((call) => call.method === 'POST' && call.url.includes('/runtime/brain/records/') && call.url.includes('/split'))).toBe(true);
+  });
+
+  it('binds virtual NOW focus card from active context when focus record is absent from library', async () => {
+    global.fetch = createRuntimeFetchMock({
+      activeContextFocusId: 'XV7-FOCUS-0006',
+      activeContextFocusSummary: 'on correct communication with your operator Otis and understanding his workflows',
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('diagnosticsToggleButton').click();
+    await flushAsync();
+
+    const nowTab = document.querySelector('#brainRecordsViews button[data-view="now"]');
+    expect(nowTab).toBeTruthy();
+    const nowLabel = nowTab?.textContent || '';
+    expect(nowLabel).toContain('NOW (');
+    const countMatch = nowLabel.match(/NOW \((\d+)\)/);
+    expect(countMatch).toBeTruthy();
+    const nowCount = Number(countMatch[1]);
+    expect(nowCount).toBeGreaterThanOrEqual(1);
+
+    const focusCard = [...document.querySelectorAll('.brain-record-card')].find((card) =>
+      (card.textContent || '').includes('XV7-FOCUS-0006'));
+    expect(focusCard).toBeTruthy();
+    const focusActions = [...focusCard.querySelectorAll('.brain-record-actions button')]
+      .map((button) => (button.textContent || '').trim());
+    expect(focusActions).toEqual(['View']);
   });
 
   it('renders avatar card with Xoduz label and idle default state', async () => {
