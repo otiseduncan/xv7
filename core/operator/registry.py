@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Callable
 
+from core.operator.actions.apply_patch import apply_approved_patch
 from core.operator.actions.environment import operator_environment
 from core.operator.actions.files import list_project_files, read_project_file
 from core.operator.actions.host_scan import (
@@ -47,6 +49,9 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
             "workspace_map", "read_only", workspace_map
         ),
         "patch_plan": OperatorActionSpec("patch_plan", "read_only", patch_plan),
+        "apply_approved_patch": OperatorActionSpec(
+            "apply_approved_patch", "operator", apply_approved_patch
+        ),
         "list_project_files": OperatorActionSpec(
             "list_project_files", "read_only", list_project_files
         ),
@@ -81,6 +86,18 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
     }
 
 
+def _target_json(target: str | None, action_name: str) -> dict:
+    if not target:
+        raise ValueError(f"{action_name} requires a target JSON payload")
+    try:
+        payload = json.loads(target)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{action_name} target must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{action_name} target JSON must be an object")
+    return payload
+
+
 def run_action(
     action_name: str,
     *,
@@ -100,4 +117,7 @@ def run_action(
         if not target:
             raise ValueError("patch_plan requires a target goal")
         return spec.handler(action_id=action_id, repo_root=repo_root, goal=target)
+    if action_name == "apply_approved_patch":
+        payload = _target_json(target, action_name)
+        return spec.handler(action_id=action_id, repo_root=repo_root, patch=payload)
     return spec.handler(action_id=action_id, repo_root=repo_root)
