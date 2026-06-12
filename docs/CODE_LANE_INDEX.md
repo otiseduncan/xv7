@@ -20,7 +20,7 @@ Use this page first when asking: "what is next?"
 | CODE-02 | Patch Planner | implemented | Read-only planner action fully wired into operator registry; ready for action queue integration. |
 | CODE-03 | Approved Patch Apply | implemented | Approval-gated patch application inside repo root; no commit or push. |
 | CODE-04 | Test Runner | implemented | Allowlisted local validation runner with compact receipts. |
-| CODE-05 | Diff Summary | prompt written | Compact changed-file summary with risks and next step. |
+| CODE-05 | Diff Summary | implemented | Read-only git diff summary with changed files, risk flags, and next action. |
 | CODE-06 | Commit Helper | prompt written | Approval-gated commit helper with safety warnings. |
 | CODE-07 | App Builder Mode | prompt written | Controlled app-builder interaction lane. |
 | CODE-08 | Workflow Learning | prompt written | Capture and apply operator workflow preferences safely. |
@@ -64,7 +64,7 @@ Use this page first when asking: "what is next?"
 
 ## What To Do Next
 
-Current next recommended implementation target: CODE-05 Diff Summary.
+Current next recommended implementation target: CODE-06 Commit Helper.
 
 CODE-01 is implemented as a read-only workspace map action with registry exposure and tests.
 
@@ -73,6 +73,8 @@ CODE-02 is implemented as a read-only `patch_plan` action with registry exposure
 CODE-03 is implemented as an approval-gated `apply_approved_patch` action. It denies unapproved changes, rejects outside-root paths, writes only inside the repo root, returns changed files and compact diff data, and never commits or pushes.
 
 CODE-04 is implemented as a read-only `test_runner` action. It runs only allowlisted validation presets, blocks raw shell execution, validates single pytest targets, returns compact command receipts, and is wired through the operator registry.
+
+CODE-05 is implemented as a read-only `diff_report` action. It runs only known git status/diff commands, returns changed files, compact diff stats, risk flags, and a next recommended action without mutating files or git state.
 
 After CODE-01 through CODE-05 are implemented and stable, run the gauntlet in:
 
