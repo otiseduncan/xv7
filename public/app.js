@@ -2131,12 +2131,18 @@ class Xv7UI {
       || meta.fallback_reason
       || policy.brain_answer_source
       || '-';
+    const revisionMode = policy.revision_mode || meta.revision_mode || '-';
+    const revisionNumber = policy.revision_number || meta.revision_number || '-';
+    const sourceArtifact = policy.source_artifact || policy.source_artifact_key || meta.source_artifact || '-';
 
     const fields = [
       ['intent_class', policy.intent_class || meta.intent_class],
       ['speech_act', meta.speech_act || '-'],
       ['response_mode', policy.response_mode || meta.response_mode || '-'],
       ['artifact_generation', artifactGeneration],
+      ['revision_mode', revisionMode],
+      ['revision_number', revisionNumber],
+      ['source_artifact', sourceArtifact],
       ['model_used', resolvedModelUsed],
       ['artifact_validation', policy.artifact_validation || '-'],
       ['fallback_used', this.boolText(meta.fallback_used ?? artifactIsFallback)],

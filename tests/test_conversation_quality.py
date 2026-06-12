@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 import re
 
 from fastapi.testclient import TestClient
 
+from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
 from core.memory.manager import PersistentMemoryManager
 from core.memory.store import MemoryStore
 from core.main import app
 from core.runtime.schemas import SessionState
+from core.runtime.model_registry import RuntimeRoleModelResolution
 
 
 class _FailingAgent:
@@ -1122,6 +1125,227 @@ def test_explicit_sms_still_returns_refusal_even_after_artifact(monkeypatch, tmp
     answer = sms.json()["messages"][-1]["content"].lower()
     assert "can't send texts yet" in answer
     assert "sms connector" in answer
+
+
+def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (
+            "<!doctype html><html><head><style>:root{--bg:#ffffff;--accent:#a855f7;--accent-2:#22c55e;}body{background:#ffffff;color:#111827;} .button{color:#111827;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>",
+            "fake-code-model:test",
+        )
+
+    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+        lowered = question.lower()
+        if "black and gold" in lowered:
+            return (
+                "<!doctype html><html><head><style>:root{--bg:#070707;--accent:#d4af37;}body{background:#070707;color:#f5e7b4;} .button{color:#f5e7b4;border-color:#d4af37;}</style></head><body><h1>Soggy Doggy</h1><p>Premium pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>",
+                "qwen3:14b",
+                "http://ollama:11434",
+            )
+        if "headline" in lowered:
+            return (
+                "<!doctype html><html><head><title>Soggy Doggy</title><style>:root{--bg:#070707;--accent:#d4af37;}body{background:#070707;color:#f5e7b4;} .button{color:#f5e7b4;border-color:#d4af37;}</style></head><body><h1>Pampered Paws, Clean Coats</h1><p>Soggy Doggy premium pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>",
+                "qwen3:14b",
+                "http://ollama:11434",
+            )
+        if "script" in lowered:
+            return (
+                "<!doctype html><html><head><title>Soggy Doggy</title><style>:root{--bg:#070707;--accent:#d4af37;}body{background:#070707;color:#f5e7b4;} h1{font-family:'Brush Script MT',cursive;} .button{color:#f5e7b4;border-color:#d4af37;}</style></head><body><h1>Pampered Paws, Clean Coats</h1><p>Soggy Doggy premium pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>",
+                "qwen3:14b",
+                "http://ollama:11434",
+            )
+        if "premium" in lowered:
+            return (
+                "<!doctype html><html><head><style>:root{--bg:#ffffff;--accent:#a855f7;--accent-2:#22c55e;}body{background:#ffffff;color:#111827;} .button{color:#111827;}</style></head><body><h1>Soggy Doggy</h1><p>Premium pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>",
+                "qwen3:14b",
+                "http://ollama:11434",
+            )
+        return (
+            str(source_artifact.get("content") or ""),
+            "qwen3:14b",
+            "http://ollama:11434",
+        )
+
+    monkeypatch.setattr("core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model", _fake_generate)
+    monkeypatch.setattr("core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model", _fake_revise)
+
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert gen.status_code == 200
+
+    premium = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "make it more premium"},
+    )
+    assert premium.status_code == 200
+    premium_payload = premium.json()
+    premium_artifact = premium_payload["messages"][-1]["metadata"]["code_artifact"]
+    premium_prov = premium_payload["metadata"]["last_assistant_payload"]["policy_provenance"]
+    assert premium_artifact["filename"] == "index.html"
+    assert "sms connector" not in premium_payload["messages"][-1]["content"].lower()
+    assert premium_prov["artifact_generation"] == "local_model_revision"
+    assert premium_prov["revision_number"] == 2
+
+    colors = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the colors to black and gold and make it more premium"},
+    )
+    assert colors.status_code == 200
+    colors_artifact = colors.json()["messages"][-1]["metadata"]["code_artifact"]
+    colors_content = colors_artifact["content"].lower()
+    assert "soggy doggy" in colors_content
+    assert "groom" in colors_content
+    assert "#070707" in colors_content or "black" in colors_content
+    assert "#d4af37" in colors_content or "gold" in colors_content
+    assert "local business website" not in colors_content
+
+    headline = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": 'change only the main headline to "Pampered Paws, Clean Coats"'},
+    )
+    assert headline.status_code == 200
+    headline_content = headline.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+    assert "Pampered Paws, Clean Coats" in headline_content
+    assert "Soggy Doggy" in headline_content
+    assert "bath trim fur care" in headline_content
+
+    script = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the text on the website to script"},
+    )
+    assert script.status_code == 200
+    script_content = script.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+    assert "Brush Script MT" in script_content or "cursive" in script_content
+    assert "sms connector" not in script.json()["messages"][-1]["content"].lower()
+
+    explain = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "what changed?"},
+    )
+    assert explain.status_code == 200
+    explain_payload = explain.json()
+    assert explain_payload["messages"][-1]["metadata"].get("code_artifact", {}) == {}
+    assert "changed" in explain_payload["messages"][-1]["content"].lower() or "typography" in explain_payload["messages"][-1]["content"].lower()
+
+    undo = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "undo the last change"},
+    )
+    assert undo.status_code == 200
+    undo_payload = undo.json()
+    undo_artifact = undo_payload["messages"][-1]["metadata"]["code_artifact"]
+    undo_prov = undo_payload["metadata"]["last_assistant_payload"]["policy_provenance"]
+    assert undo_prov["artifact_generation"] == "artifact_undo"
+    assert "Brush Script MT" not in undo_artifact["content"]
+
+
+def test_refinement_without_active_artifact_requests_context(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "make it more premium"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "active artifact" in answer
+    assert "sms connector" not in answer
+
+
+def test_revision_retry_prompt_includes_missing_requirements(monkeypatch) -> None:
+    contract = AnswerContract()
+    user_prompts: list[str] = []
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.resolve_model_for_runtime_role",
+        lambda role: RuntimeRoleModelResolution(
+            profile="balanced",
+            profile_source="env",
+            alias_used=role,
+            canonical_role="code",
+            model_tag="qwen3:14b",
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.configured_ollama_base_url_candidates",
+        lambda: ["http://127.0.0.1:11434"],
+    )
+
+    responses = [
+        {"message": {"content": "<!doctype html><html><head><style>body{background:black;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming</p></body></html>"}},
+        {"message": {"content": "<!doctype html><html><head><style>body{background:black;color:#f5e7b4;} h1{font-family:'Brush Script MT',cursive;} .button{color:#d4af37;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>"}},
+    ]
+
+    class _FakeResponse:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._payload
+
+    class _FakeClient:
+        def __init__(self, *, base_url: str, timeout):
+            self.base_url = base_url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, path: str, json: dict):
+            user_prompts.append(str(json.get("messages", [])[-1].get("content", "")))
+            return _FakeResponse(responses.pop(0))
+
+    monkeypatch.setattr("core.brain.answer_contract.httpx.AsyncClient", _FakeClient)
+
+    content, _model, _endpoint = asyncio.run(
+        contract._revise_artifact_with_local_model(
+            question="change the text on the website to script",
+            source_artifact={
+                "filename": "index.html",
+                "language": "html",
+                "previewable": True,
+                "applied": False,
+                "content": "<!doctype html><html><head><style>body{background:white;color:black;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>",
+                "_revision_mode": "style_only",
+            },
+        )
+    )
+
+    assert "Brush Script MT" in content
+    assert len(user_prompts) == 2
+    assert "Missing requirements:" in user_prompts[1]
 
 
 def test_can_you_delete_files_uses_operator_mode_boundary(

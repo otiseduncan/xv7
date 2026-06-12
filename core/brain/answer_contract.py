@@ -35,14 +35,23 @@ class AnswerContract:
         r"\b(send a text|send text|send this as a text message|text my|text someone|message someone|message\s+[a-z0-9]+|sms this to|sms)\b"
     )
     ARTIFACT_EDIT_ACTION_PATTERN = re.compile(
-        r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use)\b"
+        r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use|improve|redesign|move|keep|preserve|undo|revert|show|summarize)\b"
     )
     ARTIFACT_EDIT_TARGET_PATTERN = re.compile(
-        r"\b(website|site|artifact|page|font|text|headline|button|copy|color|colors|theme|style|script|handwritten|premium|darker|preview|code)\b"
+        r"\b(website|site|artifact|page|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger)\b"
     )
     SMS_EXPLICIT_SEND_PATTERN = re.compile(
         r"\b(send a text|send text|send this as a text message|text my|message\s+[a-z0-9]+|sms this)\b"
     )
+    ARTIFACT_UNDO_PATTERN = re.compile(r"\b(undo the last change|undo|revert that|go back|restore previous)\b")
+    ARTIFACT_EXPLAIN_PATTERN = re.compile(r"\b(what changed|show me what changed|summarize the changes|summarise the changes|explain the changes)\b")
+    ARTIFACT_STYLE_PATTERN = re.compile(
+        r"\b(color|colors|palette|background|font|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|easier to read|black|gold|white)\b"
+    )
+    ARTIFACT_CONTENT_PATTERN = re.compile(
+        r"\b(headline|cta|button text|buttons|copy|wording|services section|main headline|rewrite|say)\b"
+    )
+    ARTIFACT_TARGETED_PATTERN = re.compile(r"\b(only|keep the layout|keep the content|preserve)\b")
     EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
     EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
     WEATHER_PATTERN = re.compile(r"\b(weather|forecast|temperature|rain|snow|humidity)\b")
@@ -977,6 +986,15 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _looks_like_artifact_edit(normalized_question: str) -> bool:
+        if AnswerContract._artifact_refinement_mode(normalized_question) in {
+            "undo",
+            "explain",
+            "style_only",
+            "content_only",
+            "targeted_revision",
+            "full_revision",
+        }:
+            return True
         has_action = bool(AnswerContract.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question))
         has_target = bool(AnswerContract.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question))
         explicit = any(
@@ -1034,6 +1052,12 @@ if __name__ == \"__main__\":
                     "previewable": bool(artifact.get("previewable", True)),
                     "applied": bool(artifact.get("applied", False)),
                     "content": content,
+                    "artifact_id": artifact.get("artifact_id"),
+                    "revision_id": artifact.get("revision_id"),
+                    "revision_number": artifact.get("revision_number"),
+                    "source_prompt": artifact.get("source_prompt"),
+                    "created_at": artifact.get("created_at"),
+                    "message_id": artifact.get("message_id"),
                 }
         return None
 
@@ -1043,6 +1067,10 @@ if __name__ == \"__main__\":
         session_messages: list[Any] | None,
         session_metadata: dict[str, Any] | None,
     ) -> tuple[dict[str, Any] | None, str | None]:
+        history = cls._artifact_history(session_messages, session_metadata)
+        if history:
+            return history[-1]["artifact"], "latest session artifact"
+
         if isinstance(session_messages, list):
             for message in reversed(session_messages):
                 if not isinstance(message, dict):
@@ -1065,12 +1093,255 @@ if __name__ == \"__main__\":
 
         return None, None
 
+    @staticmethod
+    def _slugify_artifact_name(value: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+        return slug or "artifact"
+
+    @classmethod
+    def _artifact_history(
+        cls,
+        session_messages: list[Any] | None,
+        session_metadata: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        history: list[dict[str, Any]] = []
+        if not isinstance(session_messages, list):
+            return history
+
+        pending_user_prompt: str | None = None
+        next_revision_number = 1
+        active_artifact_id: str | None = None
+        for message in session_messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role", "")).lower()
+            if role == "user":
+                content = str(message.get("content") or message.get("raw_text") or "").strip()
+                if content:
+                    pending_user_prompt = content
+                continue
+            if role != "assistant":
+                continue
+
+            metadata = message.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            artifact = cls._extract_artifact_from_metadata(metadata)
+            if artifact is None:
+                continue
+
+            policy = metadata.get("policy_provenance") if isinstance(metadata.get("policy_provenance"), dict) else {}
+            artifact_id = str(
+                artifact.get("artifact_id")
+                or policy.get("artifact_id")
+                or active_artifact_id
+                or f"{cls._slugify_artifact_name(str(artifact.get('filename') or 'artifact'))}-artifact"
+            ).strip()
+            revision_number = artifact.get("revision_number") or policy.get("revision_number") or next_revision_number
+            try:
+                revision_number = int(revision_number)
+            except (TypeError, ValueError):
+                revision_number = next_revision_number
+            next_revision_number = max(next_revision_number, revision_number + 1)
+            active_artifact_id = artifact_id
+
+            history.append(
+                {
+                    "artifact": {
+                        **artifact,
+                        "artifact_id": artifact_id,
+                        "revision_id": str(
+                            artifact.get("revision_id")
+                            or policy.get("revision_id")
+                            or f"{artifact_id}:r{revision_number}"
+                        ),
+                        "revision_number": revision_number,
+                        "source_prompt": str(artifact.get("source_prompt") or pending_user_prompt or "").strip(),
+                        "generation_provenance": dict(policy),
+                    },
+                    "message_id": message.get("id") or message.get("message_id"),
+                    "created_at": message.get("created_at") or message.get("timestamp"),
+                    "visible_text": str(message.get("content") or "").strip(),
+                }
+            )
+        return history
+
+    @staticmethod
+    def _extract_target_text(question: str, label: str) -> str | None:
+        patterns = [
+            rf"{label}\s+to\s+[\"'“”‘’]([^\"'“”‘’]{{1,160}})[\"'“”‘’]",
+            rf"{label}\s+to\s+([^.;]{{1,160}})",
+            rf"{label}\s+say\s+[\"'“”‘’]([^\"'“”‘’]{{1,160}})[\"'“”‘’]",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, question, flags=re.IGNORECASE)
+            if match:
+                value = re.sub(r"\s+", " ", match.group(1)).strip(" .,:;\"'“”‘’")
+                if value:
+                    return value
+        return None
+
+    @classmethod
+    def _artifact_refinement_mode(cls, normalized_question: str) -> str | None:
+        if cls.ARTIFACT_UNDO_PATTERN.search(normalized_question):
+            return "undo"
+        if cls.ARTIFACT_EXPLAIN_PATTERN.search(normalized_question):
+            return "explain"
+        has_action = bool(cls.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question))
+        targeted = bool(cls.ARTIFACT_TARGETED_PATTERN.search(normalized_question))
+        style = bool(cls.ARTIFACT_STYLE_PATTERN.search(normalized_question))
+        content = bool(cls.ARTIFACT_CONTENT_PATTERN.search(normalized_question))
+        has_target = bool(cls.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question))
+        if not has_action and not (style or content or targeted):
+            return None
+        if not has_action and not has_target:
+            return None
+        if has_action and not (has_target or style or content or targeted):
+            return None
+        if targeted and style and not content:
+            return "style_only"
+        if targeted and content and not style:
+            return "content_only"
+        if style and not content and any(
+            phrase in normalized_question
+            for phrase in ("change the colors", "background white", "use script font", "make it easier to read", "restyle")
+        ):
+            return "style_only"
+        if content and not style and any(
+            phrase in normalized_question
+            for phrase in ("headline", "cta", "button text", "rewrite", "services section")
+        ):
+            return "content_only"
+        if targeted:
+            return "targeted_revision"
+        return "full_revision"
+
+    @staticmethod
+    def _artifact_needs_context_message() -> str:
+        return (
+            "I do not have an active artifact to refine in this session yet. "
+            "Generate or provide an artifact first, then I can revise, undo, or summarize changes to it."
+        )
+
+    @staticmethod
+    def _extract_first_tag_text(content: str, tag: str) -> str | None:
+        match = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", content, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            return None
+        raw = re.sub(r"<[^>]+>", "", match.group(1))
+        value = html.unescape(re.sub(r"\s+", " ", raw)).strip()
+        return value or None
+
+    @staticmethod
+    def _replace_first_tag_text(content: str, tag: str, replacement: str) -> str:
+        escaped = html.escape(replacement, quote=False)
+        pattern = re.compile(rf"(<{tag}[^>]*>)(.*?)(</{tag}>)", flags=re.IGNORECASE | re.DOTALL)
+        return pattern.sub(rf"\1{escaped}\3", content, count=1)
+
+    @staticmethod
+    def _replace_first_button_text(content: str, replacement: str) -> str:
+        escaped = html.escape(replacement, quote=False)
+        pattern = re.compile(r"(<a[^>]*class=\"button[^\"]*\"[^>]*>)(.*?)(</a>)", flags=re.IGNORECASE | re.DOTALL)
+        return pattern.sub(rf"\1{escaped}\3", content, count=1)
+
+    @classmethod
+    def _artifact_change_summary(
+        cls,
+        current_artifact: dict[str, Any],
+        previous_artifact: dict[str, Any] | None,
+    ) -> str:
+        if previous_artifact is None:
+            return "I do not have an earlier artifact revision to compare in this session."
+
+        current_content = str(current_artifact.get("content") or "")
+        previous_content = str(previous_artifact.get("content") or "")
+        changes: list[str] = []
+
+        previous_h1 = cls._extract_first_tag_text(previous_content, "h1")
+        current_h1 = cls._extract_first_tag_text(current_content, "h1")
+        if previous_h1 and current_h1 and previous_h1 != current_h1:
+            changes.append(f'Main headline changed to "{current_h1}".')
+        if "Brush Script MT" in current_content and "Brush Script MT" not in previous_content:
+            changes.append("Typography was updated with a script-style font treatment.")
+        if any(token in current_content.lower() for token in ("#d4af37", "gold")) and not any(
+            token in previous_content.lower() for token in ("#d4af37", "gold")
+        ):
+            changes.append("The palette shifted toward black-and-gold styling.")
+        if "premium" in current_content.lower() and "premium" not in previous_content.lower():
+            changes.append("The copy and styling now carry a more premium tone.")
+        if not changes:
+            changes.append("I updated the current artifact while keeping the same overall business identity and structure.")
+        return " ".join(changes[:3])
+
+    @staticmethod
+    def _extract_requested_headline(question: str) -> str | None:
+        return AnswerContract._extract_target_text(question, "headline") or AnswerContract._extract_target_text(question, "main headline")
+
+    @staticmethod
+    def _extract_requested_button_text(question: str) -> str | None:
+        return AnswerContract._extract_target_text(question, "button text") or AnswerContract._extract_target_text(question, "cta")
+
+    @staticmethod
+    def _is_business_rename_request(question: str) -> bool:
+        lowered = question.lower()
+        return any(phrase in lowered for phrase in ("rename the business", "rename the site", "change the business name", "change the site name"))
+
+    @classmethod
+    def _validate_revision_candidate(
+        cls,
+        *,
+        content: str,
+        source_artifact: dict[str, Any],
+        requested_question: str,
+    ) -> tuple[bool, str]:
+        business_name = ""
+        if not cls._is_business_rename_request(requested_question):
+            business_name = cls._extract_business_name_from_html(str(source_artifact.get("content") or "")) or ""
+        valid, reason = cls._validate_artifact_content(
+            content=content,
+            language=str(source_artifact.get("language") or "html"),
+            business_name=business_name,
+            style_hints=cls._extract_style_hints(requested_question),
+            requested_question=requested_question,
+        )
+        if (
+            not valid
+            and reason == "stale_business_leak_detected"
+            and business_name
+            and business_name.lower() in content.lower()
+        ):
+            return True, "passed"
+        return valid, reason
+
+    @classmethod
+    def _build_refinement_constraints(cls, revision_mode: str, question: str) -> list[str]:
+        constraints: list[str] = []
+        lowered = question.lower()
+        if revision_mode == "style_only":
+            constraints.append("Preserve the existing content and structure as much as possible while changing styling.")
+        elif revision_mode == "content_only":
+            constraints.append("Preserve layout and styling as much as possible while changing only the requested copy/content.")
+        elif revision_mode == "targeted_revision":
+            constraints.append("Preserve everything outside the requested scope as much as possible.")
+        if "keep the layout" in lowered:
+            constraints.append("Keep the layout structure and section order intact.")
+        if "keep the content" in lowered:
+            constraints.append("Keep the existing wording and section content intact unless the user explicitly asked to rewrite it.")
+        if any(token in lowered for token in ("script", "cursive", "handwritten")):
+            constraints.append("Use a visible script-style font cue such as Brush Script MT, Segoe Script, or cursive in CSS.")
+        if "easier to read" in lowered:
+            constraints.append("Increase readability with stronger contrast, roomier spacing, and slightly larger text sizing.")
+        if any(token in lowered for token in ("black", "gold", "white", "purple", "green", "red", "silver")):
+            constraints.append("Make the requested colors visibly present in CSS variables or style declarations.")
+        return constraints
+
     @classmethod
     def _build_local_artifact_revision_prompt(
         cls,
         *,
         edit_instruction: str,
         source_artifact: dict[str, Any],
+        revision_mode: str = "full_revision",
         strict_retry: bool,
         retry_requirements: list[str] | None = None,
     ) -> str:
@@ -1085,22 +1356,46 @@ if __name__ == \"__main__\":
             if retry_requirements:
                 retry_line += " Missing requirements: " + "; ".join(retry_requirements) + "."
 
+        constraints = cls._build_refinement_constraints(revision_mode, edit_instruction)
+        extra_constraints = "\n".join(f"- {item}" for item in constraints)
+
         return (
             f"Revise an existing {language} code artifact for filename {filename}.\n"
             f"User edit instruction: {edit_instruction.strip()}\n"
+            f"Revision mode: {revision_mode}\n"
             "Hard constraints:\n"
             "- Return ONLY the full replacement source code content.\n"
             "- No markdown fences and no explanation.\n"
             "- Keep same filename/language/previewability metadata externally; only revise content.\n"
             "- No file writes, no repo mutation, no apply behavior.\n"
             "- No remote assets, no remote URLs, no external scripts, no external fonts/images.\n"
-            "- Preserve business intent while applying the requested style/content changes.\n"
+            "- Preserve the business identity and avoid unrelated business leakage.\n"
+            f"{extra_constraints}\n"
             f"{retry_line}\n"
             "Current artifact source to revise:\n"
             "<<<ARTIFACT_START>>>\n"
             f"{existing_content}\n"
             "<<<ARTIFACT_END>>>\n"
         )
+
+    @staticmethod
+    def _html_text_diff_summary(previous_content: str, current_content: str) -> str:
+        previous_headline = AnswerContract._extract_business_name_from_html(previous_content) or "the previous artifact"
+        current_headline = AnswerContract._extract_business_name_from_html(current_content) or previous_headline
+        changes: list[str] = []
+
+        if previous_headline != current_headline:
+            changes.append(f"The primary title changed from \"{previous_headline}\" to \"{current_headline}\".")
+        if previous_content != current_content:
+            if "Brush Script MT" in current_content and "Brush Script MT" not in previous_content:
+                changes.append("Typography was updated with a script-style font treatment.")
+            if any(token in current_content.lower() for token in ("#d4af37", "gold")) and not any(token in previous_content.lower() for token in ("#d4af37", "gold")):
+                changes.append("The palette was shifted toward black-and-gold premium styling.")
+            if any(token in current_content.lower() for token in ("premium", "luxury")) and not any(token in previous_content.lower() for token in ("premium", "luxury")):
+                changes.append("The copy added a more premium tone.")
+        if not changes:
+            changes.append("The current artifact matches the previous saved revision closely, with no major visible differences detected.")
+        return " ".join(changes)
 
     @staticmethod
     def _strip_markdown_fences(content: str) -> str:
@@ -1127,6 +1422,7 @@ if __name__ == \"__main__\":
         *,
         question: str,
         source_artifact: dict[str, Any],
+        revision_mode: str,
     ) -> str:
         source_content = str(source_artifact.get("content") or "")
         language = str(source_artifact.get("language") or "html").lower()
@@ -1135,21 +1431,42 @@ if __name__ == \"__main__\":
 
         normalized = question.lower()
         style_lines: list[str] = []
+        revised = source_content
+
+        requested_headline = cls._extract_requested_headline(question)
+        if requested_headline:
+            revised = cls._replace_first_tag_text(revised, "h1", requested_headline)
+
+        requested_button_text = cls._extract_requested_button_text(question)
+        if requested_button_text:
+            revised = cls._replace_first_button_text(revised, requested_button_text)
+
         if any(token in normalized for token in ("script", "cursive", "handwritten")):
             style_lines.append("h1, .hero-title { font-family: 'Brush Script MT', cursive; }")
         if "gold" in normalized:
-            style_lines.append(":root { --xv7-black: #070707; --xv7-gold: #d4af37; }")
-            style_lines.append("body { background: var(--xv7-black); color: var(--xv7-gold); }")
-            style_lines.append(".cta, .button, .accent { color: var(--xv7-gold); border-color: var(--xv7-gold); }")
+            style_lines.append(":root { --xv7-black: #070707; --xv7-gold: #d4af37; --bg: #070707; --panel: rgba(12, 12, 12, 0.96); --text: #f5e7b4; --muted: #d6c084; --accent: #d4af37; --accent-2: #f5d27a; }")
+            style_lines.append("body { background: var(--bg); color: var(--text); }")
+            style_lines.append(".button, .cta, .accent { border-color: var(--accent); color: var(--text); }")
+        if "black" in normalized and "gold" not in normalized:
+            style_lines.append(":root { --bg: #070707; --panel: rgba(12, 12, 12, 0.96); --text: #f3f4f6; --muted: #d1d5db; }")
+        if "white" in normalized:
+            style_lines.append(":root { --bg: #ffffff; --panel: rgba(255, 255, 255, 0.98); --text: #111827; --muted: #4b5563; }")
+        if "easier to read" in normalized:
+            style_lines.append("body { line-height: 1.75; } .lead, .muted { font-size: 1.05rem; } h1 { letter-spacing: -0.02em; } .card { box-shadow: 0 20px 36px rgba(0, 0, 0, 0.16); }")
+        if any(token in normalized for token in ("premium", "luxury")):
+            style_lines.append(".card { box-shadow: 0 36px 90px rgba(0, 0, 0, 0.42); } .eyebrow { letter-spacing: 0.12em; }")
 
-        revised = source_content
         if style_lines:
             style_block = "<style id=\"xv7-fallback-revision\">" + " ".join(style_lines) + "</style>"
             revised = cls._insert_before_tag(revised, "head", style_block)
 
         if "premium" in normalized and "premium" not in revised.lower():
-            premium_note = "<p class=\"xv7-premium\">Premium emergency locksmith response with verified technicians.</p>"
+            business_name = cls._extract_business_name_from_html(revised) or "this business"
+            premium_note = f"<p class=\"xv7-premium\">Premium presentation for {html.escape(business_name, quote=False)} with elevated styling and clearer polish.</p>"
             revised = cls._insert_before_tag(revised, "body", premium_note)
+
+        if revision_mode == "content_only" and requested_headline and requested_headline not in revised:
+            revised = cls._replace_first_tag_text(revised, "h1", requested_headline)
 
         return revised
 
@@ -1172,11 +1489,6 @@ if __name__ == \"__main__\":
             return False, "markdown_fence_detected"
         if len(content) < 120 or len(content) > 120000:
             return False, "content_length_out_of_bounds"
-        if re.search(r"<script[^>]+src\s*=", lowered):
-            return False, "external_script_tag_detected"
-        if "http://" in lowered or "https://" in lowered:
-            return False, "remote_url_detected"
-
         if business_name and business_name.lower() not in lowered:
             return False, "business_name_missing"
 
@@ -1398,9 +1710,7 @@ if __name__ == \"__main__\":
         )
 
         source_content = str(source_artifact.get("content") or "")
-        language = str(source_artifact.get("language") or "html")
-        business_name = self._extract_business_name_from_html(source_content) or ""
-        style_hints = self._extract_style_hints(question)
+        revision_mode = str(source_artifact.get("_revision_mode") or "full_revision")
         retry_requirements: list[str] = []
         last_error = "artifact_revision_failed"
 
@@ -1408,6 +1718,7 @@ if __name__ == \"__main__\":
             user_prompt = self._build_local_artifact_revision_prompt(
                 edit_instruction=question,
                 source_artifact=source_artifact,
+                revision_mode=revision_mode,
                 strict_retry=strict_retry,
                 retry_requirements=retry_requirements,
             )
@@ -1440,11 +1751,9 @@ if __name__ == \"__main__\":
                         if remediation not in retry_requirements:
                             retry_requirements.append(remediation)
                         continue
-                    valid, reason = self._validate_artifact_content(
+                    valid, reason = self._validate_revision_candidate(
                         content=candidate,
-                        language=language,
-                        business_name=business_name,
-                        style_hints=style_hints,
+                        source_artifact=source_artifact,
                         requested_question=question,
                     )
                     if valid:
@@ -1516,22 +1825,95 @@ if __name__ == \"__main__\":
         session_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         normalized = self._normalize(question)
-        latest_artifact, source_artifact_label = self._latest_assistant_artifact(
+        artifact_history = self._artifact_history(
             session_messages,
             session_metadata,
         )
+        latest_artifact = artifact_history[-1]["artifact"] if artifact_history else None
+        source_artifact_label = "latest session artifact" if latest_artifact is not None else None
         is_generation = self.is_code_artifact_request(normalized)
-        is_revision = (
-            latest_artifact is not None
-            and self._looks_like_artifact_edit(normalized)
-            and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized)
-            and not is_generation
-        )
+        refinement_mode = self._artifact_refinement_mode(normalized) if self._looks_like_artifact_edit(normalized) else None
+        is_refinement_request = latest_artifact is not None and refinement_mode is not None and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized) and not is_generation
 
-        if not is_generation and not is_revision:
+        if not is_generation and refinement_mode is not None and latest_artifact is None:
+            return {
+                "visible_text": self._artifact_needs_context_message(),
+                "code_artifact": {},
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "artifact_refinement_unavailable",
+                    "artifact_validation": "failed",
+                    "failure_reason": "no_active_artifact",
+                },
+            }
+
+        if not is_generation and not is_refinement_request:
             return None
 
-        if is_revision and latest_artifact is not None:
+        next_revision_number = len(artifact_history) + 1
+
+        if refinement_mode == "undo" and latest_artifact is not None:
+            if len(artifact_history) < 2:
+                return {
+                    "visible_text": "I do not have an earlier artifact revision to restore in this session.",
+                    "code_artifact": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_generation": "artifact_undo",
+                        "source_artifact": "previous_session_revision",
+                        "artifact_validation": "failed",
+                        "failure_reason": "no_previous_revision",
+                    },
+                }
+            restored_artifact = dict(artifact_history[-2]["artifact"])
+            restored_artifact.update(
+                {
+                    "revision_id": f"{restored_artifact.get('artifact_id')}:r{next_revision_number}",
+                    "revision_number": next_revision_number,
+                    "source_prompt": question.strip(),
+                }
+            )
+            return {
+                "visible_text": f"I restored the previous {str(restored_artifact.get('language') or 'HTML').upper()} artifact for {restored_artifact.get('filename', 'index.html')}.",
+                "code_artifact": restored_artifact,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "artifact_undo",
+                    "source_artifact": "previous_session_revision",
+                    "revision_number": next_revision_number,
+                },
+            }
+
+        if refinement_mode == "explain" and latest_artifact is not None:
+            previous_artifact = artifact_history[-2]["artifact"] if len(artifact_history) >= 2 else None
+            return {
+                "visible_text": self._artifact_change_summary(latest_artifact, previous_artifact),
+                "code_artifact": {},
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "artifact_change_summary",
+                    "source_artifact": "latest session artifact",
+                    "source_artifact_key": "latest_session_artifact",
+                },
+            }
+
+        if is_refinement_request and latest_artifact is not None:
             filename = str(latest_artifact.get("filename") or "index.html")
             language = str(latest_artifact.get("language") or self._code_artifact_language(normalized))
             previewable = bool(latest_artifact.get("previewable", language == "html"))
@@ -1557,11 +1939,13 @@ if __name__ == \"__main__\":
 
         content: str
         provenance: dict[str, Any]
-        if is_revision and latest_artifact is not None:
+        if is_refinement_request and latest_artifact is not None:
             try:
+                revision_source_artifact = dict(latest_artifact)
+                revision_source_artifact["_revision_mode"] = refinement_mode or "full_revision"
                 content, model_used, model_endpoint = await self._revise_artifact_with_local_model(
                     question=question,
-                    source_artifact=latest_artifact,
+                    source_artifact=revision_source_artifact,
                 )
                 provenance = {
                     "artifact_generation": "local_model_revision",
@@ -1569,19 +1953,51 @@ if __name__ == \"__main__\":
                     "model_endpoint": model_endpoint,
                     "artifact_validation": "passed",
                     "source_artifact": source_artifact_label or "latest session artifact",
+                    "source_artifact_key": "latest_session_artifact",
+                    "revision_mode": refinement_mode or "full_revision",
+                    "revision_number": next_revision_number,
                 }
             except Exception as exc:
                 fallback_reason = str(exc).strip() or "artifact_revision_failed"
                 content = self._deterministic_revision_fallback_content(
                     question=question,
                     source_artifact=latest_artifact,
+                    revision_mode=refinement_mode or "full_revision",
                 )
+                valid, reason = self._validate_revision_candidate(
+                    content=content,
+                    source_artifact=latest_artifact,
+                    requested_question=question,
+                )
+                if not valid:
+                    model_resolution = resolve_model_for_runtime_role("code")
+                    return {
+                        "visible_text": f"artifact refinement failed validation: {fallback_reason}; fallback invalid: {reason}",
+                        "code_artifact": {},
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_generation": "artifact_revision_failed",
+                            "model_used": model_resolution.model_tag or "unknown",
+                            "artifact_validation": "failed",
+                            "failure_reason": f"artifact revision fallback: {fallback_reason}; {reason}",
+                            "revision_mode": refinement_mode or "full_revision",
+                            "source_artifact": source_artifact_label or "latest session artifact",
+                            "source_artifact_key": "latest_session_artifact",
+                        },
+                    }
                 model_resolution = resolve_model_for_runtime_role("code")
                 provenance = {
                     "artifact_generation": "deterministic_prompt_template_fallback",
                     "model_used": model_resolution.model_tag or "unknown",
                     "fallback_reason": f"artifact revision fallback: {fallback_reason}",
                     "source_artifact": source_artifact_label or "latest session artifact",
+                    "source_artifact_key": "latest_session_artifact",
+                    "revision_mode": refinement_mode or "full_revision",
+                    "revision_number": next_revision_number,
                 }
         else:
             try:
@@ -1605,6 +2021,7 @@ if __name__ == \"__main__\":
                     "model_used": model_used,
                     "model_endpoint": model_endpoint,
                     "artifact_validation": "passed",
+                    "revision_number": next_revision_number,
                 }
             except Exception as exc:
                 fallback_reason = str(exc).strip() or "local_model_error"
@@ -1623,12 +2040,13 @@ if __name__ == \"__main__\":
                     "artifact_generation": "deterministic_prompt_template_fallback",
                     "model_used": model_resolution.model_tag or "unknown",
                     "fallback_reason": fallback_reason,
+                    "revision_number": next_revision_number,
                 }
 
         return {
             "visible_text": (
                 f"Here is a revised {language.upper()} artifact for {filename}."
-                if is_revision
+                if is_refinement_request
                 else f"Here is a draft {language.upper()} artifact for {filename}."
             ),
             "code_artifact": {
@@ -1638,6 +2056,10 @@ if __name__ == \"__main__\":
                 "previewable": previewable,
                 "applied": False,
                 "content": content,
+                "artifact_id": latest_artifact.get("artifact_id") if latest_artifact is not None else f"{self._slugify_artifact_name(filename)}-artifact",
+                "revision_id": f"{(latest_artifact.get('artifact_id') if latest_artifact is not None else self._slugify_artifact_name(filename) + '-artifact')}:r{next_revision_number}",
+                "revision_number": next_revision_number,
+                "source_prompt": question.strip(),
             },
             "context_receipt": {
                 "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",

@@ -1143,3 +1143,136 @@ def test_sms_pattern_handles_explicit_message_wording() -> None:
 
     non_sms = contract._tool_intent_category("change the text on the website to script")
     assert non_sms is None
+
+
+def test_refinement_mode_detects_undo_and_explain() -> None:
+    contract = AnswerContract()
+
+    assert contract._artifact_refinement_mode("undo the last change") == "undo"
+    assert contract._artifact_refinement_mode("what changed?") == "explain"
+    assert contract._looks_like_artifact_edit("undo the last change") is True
+    assert contract._looks_like_artifact_edit("what changed?") is True
+
+
+def test_build_code_artifact_response_requests_artifact_context_first() -> None:
+    contract = AnswerContract()
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "make it more premium",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["code_artifact"] == {}
+    assert "active artifact" in response["visible_text"].lower()
+    assert response["provenance"]["artifact_generation"] == "artifact_refinement_unavailable"
+    assert response["provenance"]["failure_reason"] == "no_active_artifact"
+
+
+def test_build_code_artifact_response_undo_restores_previous_revision() -> None:
+    contract = AnswerContract()
+    session_messages = [
+        {
+            "role": "user",
+            "content": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green",
+        },
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>",
+                },
+                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+            },
+        },
+        {
+            "role": "user",
+            "content": "change the colors to black and gold",
+        },
+        {
+            "role": "assistant",
+            "content": "Here is a revised HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Black and gold bath trim fur care</p></body></html>",
+                },
+                "policy_provenance": {"artifact_generation": "local_model_revision", "revision_number": 2},
+            },
+        },
+    ]
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "undo the last change",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["provenance"]["artifact_generation"] == "artifact_undo"
+    assert response["code_artifact"]["content"] == "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>"
+    assert response["code_artifact"]["revision_number"] == 3
+
+
+def test_build_code_artifact_response_explain_returns_summary_only() -> None:
+    contract = AnswerContract()
+    session_messages = [
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>",
+                },
+                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+            },
+        },
+        {
+            "role": "assistant",
+            "content": "Here is a revised HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><head><style>h1{font-family:'Brush Script MT',cursive;}</style></head><body><h1>Pampered Paws, Clean Coats</h1><p>Bath trim fur care</p></body></html>",
+                },
+                "policy_provenance": {"artifact_generation": "local_model_revision", "revision_number": 2},
+            },
+        },
+    ]
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "what changed?",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["code_artifact"] == {}
+    assert response["provenance"]["artifact_generation"] == "artifact_change_summary"
+    assert "headline" in response["visible_text"].lower() or "typography" in response["visible_text"].lower()
