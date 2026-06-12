@@ -2962,6 +2962,7 @@ describe('ModelProfileControl', () => {
 
     const panel = document.querySelector('.artifact-patch-proposal');
     expect(panel).toBeTruthy();
+  expect(panel?.querySelector('.artifact-patch-proposal-header strong')?.textContent).toBe('Patch proposal');
     expect(panel?.textContent || '').toContain('generated-sites/soggy-doggy/index.html');
     expect(panel?.textContent || '').toContain('draft only / not applied');
     expect(panel?.textContent || '').toContain('validation: passed');
@@ -3011,12 +3012,151 @@ describe('ModelProfileControl', () => {
 
     const panel = document.querySelector('.artifact-patch-proposal');
     expect(panel).toBeTruthy();
+    expect(panel?.querySelector('.artifact-patch-proposal-header strong')?.textContent).toBe('Post-apply verification');
     expect(panel?.textContent || '').toContain('post-apply verify: passed');
     expect(panel?.textContent || '').toContain('targeted validation: passed');
     expect(panel?.textContent || '').toContain('preview: /generated-sites/soggy-doggy/index.html');
     expect(panel?.textContent || '').toContain('verify file_exists: passed');
     expect(panel?.textContent || '').toContain('targeted html_inline_css: passed');
     expect(panel?.querySelector('.artifact-patch-apply-button')).toBeNull();
+  });
+
+  it('renders preview ready, targeted validation, and full-test guard post-apply titles', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Preview path is /generated-sites/tony-tavern/index.html. If the local app is running, open that route in your browser to view generated-sites/tony-tavern/index.html.',
+      null,
+      {
+        artifact_patch_proposal: {
+          type: 'artifact_patch_proposal',
+          proposal_id: 'patch-125',
+          source_artifact_id: 'tony-tavern-artifact:r1',
+          filename: 'index.html',
+          target_path: 'generated-sites/tony-tavern/index.html',
+          preview_path: '/generated-sites/tony-tavern/index.html',
+          operation: 'update',
+          language: 'html',
+          applied: true,
+          requires_confirmation: true,
+          content: '<!doctype html><html><head><style>body{background:black}</style></head><body><h1>Tony Tavern</h1></body></html>',
+          diff: '--- a/generated-sites/tony-tavern/index.html\n+++ b/generated-sites/tony-tavern/index.html\n@@\n+<!doctype html>',
+          validation: {
+            status: 'passed',
+            checks: [{ name: 'target_path_inside_repo', status: 'passed' }],
+          },
+          post_apply_verification: {
+            status: '',
+            checks: [],
+          },
+          targeted_validation: {
+            status: '',
+            checks: [],
+          },
+        },
+        provenance: {
+          artifact_patch: 'post_apply_preview',
+          applied: true,
+          requires_confirmation: true,
+          target_path: 'generated-sites/tony-tavern/index.html',
+          preview_path: '/generated-sites/tony-tavern/index.html',
+          commit_created: false,
+          push_performed: false,
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    ui.appendMessageCard(
+      'assistant',
+      'Targeted validation passed for generated-sites/tony-tavern/index.html. Only focused file checks were run; no broad test suites were executed.',
+      null,
+      {
+        artifact_patch_proposal: {
+          type: 'artifact_patch_proposal',
+          proposal_id: 'patch-126',
+          source_artifact_id: 'tony-tavern-artifact:r2',
+          filename: 'index.html',
+          target_path: 'generated-sites/tony-tavern/index.html',
+          preview_path: '/generated-sites/tony-tavern/index.html',
+          operation: 'update',
+          language: 'html',
+          applied: true,
+          requires_confirmation: true,
+          content: '<!doctype html><html><head><style>body{background:black}</style></head><body><h1>Tony Tavern</h1></body></html>',
+          diff: '--- a/generated-sites/tony-tavern/index.html\n+++ b/generated-sites/tony-tavern/index.html\n@@\n+<!doctype html>',
+          validation: {
+            status: 'passed',
+            checks: [{ name: 'target_path_inside_repo', status: 'passed' }],
+          },
+          targeted_validation: {
+            status: 'passed',
+            checks: [{ name: 'html_inline_css', status: 'passed' }],
+          },
+        },
+        provenance: {
+          artifact_patch: 'post_apply_targeted_validation',
+          applied: true,
+          requires_confirmation: true,
+          target_path: 'generated-sites/tony-tavern/index.html',
+          preview_path: '/generated-sites/tony-tavern/index.html',
+          targeted_validation: 'passed',
+          commit_created: false,
+          push_performed: false,
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    ui.appendMessageCard(
+      'assistant',
+      'I did not run full tests automatically. I can only run the focused checks for the applied file in this lane. If you want full-suite validation, ask me explicitly and I will request confirmation before running it.',
+      null,
+      {
+        artifact_patch_proposal: {
+          type: 'artifact_patch_proposal',
+          proposal_id: 'patch-127',
+          source_artifact_id: 'tony-tavern-artifact:r3',
+          filename: 'index.html',
+          target_path: 'generated-sites/tony-tavern/index.html',
+          operation: 'update',
+          language: 'html',
+          applied: true,
+          requires_confirmation: true,
+          content: '<!doctype html><html><head><style>body{background:black}</style></head><body><h1>Tony Tavern</h1></body></html>',
+          diff: '--- a/generated-sites/tony-tavern/index.html\n+++ b/generated-sites/tony-tavern/index.html\n@@\n+<!doctype html>',
+          validation: {
+            status: 'passed',
+            checks: [{ name: 'target_path_inside_repo', status: 'passed' }],
+          },
+        },
+        provenance: {
+          artifact_patch: 'full_test_guard',
+          applied: true,
+          requires_confirmation: true,
+          target_path: 'generated-sites/tony-tavern/index.html',
+          tests_run: false,
+          commit_created: false,
+          push_performed: false,
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const panels = [...document.querySelectorAll('.artifact-patch-proposal')];
+    const previewPanel = panels[0];
+    const targetedPanel = panels[1];
+    const guardPanel = panels[2];
+
+    expect(previewPanel?.querySelector('.artifact-patch-proposal-header strong')?.textContent).toBe('Preview ready');
+    expect(previewPanel?.querySelector('.artifact-patch-apply-button')).toBeNull();
+    expect(targetedPanel?.querySelector('.artifact-patch-proposal-header strong')?.textContent).toBe('Targeted validation');
+    expect(targetedPanel?.querySelector('.artifact-patch-apply-button')).toBeNull();
+    expect(guardPanel?.querySelector('.artifact-patch-proposal-header strong')?.textContent).toBe('Full-test guard');
+    expect(guardPanel?.querySelector('.artifact-patch-apply-button')).toBeNull();
   });
 
   it('renders NOW/REVIEW/HISTORY and LIBRARY relevance filters with lifecycle actions', async () => {

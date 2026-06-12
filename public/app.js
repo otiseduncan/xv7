@@ -1359,7 +1359,7 @@ class Xv7UI {
     if (role === 'assistant') {
       copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
       this.appendCodeArtifacts(article, messageMetadata);
-      this.appendArtifactPatchProposal(article, patchProposal);
+      this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
       this.appendWhyThisAnswerDrawer(article, messageMetadata);
       if (messageMetadata && typeof messageMetadata === 'object') {
         this.latestAssistantMeta = messageMetadata;
@@ -3375,7 +3375,32 @@ class Xv7UI {
     };
   }
 
-  appendArtifactPatchProposal(article, proposal) {
+  resolveArtifactPatchProposalTitle(proposal, content = '', messageMetadata = null) {
+    if (!proposal || typeof proposal !== 'object') return 'Patch proposal';
+    if (proposal.applied !== true) return 'Patch proposal';
+
+    const provenance = messageMetadata && typeof messageMetadata === 'object' && messageMetadata.provenance && typeof messageMetadata.provenance === 'object'
+      ? messageMetadata.provenance
+      : {};
+    const visibleText = String(content || '').toLowerCase();
+    const artifactPatch = String(provenance.artifact_patch || '').toLowerCase();
+
+    if (artifactPatch === 'full_test_guard' || visibleText.includes('full-suite validation')) {
+      return 'Full-test guard';
+    }
+    if (artifactPatch === 'post_apply_targeted_validation' || visibleText.startsWith('targeted validation')) {
+      return 'Targeted validation';
+    }
+    if (artifactPatch === 'post_apply_preview' || visibleText.startsWith('preview path is')) {
+      return 'Preview ready';
+    }
+    if (artifactPatch === 'post_apply_verified' || visibleText.startsWith('post-apply verification')) {
+      return 'Post-apply verification';
+    }
+    return 'Patch applied';
+  }
+
+  appendArtifactPatchProposal(article, proposal, content = '', messageMetadata = null) {
     if (!proposal || typeof proposal !== 'object') return;
 
     const status = String(proposal.validation?.status || 'failed').toLowerCase();
@@ -3386,8 +3411,9 @@ class Xv7UI {
 
     const header = document.createElement('div');
     header.className = 'artifact-patch-proposal-header';
+    const title = this.resolveArtifactPatchProposalTitle(proposal, content, messageMetadata);
     header.innerHTML = `
-      <strong>Patch proposal</strong>
+      <strong>${title}</strong>
       <span class="artifact-patch-chip ${proposal.applied ? 'is-applied' : 'is-draft'}">${proposal.applied ? 'applied' : 'draft only / not applied'}</span>
       <span class="artifact-patch-chip ${status === 'passed' ? 'is-valid' : 'is-invalid'}">validation: ${status}</span>
     `;
