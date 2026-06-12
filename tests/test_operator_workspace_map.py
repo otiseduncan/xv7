@@ -25,11 +25,20 @@ def _make_workspace(root: Path) -> None:
     (root / "public").mkdir()
     (root / "public" / "index.html").write_text("<div></div>", encoding="utf-8")
     (root / "public" / "app.js").write_text("console.log('xv7')", encoding="utf-8")
-    (root / "public" / "app.test.js").write_text("test('ok', () => {})", encoding="utf-8")
+    (root / "public" / "app.test.js").write_text(
+        "test('ok', () => {})",
+        encoding="utf-8",
+    )
     (root / "tests").mkdir()
-    (root / "tests" / "test_sample.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    (root / "tests" / "test_sample.py").write_text(
+        "def test_ok():\n    assert True\n",
+        encoding="utf-8",
+    )
     (root / "docs").mkdir()
-    (root / "docs" / "XODUZ_ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    (root / "docs" / "XODUZ_ROADMAP.md").write_text(
+        "# Roadmap\n",
+        encoding="utf-8",
+    )
     (root / "docs" / "CODE_LANE_INDEX.md").write_text("# CODE\n", encoding="utf-8")
     (root / "README.md").write_text("# XV7\n", encoding="utf-8")
     (root / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
@@ -78,10 +87,13 @@ def test_workspace_map_is_available_through_registry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _make_workspace(tmp_path)
-    monkeypatch.setattr(
-        "core.operator.actions.workspace._run_git",
-        lambda _root, _args: _Proc(0, "main\n") if "rev-parse" in _args else _Proc(0, ""),
-    )
+
+    def _fake_run_git(_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+        if "rev-parse" in args:
+            return _Proc(0, "main\n")  # type: ignore[return-value]
+        return _Proc(0, "")  # type: ignore[return-value]
+
+    monkeypatch.setattr("core.operator.actions.workspace._run_git", _fake_run_git)
 
     result = run_action(
         "workspace_map",
