@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import pytest
 
-import core.operator.actions.diff_report as diff_report_module
 from core.operator.actions.diff_report import diff_report
+
+diff_report_module = importlib.import_module("core.operator.actions.diff_report")
 
 
 class FakeCompletedProcess:
@@ -63,7 +65,10 @@ def test_diff_report_summarizes_changed_files(
                 " 3 files changed, 5 insertions(+)\n"
             ),
         ),
-        "shortstat": FakeCompletedProcess(0, stdout="3 files changed, 5 insertions(+)",),
+        "shortstat": FakeCompletedProcess(
+            0,
+            stdout="3 files changed, 5 insertions(+)",
+        ),
     }
 
     def fake_run(_repo_root: Path, command: list[str]) -> FakeCompletedProcess:
