@@ -1516,3 +1516,233 @@ def test_normal_preference_prompts_still_save_with_unique_memory_ids(
     assert len(second_receipts) == len(set(second_receipts))
 
     assert first_id != second_id
+
+
+def test_patch_proposal_flow_from_active_artifact(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    _use_fake_local_model(monkeypatch)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert gen.status_code == 200
+
+    patch = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert patch.status_code == 200
+    payload = patch.json()
+    proposal = payload["messages"][-1]["metadata"].get("artifact_patch_proposal", {})
+    assert proposal.get("type") == "artifact_patch_proposal"
+    assert proposal.get("target_path") == "generated-sites/soggy-doggy/index.html"
+    assert proposal.get("applied") is False
+    assert proposal.get("requires_confirmation") is True
+    assert proposal.get("validation", {}).get("status") == "passed"
+    assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
+
+
+def test_generate_patch_without_artifact_returns_clear_message(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert response.status_code == 200
+    answer = response.json()["messages"][-1]["content"]
+    assert answer == "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first."
+
+
+def test_apply_patch_requires_pending_proposal_in_session(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "apply patch"},
+    )
+    assert response.status_code == 200
+    assert response.json()["messages"][-1]["content"] == "I do not have a pending patch proposal to apply."
+
+
+def test_apply_patch_writes_file_after_explicit_approval(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    _use_fake_local_model(monkeypatch)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert gen.status_code == 200
+
+    proposal_resp = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert proposal_resp.status_code == 200
+    proposal = proposal_resp.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]
+    target = tmp_path / str(proposal.get("target_path"))
+    assert not target.exists()
+
+    apply_resp = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "apply patch"},
+    )
+    assert apply_resp.status_code == 200
+    apply_payload = apply_resp.json()
+    answer = apply_payload["messages"][-1]["content"].lower()
+    assert "file written locally" in answer
+    assert "no commit was created" in answer
+    assert "no push was performed" in answer
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == proposal.get("content")
+
+
+def test_failed_patch_validation_is_not_applied(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    _use_fake_local_model(monkeypatch)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    def _fake_failed_proposal(_cls, *, artifact: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "artifact_patch_proposal",
+            "proposal_id": "patch-failed-1",
+            "source_artifact_id": str(artifact.get("revision_id") or "artifact:r1"),
+            "filename": "index.html",
+            "target_path": "generated-sites/soggy-doggy/index.html",
+            "operation": "create",
+            "language": "html",
+            "applied": False,
+            "requires_confirmation": True,
+            "content": "<html><body>invalid</body></html>",
+            "diff": "--- /dev/null\n+++ b/generated-sites/soggy-doggy/index.html\n",
+            "validation": {
+                "status": "failed",
+                "checks": [{"name": "html_inline_css", "status": "failed", "detail": "missing inline css"}],
+                "failures": ["html_inline_css: missing inline css"],
+            },
+        }
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._build_patch_proposal_from_artifact",
+        classmethod(_fake_failed_proposal),
+    )
+
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert gen.status_code == 200
+
+    proposal_resp = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert proposal_resp.status_code == 200
+    proposal = proposal_resp.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]
+    assert proposal.get("validation", {}).get("status") == "failed"
+
+    apply_resp = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "apply patch"},
+    )
+    assert apply_resp.status_code == 200
+    answer = apply_resp.json()["messages"][-1]["content"].lower()
+    assert "cannot apply this patch because validation failed" in answer
+    assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
+
+
+def test_natural_language_build_prompt_does_not_mutate_repo(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "build me a website for Soggy Doggy"},
+    )
+    assert response.status_code == 200
+    assert not (tmp_path / "generated-sites").exists()
+
+
+def test_refinement_still_works_after_patch_proposal(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    _use_fake_local_model(monkeypatch)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert gen.status_code == 200
+
+    first_patch = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert first_patch.status_code == 200
+    first_content = first_patch.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]["content"]
+
+    refine = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the colors to black and gold and make it more premium"},
+    )
+    assert refine.status_code == 200
+
+    second_patch = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert second_patch.status_code == 200
+    second_content = second_patch.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]["content"]
+    assert second_content != first_content
+
+
+def test_sms_refusal_still_preserved_with_patch_lane(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    _use_fake_local_model(monkeypatch)
+    session_id = _new_session(client)
+
+    _ = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    _ = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+
+    sms = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "send a text to John"},
+    )
+    assert sms.status_code == 200
+    answer = sms.json()["messages"][-1]["content"].lower()
+    assert "sms connector" in answer

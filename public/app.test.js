@@ -2875,6 +2875,51 @@ describe('ModelProfileControl', () => {
     expect(drawer?.textContent || '').toContain('Focus');
   });
 
+  it('renders artifact patch proposal with diff and draft/apply controls', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'I prepared a patch proposal from the active artifact. No files were changed.',
+      null,
+      {
+        artifact_patch_proposal: {
+          type: 'artifact_patch_proposal',
+          proposal_id: 'patch-123',
+          source_artifact_id: 'soggy-doggy-artifact:r2',
+          filename: 'index.html',
+          target_path: 'generated-sites/soggy-doggy/index.html',
+          operation: 'create',
+          language: 'html',
+          applied: false,
+          requires_confirmation: true,
+          content: '<!doctype html><html><head><style>body{background:white}</style></head><body><h1>Soggy Doggy</h1></body></html>',
+          diff: '--- /dev/null\n+++ b/generated-sites/soggy-doggy/index.html\n@@\n+<!doctype html>',
+          validation: {
+            status: 'passed',
+            checks: [{ name: 'target_path_inside_repo', status: 'passed' }],
+          },
+        },
+        policy_provenance: {
+          artifact_patch: 'proposed',
+          target_path: 'generated-sites/soggy-doggy/index.html',
+          validation: 'passed',
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const panel = document.querySelector('.artifact-patch-proposal');
+    expect(panel).toBeTruthy();
+    expect(panel?.textContent || '').toContain('generated-sites/soggy-doggy/index.html');
+    expect(panel?.textContent || '').toContain('draft only / not applied');
+    expect(panel?.textContent || '').toContain('validation: passed');
+    expect((panel?.querySelector('.artifact-patch-diff')?.textContent || '')).toContain('+++ b/generated-sites/soggy-doggy/index.html');
+    expect(panel?.querySelector('.artifact-patch-apply-button')?.textContent).toBe('Apply Patch');
+  });
+
   it('renders NOW/REVIEW/HISTORY and LIBRARY relevance filters with lifecycle actions', async () => {
     global.fetch = createRuntimeFetchMock();
     new Xv7UI();

@@ -1276,3 +1276,213 @@ def test_build_code_artifact_response_explain_returns_summary_only() -> None:
     assert response["code_artifact"] == {}
     assert response["provenance"]["artifact_generation"] == "artifact_change_summary"
     assert "headline" in response["visible_text"].lower() or "typography" in response["visible_text"].lower()
+
+
+def _artifact_session_messages(*, filename: str = "index.html", content: str) -> list[dict[str, object]]:
+    return [
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": filename,
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": content,
+                    "artifact_id": "soggy-doggy-artifact",
+                    "revision_id": "soggy-doggy-artifact:r1",
+                    "revision_number": 1,
+                },
+                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+            },
+        }
+    ]
+
+
+def test_patch_proposal_from_active_artifact_does_not_write_file(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_messages = _artifact_session_messages(
+        content="<!doctype html><html><head><style>body{background:white;color:#111}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></body></html>",
+    )
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    proposal = response["artifact_patch_proposal"]
+    assert proposal["type"] == "artifact_patch_proposal"
+    assert proposal["target_path"] == "generated-sites/soggy-doggy/index.html"
+    assert proposal["applied"] is False
+    assert proposal["requires_confirmation"] is True
+    assert proposal["validation"]["status"] == "passed"
+    assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
+
+
+def test_patch_proposal_without_active_artifact_returns_clear_message() -> None:
+    contract = AnswerContract()
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["artifact_patch_proposal"] == {}
+    assert response["visible_text"] == "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first."
+
+
+def test_patch_proposal_sanitizes_malicious_filename(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_messages = _artifact_session_messages(
+        filename="../../evil.html",
+        content="<!doctype html><html><head><style>body{background:white}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></body></html>",
+    )
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    proposal = response["artifact_patch_proposal"]
+    assert proposal["target_path"].startswith("generated-sites/")
+    assert ".." not in proposal["target_path"]
+    assert proposal["target_path"].endswith("/evil.html")
+
+
+def test_patch_proposal_existing_target_sets_update_operation(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    target = tmp_path / "generated-sites" / "soggy-doggy" / "index.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("<!doctype html><html><body><h1>Old</h1></body></html>", encoding="utf-8")
+
+    session_messages = _artifact_session_messages(
+        content="<!doctype html><html><head><style>body{background:black;color:gold}</style></head><body><h1>Soggy Doggy</h1><p>Premium grooming.</p></body></html>",
+    )
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "show me the diff",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    proposal = response["artifact_patch_proposal"]
+    assert proposal["operation"] == "update"
+    assert "--- a/generated-sites/soggy-doggy/index.html" in proposal["diff"]
+    assert "+++ b/generated-sites/soggy-doggy/index.html" in proposal["diff"]
+    assert target.read_text(encoding="utf-8") == "<!doctype html><html><body><h1>Old</h1></body></html>"
+
+
+def test_apply_patch_requires_pending_proposal() -> None:
+    contract = AnswerContract()
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply patch",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["visible_text"] == "I do not have a pending patch proposal to apply."
+
+
+def test_apply_patch_writes_file_only_after_explicit_apply(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_messages = _artifact_session_messages(
+        content="<!doctype html><html><head><style>body{background:white;color:#111}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></body></html>",
+    )
+
+    proposal_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+    proposal = proposal_response["artifact_patch_proposal"]
+    target = tmp_path / proposal["target_path"]
+    assert not target.exists()
+
+    apply_messages = session_messages + [
+        {
+            "role": "assistant",
+            "content": "I prepared a patch proposal from the active artifact. No files were changed.",
+            "metadata": {
+                "artifact_patch_proposal": proposal,
+                "policy_provenance": {"artifact_patch": "proposed", "applied": False},
+            },
+        }
+    ]
+    apply_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply patch",
+            session_messages=apply_messages,
+            session_metadata={},
+        )
+    )
+
+    assert apply_response is not None
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == proposal["content"]
+    assert "No commit was created" in apply_response["visible_text"]
+    assert "no push was performed" in apply_response["visible_text"]
+
+
+def test_failed_validation_patch_cannot_be_applied(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    invalid_proposal = {
+        "type": "artifact_patch_proposal",
+        "proposal_id": "patch-invalid",
+        "source_artifact_id": "artifact:r1",
+        "filename": "index.html",
+        "target_path": "generated-sites/soggy-doggy/index.html",
+        "operation": "create",
+        "language": "html",
+        "applied": False,
+        "requires_confirmation": True,
+        "content": "<html><body>bad</body></html>",
+        "diff": "--- /dev/null\n+++ b/generated-sites/soggy-doggy/index.html\n",
+        "validation": {
+            "status": "failed",
+            "checks": [{"name": "html_inline_css", "status": "failed", "detail": "missing"}],
+            "failures": ["html_inline_css: missing"],
+        },
+    }
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply the patch",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "Patch proposal draft.",
+                    "metadata": {"artifact_patch_proposal": invalid_proposal},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert "validation failed" in response["visible_text"].lower()
+    assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()

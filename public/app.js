@@ -1157,6 +1157,13 @@ class Xv7UI {
     }
   }
 
+  async sendQuickPrompt(text) {
+    const value = String(text || '').trim();
+    if (!value) return;
+    this.els.promptInput.value = value;
+    await this.sendMessage();
+  }
+
   async ensureSession() {
     if (this.currentSessionId) return;
     const sessionData = await this.fetchJson('/api/sessions', {
@@ -1347,10 +1354,12 @@ class Xv7UI {
     };
 
     const hasCodeArtifacts = role === 'assistant' && this.collectCodeArtifacts(messageMetadata).length > 0;
+    const patchProposal = role === 'assistant' ? this.collectArtifactPatchProposal(messageMetadata) : null;
 
     if (role === 'assistant') {
       copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
       this.appendCodeArtifacts(article, messageMetadata);
+      this.appendArtifactPatchProposal(article, patchProposal);
       this.appendWhyThisAnswerDrawer(article, messageMetadata);
       if (messageMetadata && typeof messageMetadata === 'object') {
         this.latestAssistantMeta = messageMetadata;
@@ -1375,7 +1384,7 @@ class Xv7UI {
     }
 
     this.els.chatTimeline.append(article);
-    if (hasCodeArtifacts) {
+    if (hasCodeArtifacts || patchProposal) {
       if (typeof article.scrollIntoView === 'function') {
         article.scrollIntoView({ block: 'start', inline: 'nearest' });
       }
@@ -1559,6 +1568,12 @@ class Xv7UI {
         <button type="button" class="code-artifact-footer-link" title="Patch generation is not enabled yet.">generate patch</button>
       </p>
     `;
+    const generatePatchButton = footer.querySelector('.code-artifact-footer-link');
+    if (generatePatchButton) {
+      generatePatchButton.addEventListener('click', () => {
+        void this.sendQuickPrompt('generate patch');
+      });
+    }
 
     const collapseBody = () => {
       const collapsed = card.classList.toggle('is-collapsed');
@@ -2134,6 +2149,9 @@ class Xv7UI {
     const revisionMode = policy.revision_mode || meta.revision_mode || '-';
     const revisionNumber = policy.revision_number || meta.revision_number || '-';
     const sourceArtifact = policy.source_artifact || policy.source_artifact_key || meta.source_artifact || '-';
+    const patchProposal = this.collectArtifactPatchProposal(meta);
+    const patchValidation = patchProposal?.validation?.status || policy.validation || '-';
+    const patchTargetPath = patchProposal?.target_path || policy.target_path || '-';
 
     const fields = [
       ['intent_class', policy.intent_class || meta.intent_class],
@@ -2143,6 +2161,11 @@ class Xv7UI {
       ['revision_mode', revisionMode],
       ['revision_number', revisionNumber],
       ['source_artifact', sourceArtifact],
+      ['artifact_patch', policy.artifact_patch || '-'],
+      ['patch_target_path', patchTargetPath],
+      ['patch_operation', patchProposal?.operation || policy.operation || '-'],
+      ['patch_validation', patchValidation],
+      ['patch_applied', this.boolText(patchProposal?.applied ?? policy.applied)],
       ['model_used', resolvedModelUsed],
       ['artifact_validation', policy.artifact_validation || '-'],
       ['fallback_used', this.boolText(meta.fallback_used ?? artifactIsFallback)],
@@ -3282,6 +3305,92 @@ class Xv7UI {
     return matches.map((m) => m[1]).join('\n\n');
   }
 
+  collectArtifactPatchProposal(message) {
+    const source = message && typeof message === 'object' ? message : {};
+    const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : source;
+    const proposal = metadata.artifact_patch_proposal;
+    return this.normalizeArtifactPatchProposal(proposal);
+  }
+
+  normalizeArtifactPatchProposal(proposal) {
+    if (!proposal || typeof proposal !== 'object') return null;
+    if (proposal.type !== 'artifact_patch_proposal') return null;
+    const targetPath = typeof proposal.target_path === 'string' ? proposal.target_path.trim() : '';
+    const diff = typeof proposal.diff === 'string' ? proposal.diff : '';
+    if (!targetPath) return null;
+    const validation = proposal.validation && typeof proposal.validation === 'object' ? proposal.validation : {};
+    const checks = Array.isArray(validation.checks) ? validation.checks : [];
+    return {
+      ...proposal,
+      target_path: targetPath,
+      operation: typeof proposal.operation === 'string' ? proposal.operation : 'create',
+      diff,
+      applied: proposal.applied === true,
+      requires_confirmation: proposal.requires_confirmation !== false,
+      validation: {
+        status: typeof validation.status === 'string' ? validation.status : 'failed',
+        checks,
+        failures: Array.isArray(validation.failures) ? validation.failures : [],
+      },
+    };
+  }
+
+  appendArtifactPatchProposal(article, proposal) {
+    if (!proposal || typeof proposal !== 'object') return;
+
+    const status = String(proposal.validation?.status || 'failed').toLowerCase();
+    const panel = document.createElement('section');
+    panel.className = 'artifact-patch-proposal';
+
+    const header = document.createElement('div');
+    header.className = 'artifact-patch-proposal-header';
+    header.innerHTML = `
+      <strong>Patch proposal</strong>
+      <span class="artifact-patch-chip ${proposal.applied ? 'is-applied' : 'is-draft'}">${proposal.applied ? 'applied' : 'draft only / not applied'}</span>
+      <span class="artifact-patch-chip ${status === 'passed' ? 'is-valid' : 'is-invalid'}">validation: ${status}</span>
+    `;
+
+    const summary = document.createElement('p');
+    summary.className = 'artifact-patch-proposal-summary';
+    summary.textContent = `target: ${proposal.target_path} | operation: ${proposal.operation} | confirmation required: ${proposal.requires_confirmation ? 'yes' : 'no'}`;
+
+    const diffBlock = document.createElement('pre');
+    diffBlock.className = 'artifact-patch-diff';
+    diffBlock.textContent = proposal.diff || 'No diff generated.';
+
+    const checks = Array.isArray(proposal.validation?.checks) ? proposal.validation.checks : [];
+    if (checks.length) {
+      const list = document.createElement('ul');
+      list.className = 'artifact-patch-checks';
+      checks.slice(0, 8).forEach((check) => {
+        if (!check || typeof check !== 'object') return;
+        const item = document.createElement('li');
+        item.textContent = `${check.name || 'check'}: ${check.status || 'unknown'}`;
+        list.append(item);
+      });
+      panel.append(header, summary, list, diffBlock);
+    } else {
+      panel.append(header, summary, diffBlock);
+    }
+
+    if (!proposal.applied && proposal.requires_confirmation) {
+      const applyButton = document.createElement('button');
+      applyButton.type = 'button';
+      applyButton.className = 'artifact-patch-apply-button';
+      applyButton.textContent = 'Apply Patch';
+      applyButton.addEventListener('click', () => {
+        const approved = typeof window.confirm === 'function'
+          ? window.confirm('Apply the pending patch proposal to the workspace?')
+          : false;
+        if (!approved) return;
+        void this.sendQuickPrompt('apply patch');
+      });
+      panel.append(applyButton);
+    }
+
+    article.append(panel);
+  }
+
   collectCodeArtifacts(message) {
     const source = message && typeof message === 'object' ? message : {};
     const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : source;
@@ -3350,6 +3459,7 @@ class Xv7UI {
       messageArtifacts: artifacts.length,
       metadataArtifacts: metaArtifacts.length,
       hasCodeArtifact: metaArtifacts.length > 0 || artifacts.length > 0,
+      hasPatchProposal: Boolean(this.collectArtifactPatchProposal(metadata)),
     });
   }
 

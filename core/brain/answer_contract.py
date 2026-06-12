@@ -3,7 +3,10 @@ from __future__ import annotations
 import os
 import html
 import re
+import difflib
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -52,6 +55,15 @@ class AnswerContract:
         r"\b(headline|cta|button text|buttons|copy|wording|services section|main headline|rewrite|say)\b"
     )
     ARTIFACT_TARGETED_PATTERN = re.compile(r"\b(only|keep the layout|keep the content|preserve)\b")
+    ARTIFACT_PATCH_PROPOSAL_PATTERN = re.compile(
+        r"\b(generate(?:\s+a)?\s+patch|create\s+a\s+patch\s+from\s+the\s+artifact|turn\s+this\s+into\s+a\s+patch|"
+        r"make\s+a\s+patch\s+for\s+this\s+website|prepare\s+this\s+for\s+vs\s*code|save\s+this\s+as\s+a\s+patch|"
+        r"show\s+me\s+the\s+diff|where\s+would\s+this\s+file\s+go)\b"
+    )
+    ARTIFACT_PATCH_APPLY_PATTERN = re.compile(
+        r"\b(apply\s+this\s+patch|apply\s+the\s+patch|approve\s+patch|confirm\s+apply|write\s+the\s+proposed\s+patch|"
+        r"save\s+the\s+patch\s+to\s+the\s+repo|apply\s+patch)\b"
+    )
     EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
     EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
     WEATHER_PATTERN = re.compile(r"\b(weather|forecast|temperature|rain|snow|humidity)\b")
@@ -1099,6 +1111,255 @@ if __name__ == \"__main__\":
         return slug or "artifact"
 
     @classmethod
+    def _is_patch_proposal_request(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_PATCH_PROPOSAL_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_patch_apply_request(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_PATCH_APPLY_PATTERN.search(normalized_question))
+
+    @staticmethod
+    def _workspace_root() -> Path:
+        configured = str(os.getenv("XV7_ARTIFACT_PATCH_ROOT", "")).strip()
+        root = Path(configured) if configured else Path.cwd()
+        return root.resolve()
+
+    @classmethod
+    def _safe_slug(cls, raw: str | None, fallback: str) -> str:
+        base = cls._slugify_artifact_name(str(raw or "").strip())
+        if not base:
+            base = cls._slugify_artifact_name(fallback)
+        base = re.sub(r"-{2,}", "-", base).strip("-")
+        if len(base) > 48:
+            base = base[:48].rstrip("-")
+        return base or cls._slugify_artifact_name(fallback)
+
+    @staticmethod
+    def _sanitize_filename(filename: str, language: str) -> str:
+        language_defaults = {
+            "html": "index.html",
+            "css": "styles.css",
+            "javascript": "app.js",
+            "typescript": "app.ts",
+            "python": "main.py",
+        }
+        fallback = language_defaults.get(language.lower(), "artifact.txt")
+        candidate = str(filename or "").strip().split("/")[-1].split("\\")[-1]
+        candidate = re.sub(r"[^A-Za-z0-9._-]", "", candidate)
+        if not candidate:
+            candidate = fallback
+        _, ext = os.path.splitext(candidate)
+        expected_ext = os.path.splitext(fallback)[1]
+        if expected_ext and ext.lower() != expected_ext.lower():
+            candidate = os.path.splitext(candidate)[0] + expected_ext
+        return candidate
+
+    @classmethod
+    def _proposed_patch_target_path(
+        cls,
+        *,
+        artifact: dict[str, Any],
+    ) -> str:
+        language = str(artifact.get("language") or "html").lower()
+        filename = cls._sanitize_filename(str(artifact.get("filename") or ""), language)
+        business_name = cls._extract_business_name_from_html(str(artifact.get("content") or ""))
+        artifact_id = str(artifact.get("artifact_id") or "artifact")
+        suffix = cls._slugify_artifact_name(artifact_id)[-6:] or "draft"
+        slug = cls._safe_slug(business_name, fallback=f"artifact-{suffix}")
+        return f"generated-sites/{slug}/{filename}"
+
+    @staticmethod
+    def _is_blocked_patch_target(path_text: str) -> bool:
+        lowered = path_text.lower().replace("\\", "/")
+        blocked_segments = (
+            "/.git",
+            "/.env",
+            "node_modules",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "runtime/logs",
+            "data/memory",
+            "data/vectors",
+            "data/brain",
+            "memories/",
+        )
+        return any(segment in lowered for segment in blocked_segments)
+
+    @classmethod
+    def _validate_patch_proposal(
+        cls,
+        *,
+        root: Path,
+        target_path: str,
+        content: str,
+        language: str,
+        business_name: str,
+        operation: str,
+    ) -> tuple[str, list[dict[str, str]], list[str]]:
+        checks: list[dict[str, str]] = []
+        failures: list[str] = []
+
+        def _add_check(name: str, passed: bool, detail: str) -> None:
+            checks.append({"name": name, "status": "passed" if passed else "failed", "detail": detail})
+            if not passed:
+                failures.append(f"{name}: {detail}")
+
+        target = Path(target_path)
+        target_text = target_path.replace("\\", "/")
+        _add_check("operation_allowed", operation in {"create", "update"}, "operation must be create or update")
+        _add_check("target_path_prefix", target_text.startswith("generated-sites/"), "target path must stay under generated-sites/")
+        _add_check("target_path_relative", not target.is_absolute(), "target path must be relative")
+        _add_check("target_path_no_traversal", ".." not in target.parts, "target path cannot include traversal")
+        _add_check("target_path_not_blocked", not cls._is_blocked_patch_target(target_text), "target path cannot target protected files or folders")
+
+        try:
+            resolved = (root / target).resolve()
+            root_resolved = root.resolve()
+            _add_check("target_path_inside_repo", str(resolved).startswith(str(root_resolved)), "target path must resolve inside repo root")
+        except Exception:
+            _add_check("target_path_inside_repo", False, "target path failed canonical resolution")
+
+        language = language.lower()
+        expected_ext = {
+            "html": ".html",
+            "css": ".css",
+            "javascript": ".js",
+            "typescript": ".ts",
+            "python": ".py",
+        }.get(language)
+        ext = os.path.splitext(target_path)[1].lower()
+        _add_check("target_extension", expected_ext is None or ext == expected_ext, "target file extension must match artifact language")
+
+        _add_check("content_non_empty", bool(content.strip()), "content cannot be empty")
+        _add_check("content_no_markdown_fence", "```" not in content, "content cannot contain markdown fences")
+        _add_check("content_no_shell_commands", not re.search(r"\b(rm\s+-rf|git\s+reset|powershell\s+-|bash\s+-|curl\s+|wget\s+)\b", content.lower()), "content cannot contain shell automation commands")
+        _add_check("content_no_repo_automation", not re.search(r"\b(git\s+add|git\s+commit|git\s+push|npm\s+test|pytest)\b", content.lower()), "content cannot include repo automation directives")
+        _add_check("content_no_external_script", not re.search(r"<script[^>]+src\s*=\s*['\"]https?://", content, flags=re.IGNORECASE), "content cannot include external script src URLs")
+        _add_check("content_no_remote_urls", not re.search(r"https?://", content, flags=re.IGNORECASE), "content cannot include remote URLs")
+
+        if language == "html":
+            _add_check("html_shell", "<!doctype html" in content.lower() or "<html" in content.lower(), "html artifacts need a full html document shell")
+            _add_check("html_inline_css", "<style" in content.lower(), "html artifacts must include inline style content")
+
+        if business_name:
+            _add_check("business_name_present", business_name.lower() in content.lower(), "artifact business name should remain in content")
+
+        status = "failed" if failures else "passed"
+        return status, checks, failures
+
+    @classmethod
+    def _build_unified_diff(
+        cls,
+        *,
+        target_path: str,
+        before_content: str | None,
+        after_content: str,
+    ) -> str:
+        before_lines = [] if before_content is None else before_content.splitlines(keepends=True)
+        after_lines = after_content.splitlines(keepends=True)
+        from_file = "/dev/null" if before_content is None else f"a/{target_path}"
+        to_file = f"b/{target_path}"
+        diff = difflib.unified_diff(before_lines, after_lines, fromfile=from_file, tofile=to_file, n=3)
+        text = "".join(diff).strip()
+        return text or f"--- {from_file}\n+++ {to_file}\n"
+
+    @classmethod
+    def _extract_patch_proposal_from_metadata(cls, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(metadata, dict):
+            return None
+        proposal = metadata.get("artifact_patch_proposal")
+        if not isinstance(proposal, dict):
+            return None
+        if str(proposal.get("type") or "") != "artifact_patch_proposal":
+            return None
+        target_path = str(proposal.get("target_path") or "").strip()
+        content = proposal.get("content")
+        if not target_path or not isinstance(content, str):
+            return None
+        return proposal
+
+    @classmethod
+    def _latest_pending_patch_proposal(
+        cls,
+        session_messages: list[Any] | None,
+        session_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if isinstance(session_messages, list):
+            for message in reversed(session_messages):
+                if not isinstance(message, dict):
+                    continue
+                if str(message.get("role") or "").lower() != "assistant":
+                    continue
+                metadata = message.get("metadata")
+                if not isinstance(metadata, dict):
+                    continue
+                proposal = cls._extract_patch_proposal_from_metadata(metadata)
+                if proposal is None:
+                    continue
+                if proposal.get("applied") is True:
+                    continue
+                return proposal
+
+        if isinstance(session_metadata, dict):
+            payload = session_metadata.get("last_assistant_payload")
+            if isinstance(payload, dict):
+                proposal = cls._extract_patch_proposal_from_metadata(payload)
+                if proposal is not None and proposal.get("applied") is not True:
+                    return proposal
+        return None
+
+    @classmethod
+    def _build_patch_proposal_from_artifact(
+        cls,
+        *,
+        artifact: dict[str, Any],
+    ) -> dict[str, Any]:
+        root = cls._workspace_root()
+        language = str(artifact.get("language") or "html").lower()
+        filename = cls._sanitize_filename(str(artifact.get("filename") or "index.html"), language)
+        target_path = cls._proposed_patch_target_path(artifact=artifact)
+        resolved_target = (root / Path(target_path)).resolve()
+        source_artifact_id = str(artifact.get("revision_id") or artifact.get("artifact_id") or "artifact")
+        current_content = str(artifact.get("content") or "")
+        existing_content = resolved_target.read_text(encoding="utf-8") if resolved_target.exists() else None
+        operation = "update" if existing_content is not None else "create"
+        business_name = cls._extract_business_name_from_html(current_content) or ""
+        validation_status, checks, failures = cls._validate_patch_proposal(
+            root=root,
+            target_path=target_path,
+            content=current_content,
+            language=language,
+            business_name=business_name,
+            operation=operation,
+        )
+        proposal_id = f"patch-{uuid4().hex[:12]}"
+        diff_text = cls._build_unified_diff(
+            target_path=target_path,
+            before_content=existing_content,
+            after_content=current_content,
+        )
+
+        return {
+            "type": "artifact_patch_proposal",
+            "proposal_id": proposal_id,
+            "source_artifact_id": source_artifact_id,
+            "filename": filename,
+            "target_path": target_path,
+            "operation": operation,
+            "language": language,
+            "applied": False,
+            "requires_confirmation": True,
+            "content": current_content,
+            "diff": diff_text,
+            "validation": {
+                "status": validation_status,
+                "checks": checks,
+                "failures": failures,
+            },
+        }
+
+    @classmethod
     def _artifact_history(
         cls,
         session_messages: list[Any] | None,
@@ -1832,13 +2093,202 @@ if __name__ == \"__main__\":
         latest_artifact = artifact_history[-1]["artifact"] if artifact_history else None
         source_artifact_label = "latest session artifact" if latest_artifact is not None else None
         is_generation = self.is_code_artifact_request(normalized)
-        refinement_mode = self._artifact_refinement_mode(normalized) if self._looks_like_artifact_edit(normalized) else None
+        is_patch_proposal_request = self._is_patch_proposal_request(normalized)
+        is_patch_apply_request = self._is_patch_apply_request(normalized)
+        refinement_mode = (
+            self._artifact_refinement_mode(normalized)
+            if (not is_patch_proposal_request and self._looks_like_artifact_edit(normalized))
+            else None
+        )
         is_refinement_request = latest_artifact is not None and refinement_mode is not None and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized) and not is_generation
+
+        if is_patch_proposal_request:
+            if latest_artifact is None:
+                return {
+                    "visible_text": "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-proposal",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "proposal_unavailable",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "failure_reason": "no_active_artifact",
+                    },
+                }
+
+            proposal = self._build_patch_proposal_from_artifact(artifact=latest_artifact)
+            validation_status = str(proposal.get("validation", {}).get("status") or "failed")
+            return {
+                "visible_text": "I prepared a patch proposal from the active artifact. No files were changed.",
+                "code_artifact": {},
+                "artifact_patch_proposal": proposal,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-proposal",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_patch": "proposed",
+                    "applied": False,
+                    "requires_confirmation": True,
+                    "target_path": proposal.get("target_path"),
+                    "validation": validation_status,
+                    "source_artifact": source_artifact_label or "latest session artifact",
+                    "source_artifact_id": proposal.get("source_artifact_id"),
+                },
+            }
+
+        if is_patch_apply_request:
+            pending = self._latest_pending_patch_proposal(session_messages, session_metadata)
+            if pending is None:
+                return {
+                    "visible_text": "I do not have a pending patch proposal to apply.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "apply_refused",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "failure_reason": "no_pending_patch_proposal",
+                    },
+                }
+
+            validation = pending.get("validation") if isinstance(pending.get("validation"), dict) else {}
+            validation_status = str(validation.get("status") or "failed").lower()
+            failures = validation.get("failures") if isinstance(validation.get("failures"), list) else []
+            if validation_status != "passed":
+                reason = "; ".join(str(item) for item in failures if str(item).strip()) or "validation did not pass"
+                return {
+                    "visible_text": f"I cannot apply this patch because validation failed: {reason}.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": pending,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "apply_blocked",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "target_path": pending.get("target_path"),
+                        "validation": "failed",
+                        "failure_reason": reason,
+                    },
+                }
+
+            root = self._workspace_root()
+            target_path = str(pending.get("target_path") or "").replace("\\", "/")
+            operation = str(pending.get("operation") or "create")
+            content = str(pending.get("content") or "")
+            if operation not in {"create", "update"} or not target_path:
+                return {
+                    "visible_text": "I cannot apply this patch because validation failed: operation/path is not allowed.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": pending,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "apply_blocked",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "target_path": target_path,
+                        "validation": "failed",
+                        "failure_reason": "operation_or_target_invalid",
+                    },
+                }
+
+            target = (root / Path(target_path)).resolve()
+            root_resolved = root.resolve()
+            if not str(target).startswith(str(root_resolved)):
+                return {
+                    "visible_text": "I cannot apply this patch because validation failed: target path escapes the repo root.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": pending,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "apply_blocked",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "target_path": target_path,
+                        "validation": "failed",
+                        "failure_reason": "unsafe_target_path",
+                    },
+                }
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            written = target.read_text(encoding="utf-8")
+            if written != content:
+                return {
+                    "visible_text": "I attempted to apply the patch, but post-write validation failed because the file content does not match the proposal.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": pending,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "apply_failed",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "target_path": target_path,
+                        "validation": "failed",
+                        "failure_reason": "post_write_content_mismatch",
+                    },
+                }
+
+            applied_proposal = {
+                **pending,
+                "applied": True,
+            }
+            return {
+                "visible_text": (
+                    f"Applied the proposed patch to {target_path}. File written locally with operation {operation}. "
+                    "No commit was created, no push was performed, and tests were not run."
+                ),
+                "code_artifact": {},
+                "artifact_patch_proposal": applied_proposal,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_patch": "applied",
+                    "applied": True,
+                    "requires_confirmation": True,
+                    "target_path": target_path,
+                    "operation": operation,
+                    "validation": "passed",
+                    "commit_created": False,
+                    "push_performed": False,
+                },
+            }
 
         if not is_generation and refinement_mode is not None and latest_artifact is None:
             return {
                 "visible_text": self._artifact_needs_context_message(),
                 "code_artifact": {},
+                "artifact_patch_proposal": {},
                 "context_receipt": {
                     "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                     "context_receipts": [],
@@ -1861,6 +2311,7 @@ if __name__ == \"__main__\":
                 return {
                     "visible_text": "I do not have an earlier artifact revision to restore in this session.",
                     "code_artifact": {},
+                    "artifact_patch_proposal": {},
                     "context_receipt": {
                         "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                         "context_receipts": [],
@@ -1884,6 +2335,7 @@ if __name__ == \"__main__\":
             return {
                 "visible_text": f"I restored the previous {str(restored_artifact.get('language') or 'HTML').upper()} artifact for {restored_artifact.get('filename', 'index.html')}.",
                 "code_artifact": restored_artifact,
+                "artifact_patch_proposal": {},
                 "context_receipt": {
                     "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                     "context_receipts": [],
@@ -1901,6 +2353,7 @@ if __name__ == \"__main__\":
             return {
                 "visible_text": self._artifact_change_summary(latest_artifact, previous_artifact),
                 "code_artifact": {},
+                "artifact_patch_proposal": {},
                 "context_receipt": {
                     "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                     "context_receipts": [],
@@ -1974,6 +2427,7 @@ if __name__ == \"__main__\":
                     return {
                         "visible_text": f"artifact refinement failed validation: {fallback_reason}; fallback invalid: {reason}",
                         "code_artifact": {},
+                        "artifact_patch_proposal": {},
                         "context_receipt": {
                             "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                             "context_receipts": [],
@@ -2061,6 +2515,7 @@ if __name__ == \"__main__\":
                 "revision_number": next_revision_number,
                 "source_prompt": question.strip(),
             },
+            "artifact_patch_proposal": {},
             "context_receipt": {
                 "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                 "context_receipts": [],

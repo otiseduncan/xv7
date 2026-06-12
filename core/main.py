@@ -227,6 +227,7 @@ def build_assistant_payload(
     warnings: list[str] | None = None,
     action_history_refs: list[str] | None = None,
     code_artifact: dict[str, Any] | None = None,
+    artifact_patch_proposal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_memory_receipts: list[str] = []
     seen_memory_receipts: set[str] = set()
@@ -247,6 +248,7 @@ def build_assistant_payload(
         "warnings": warnings or [],
         "action_history_refs": action_history_refs or [],
         "code_artifact": code_artifact or {},
+        "artifact_patch_proposal": artifact_patch_proposal or {},
     }
 
 
@@ -2492,7 +2494,13 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
-    if intent_class == "implementation_task":
+    normalized_question = _normalize_intent_text(payload.raw_text)
+    is_artifact_patch_lane_prompt = (
+        brain_context_manager.answer_contract._is_patch_proposal_request(normalized_question)
+        or brain_context_manager.answer_contract._is_patch_apply_request(normalized_question)
+    )
+
+    if intent_class == "implementation_task" and not is_artifact_patch_lane_prompt:
         visible_text = _build_task_guard_answer()
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
@@ -3288,6 +3296,7 @@ async def add_session_message(
                 if isinstance(item, dict) and str(item.get("action_id", ""))
             ],
             code_artifact=artifact_response.get("code_artifact"),
+            artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
         )
 
         updated_state = await memory_manager.add_message(
