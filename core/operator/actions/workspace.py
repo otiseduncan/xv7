@@ -95,7 +95,8 @@ def _detect_stack(repo_root: Path) -> dict[str, bool]:
     core_main_text = _read_text(core_main)
     package_json = repo_root / "package.json"
     return {
-        "python": (repo_root / "core").exists() or (repo_root / "pyproject.toml").exists(),
+        "python": (repo_root / "core").exists()
+        or (repo_root / "pyproject.toml").exists(),
         "fastapi": "FastAPI" in core_main_text or "fastapi" in core_main_text.lower(),
         "frontend_static": (repo_root / "public" / "index.html").exists()
         or (repo_root / "public" / "app.js").exists(),
@@ -152,7 +153,9 @@ def workspace_map(*, action_id: str, repo_root: Path) -> OperatorActionResult:
     if branch_proc.returncode != 0:
         limitations.append(branch_proc.stderr.strip() or "git branch unavailable")
 
-    dirty_files = _parse_dirty_files(status_proc.stdout) if status_proc.returncode == 0 else []
+    dirty_files = (
+        _parse_dirty_files(status_proc.stdout) if status_proc.returncode == 0 else []
+    )
     if status_proc.returncode != 0:
         limitations.append(status_proc.stderr.strip() or "git status unavailable")
 
