@@ -1645,6 +1645,7 @@ class OperatorManager:
         if action_name in {"build_task", "patch_plan"}:
             data = result.data if isinstance(result.data, dict) else {}
             goal = str(data.get("goal", "")).strip() or "(missing goal)"
+            reason = str(data.get("reason", "")).strip()
             likely_files = data.get("likely_files", [])
             if not isinstance(likely_files, list):
                 likely_files = []
@@ -1669,6 +1670,7 @@ class OperatorManager:
             inspect_text = ", ".join(likely_files[:10]) if likely_files else "(none)"
             change_text = ", ".join(likely_files[:10]) if likely_files else "(none)"
             tests_text = ", ".join(tests_to_run[:8]) if tests_to_run else "(none)"
+            validation_text = tests_text
             next_step = (
                 "prepare a patch payload"
                 if bool(data.get("mutation_required", False))
@@ -1678,10 +1680,11 @@ class OperatorManager:
             return (
                 "Build Plan\n"
                 f"Task summary: {goal}\n"
+                f"Reason: {reason or 'No specific scope reason was available.'}\n"
                 f"Files/directories inspected or recommended for inspection: {inspect_text}\n"
                 f"Likely files to change: {change_text}\n"
                 f"Tests to add/update: {tests_text}\n"
-                f"Validation commands: {tests_text}\n"
+                f"Validation commands: {validation_text}\n"
                 f"Risk notes: risk={risk}; {risk_reason}; branch={branch}; dirty_file_count={dirty_count}.\n"
                 "No files were changed. No tests were run. No commit or push occurred.\n"
                 f"Next valid operator step: {next_step} or use VS Code/Copilot to implement the plan."

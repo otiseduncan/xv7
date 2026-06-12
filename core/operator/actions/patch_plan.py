@@ -39,6 +39,54 @@ MUTATION_KEYWORDS = (
     "write",
 )
 
+RUNTIME_SCOPE_TRIGGERS = (
+    "/runtime/",
+    "fastapi",
+    "backend tests",
+    "endpoint",
+    "route",
+    "get ",
+    "post ",
+)
+OPERATOR_SCOPE_TRIGGERS = (
+    "/apply-patch",
+    "/run-tests",
+    "/build-task",
+    "operator command",
+    "slash command",
+)
+FRONTEND_SCOPE_TRIGGERS = (
+    "frontend",
+    "browser",
+    "ui",
+    "public/app",
+    "receipt visibility",
+)
+DOCS_SCOPE_TRIGGERS = (
+    "docs",
+    "runbook",
+    "documentation",
+)
+
+RUNTIME_SCOPE_FILES = ["core/main.py", "tests/test_runtime_status.py"]
+OPERATOR_SCOPE_FILES = [
+    "core/operator/manager.py",
+    "core/operator/registry.py",
+    "tests/test_operator_mode_b97.py",
+    "tests/test_operator_chat_integration.py",
+    "tests/test_operator_registry.py",
+]
+FRONTEND_SCOPE_FILES = [
+    "public/app.js",
+    "public/app.test.js",
+    "public/app.code8.test.js",
+]
+DOCS_SCOPE_FILES = [
+    "docs/CODE_09E_BUILD_TASK_PLANNING.md",
+    "docs/CODE_09F_SCOPE_AWARE_BUILD_TASK.md",
+    "docs/CODE_LANE_INDEX.md",
+]
+
 
 CODE_LANE_FILES: dict[str, list[str]] = {
     "code-01": [
@@ -162,17 +210,110 @@ def _dedupe(items: list[str]) -> list[str]:
     return deduped
 
 
-def _likely_files(goal: str, workspace: dict) -> list[str]:
+def _has_any_trigger(goal: str, triggers: tuple[str, ...]) -> bool:
+    for trigger in triggers:
+        if not trigger:
+            continue
+        if trigger.isalpha() and len(trigger) <= 3:
+            if re.search(rf"\b{re.escape(trigger)}\b", goal):
+                return True
+            continue
+        if trigger in goal:
+            return True
+    return False
+
+
+def _planning_scope(goal: str) -> dict[str, object]:
     lowered = goal.lower()
-    likely: list[str] = []
-    for code_id, files in CODE_LANE_FILES.items():
-        if code_id in lowered:
-            likely.extend(files)
-    for keywords, files in KEYWORD_FILE_HINTS:
-        if any(keyword in lowered for keyword in keywords):
-            likely.extend(files)
+    if _has_any_trigger(lowered, RUNTIME_SCOPE_TRIGGERS):
+        return {
+            "category": "runtime_api",
+            "reason": (
+                "request targets a /runtime HTTP endpoint, and runtime endpoints live in core.main with existing endpoint tests in tests/test_runtime_status.py."
+            ),
+            "files": RUNTIME_SCOPE_FILES,
+            "tests": [
+                "python -m pytest tests/test_runtime_status.py",
+                "python -m pytest",
+            ],
+            "changes": [
+                "Inspect core.main for the existing runtime route pattern before editing.",
+                "Match the current runtime endpoint style and add backend coverage in the runtime status test file.",
+            ],
+        }
+    if _has_any_trigger(lowered, FRONTEND_SCOPE_TRIGGERS):
+        return {
+            "category": "frontend",
+            "reason": (
+                "request targets frontend/browser behavior, so the planning scope should stay in public UI assets and their tests."
+            ),
+            "files": FRONTEND_SCOPE_FILES,
+            "tests": [
+                "npm test -- public/app.test.js",
+                "npm test -- public/app.code8.test.js",
+            ],
+            "changes": [
+                "Inspect public/app.js for the current UI flow before changing it.",
+                "Update frontend tests alongside any UI receipt or browser behavior changes.",
+            ],
+        }
+    if _has_any_trigger(lowered, OPERATOR_SCOPE_TRIGGERS):
+        return {
+            "category": "operator_command",
+            "reason": (
+                "request concerns operator slash commands, so the planning scope should stay inside the operator manager, registry, and operator test surface."
+            ),
+            "files": OPERATOR_SCOPE_FILES,
+            "tests": [
+                "python -m pytest tests/test_operator_mode_b97.py tests/test_operator_chat_integration.py tests/test_operator_registry.py -v --tb=short --asyncio-mode=auto",
+            ],
+            "changes": [
+                "Inspect core.operator.manager before changing slash command behavior.",
+                "Check the operator registry and existing operator tests before patching command routing.",
+            ],
+        }
+    if _has_any_trigger(lowered, DOCS_SCOPE_TRIGGERS):
+        return {
+            "category": "docs",
+            "reason": (
+                "request is documentation-focused, so the planning scope should stay in docs and related runbook files."
+            ),
+            "files": ["docs/CODE_09F_SCOPE_AWARE_BUILD_TASK.md", "docs/CODE_LANE_INDEX.md"],
+            "tests": [],
+            "changes": [
+                "Inspect the relevant docs file before editing runbook or guidance text.",
+                "Keep the change limited to markdown unless code evidence shows a documented behavior mismatch.",
+            ],
+        }
+    return {
+        "category": "general",
+        "reason": (
+            "request does not match a specific runtime, operator, frontend, or docs scope, so the plan falls back to the nearest likely files."
+        ),
+        "files": [],
+        "tests": [],
+        "changes": [
+            "Inspect the likely files before editing.",
+            "Prepare the smallest safe patch for the requested behavior.",
+            "Run targeted tests first, then the broader backend/frontend gate if needed.",
+        ],
+    }
+
+
+def _likely_files(goal: str, workspace: dict) -> list[str]:
+    scope = _planning_scope(goal)
+    likely: list[str] = list(scope.get("files", []))
+    lowered = goal.lower()
+
     if not likely:
-        likely.extend(DEFAULT_OPERATOR_FILES)
+        for code_id, files in CODE_LANE_FILES.items():
+            if code_id in lowered:
+                likely.extend(files)
+        for keywords, files in KEYWORD_FILE_HINTS:
+            if any(keyword in lowered for keyword in keywords):
+                likely.extend(files)
+        if not likely:
+            likely.extend(DEFAULT_OPERATOR_FILES)
 
     present = {
         item.get("path")
@@ -211,9 +352,12 @@ def _risk(goal: str, files: list[str], mutation_required: bool) -> tuple[str, st
 def _proposed_changes(
     goal: str, files: list[str], mutation_required: bool
 ) -> list[str]:
+    scope = _planning_scope(goal)
     lowered = goal.lower()
-    changes: list[str] = []
-    if "code-02" in lowered or "patch plan" in lowered or "planner" in lowered:
+    changes: list[str] = list(scope.get("changes", []))
+    if not changes and (
+        "code-02" in lowered or "patch plan" in lowered or "planner" in lowered
+    ):
         changes.extend(
             [
                 "Add a read-only patch_plan operator action that turns a user goal into a structured implementation plan.",
@@ -221,21 +365,21 @@ def _proposed_changes(
                 "Add tests for likely files, risk, approval requirement, registry exposure, and read-only safety.",
             ]
         )
-    elif "workspace" in lowered:
+    elif not changes and "workspace" in lowered:
         changes.extend(
             [
                 "Inspect existing workspace map behavior before changing it.",
                 "Adjust workspace map output only after confirming expected files and tests.",
             ]
         )
-    elif "app builder" in lowered:
+    elif not changes and "app builder" in lowered:
         changes.extend(
             [
                 "Define the app-builder entry point and supported template boundaries.",
                 "Add tests before any scaffold-writing action is allowed.",
             ]
         )
-    else:
+    elif not changes:
         changes.extend(
             [
                 "Inspect the likely files before editing.",
@@ -257,6 +401,11 @@ def _proposed_changes(
 
 def _tests_to_run(files: list[str], workspace: dict) -> list[str]:
     tests: list[str] = []
+    scope = workspace.get("planning_scope") if isinstance(workspace, dict) else None
+    if isinstance(scope, dict):
+        scope_tests = scope.get("tests", [])
+        if isinstance(scope_tests, list):
+            tests.extend(str(item) for item in scope_tests if str(item).strip())
     if "tests/test_operator_patch_plan.py" in files:
         tests.append(
             "python -m pytest tests/test_operator_patch_plan.py tests/test_operator_registry.py -v --tb=short --asyncio-mode=auto"
@@ -308,6 +457,8 @@ def patch_plan(
     repo_root = repo_root.resolve()
     normalized_goal = _normalize_goal(goal)
     workspace_info = _workspace_data(action_id, repo_root, workspace)
+    planning_scope = _planning_scope(normalized_goal)
+    workspace_info = {**workspace_info, "planning_scope": planning_scope}
     files = _likely_files(normalized_goal, workspace_info)
     mutation = _mutation_required(normalized_goal)
     risk, risk_reason = _risk(normalized_goal, files, mutation)
@@ -341,10 +492,13 @@ def patch_plan(
             ),
             "risk": risk,
             "risk_reason": risk_reason,
+            "planning_scope": planning_scope.get("category", "general"),
+            "reason": planning_scope.get("reason", ""),
             "likely_files": files,
             "proposed_changes": _proposed_changes(normalized_goal, files, mutation),
             "tests_to_run": tests,
             "questions": questions,
+            "validation_commands": tests,
             "workspace_summary": {
                 "branch": workspace_info.get("branch", "unknown"),
                 "dirty_file_count": workspace_info.get("dirty_file_count", 0),

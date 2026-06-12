@@ -322,6 +322,7 @@ def test_build_task_accepts_natural_language_and_returns_structured_plan_only(
     answer = str(payload["answer"]).lower()
     assert "build plan" in answer
     assert "task summary:" in answer
+    assert "reason:" in answer
     assert "files/directories inspected or recommended for inspection:" in answer
     assert "likely files to change:" in answer
     assert "tests to add/update:" in answer
@@ -332,6 +333,123 @@ def test_build_task_accepts_natural_language_and_returns_structured_plan_only(
     assert (
         "prepare a patch payload" in answer
         or "use vs code/copilot to implement the plan" in answer
+    )
+
+
+def test_build_task_runtime_prompt_is_scope_aware(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    payload = _stage(
+        client,
+        session_id,
+        "/build-task Add runtime endpoint GET /runtime/communication-proof-status returning static Code 8/9 communication proof status JSON. Include backend tests and validation commands. Do not mutate files.",
+        operator_mode=True,
+    )
+
+    assert payload["executed"] is True
+    assert payload["pending_action"] is None
+    assert payload["receipt"]["status"] == "success"
+
+    answer = str(payload["answer"]).lower()
+    assert "reason: request targets a /runtime http endpoint" in answer
+    assert "core/main.py" in answer
+    assert "tests/test_runtime_status.py" in answer
+    assert "core/operator/actions/test_runner.py" not in answer
+    assert "tests/test_operator_test_runner.py" not in answer
+
+    data_preview = payload["receipt"]["data_preview"]
+    assert "core/main.py" in data_preview.get("likely_files", [])
+    assert "tests/test_runtime_status.py" in data_preview.get("likely_files", [])
+    assert "core/operator/actions/test_runner.py" not in data_preview.get(
+        "likely_files", []
+    )
+    assert "tests/test_operator_test_runner.py" not in data_preview.get(
+        "likely_files", []
+    )
+    assert data_preview.get("planning_scope") == "runtime_api"
+    assert data_preview.get("validation_commands", [])[:2] == [
+        "python -m pytest tests/test_runtime_status.py",
+        "python -m pytest",
+    ]
+
+
+def test_build_task_operator_prompt_stays_in_operator_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    payload = _stage(
+        client,
+        session_id,
+        "/build-task Plan a slash command change for operator mode and /apply-patch confirmation flow.",
+        operator_mode=True,
+    )
+
+    data_preview = payload["receipt"]["data_preview"]
+    assert data_preview.get("planning_scope") == "operator_command"
+    assert "core/operator/manager.py" in data_preview.get("likely_files", [])
+    assert "core/operator/registry.py" in data_preview.get("likely_files", [])
+    assert "tests/test_operator_mode_b97.py" in data_preview.get("likely_files", [])
+    assert "tests/test_operator_test_runner.py" not in data_preview.get(
+        "likely_files", []
+    )
+
+
+def test_build_task_frontend_prompt_stays_in_frontend_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    payload = _stage(
+        client,
+        session_id,
+        "/build-task Update the frontend UI and receipt visibility in public/app.js.",
+        operator_mode=True,
+    )
+
+    data_preview = payload["receipt"]["data_preview"]
+    assert data_preview.get("planning_scope") == "frontend"
+    assert "public/app.js" in data_preview.get("likely_files", [])
+    assert "public/app.test.js" in data_preview.get("likely_files", [])
+    assert "public/app.code8.test.js" in data_preview.get("likely_files", [])
+    assert "core/operator/actions/test_runner.py" not in data_preview.get(
+        "likely_files", []
+    )
+
+
+def test_build_task_docs_prompt_stays_in_docs_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    files_before = {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+
+    payload = _stage(
+        client,
+        session_id,
+        "/build-task Update the documentation and runbook for the new build-task flow.",
+        operator_mode=True,
+    )
+
+    data_preview = payload["receipt"]["data_preview"]
+    assert data_preview.get("planning_scope") == "docs"
+    assert any(path.startswith("docs/") for path in data_preview.get("likely_files", []))
+    assert "core/operator/actions/test_runner.py" not in data_preview.get(
+        "likely_files", []
     )
 
     files_after = {
