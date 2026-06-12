@@ -1,4 +1,5 @@
 from core.operator.actions.apply_patch import apply_approved_patch
+from core.operator.actions.diff_report import diff_report
 from core.operator.actions.files import list_project_files, read_project_file
 from core.operator.actions.environment import operator_environment
 from core.operator.actions.host_scan import (
@@ -26,6 +27,7 @@ from core.operator.actions.workspace import workspace_map
 
 __all__ = [
     "apply_approved_patch",
+    "diff_report",
     "patch_plan",
     "test_runner",
     "docker_compose_ps",
