@@ -62,7 +62,9 @@ def test_apply_patch_denies_absolute_path(tmp_path: Path) -> None:
     assert not absolute.exists()
 
 
-def test_apply_patch_writes_approved_file_and_returns_diff(tmp_path: Path) -> None:
+def test_apply_patch_writes_approved_file_and_returns_diff(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "docs" / "example.md"
     target.parent.mkdir()
     target.write_text("old\n", encoding="utf-8")
@@ -90,14 +92,17 @@ def test_apply_patch_writes_approved_file_and_returns_diff(tmp_path: Path) -> No
     assert result.data["tests_recommended"] == [
         "python -m pytest tests/test_operator_apply_patch.py"
     ]
-    assert result.data["file_results"][0]["before_sha256"] != result.data[
-        "file_results"
-    ][0]["after_sha256"]
+    assert (
+        result.data["file_results"][0]["before_sha256"]
+        != result.data["file_results"][0]["after_sha256"]
+    )
     assert any("-old" in line for line in result.data["file_results"][0]["diff"])
     assert any("+new" in line for line in result.data["file_results"][0]["diff"])
 
 
-def test_apply_patch_can_create_parent_directories_inside_repo(tmp_path: Path) -> None:
+def test_apply_patch_can_create_parent_directories_inside_repo(
+    tmp_path: Path,
+) -> None:
     result = apply_approved_patch(
         action_id="OP-20260611-0405",
         repo_root=tmp_path,
@@ -110,9 +115,12 @@ def test_apply_patch_can_create_parent_directories_inside_repo(tmp_path: Path) -
     )
 
     assert result.status == "success"
-    assert (tmp_path / "docs" / "nested" / "example.md").read_text(
-        encoding="utf-8"
-    ) == "created\n"
+    assert (
+        (tmp_path / "docs" / "nested" / "example.md").read_text(
+            encoding="utf-8"
+        )
+        == "created\n"
+    )
     assert result.data["changed_files"] == ["docs/nested/example.md"]
 
 
