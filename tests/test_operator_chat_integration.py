@@ -1042,3 +1042,8 @@ def test_failed_apply_patch_follow_up_cannot_claim_fake_completion(
         "operator_follow_up_guard"
     )
     assert assistant_payload.get("memory_receipts", []) == []
+
+
+def test_vitest_generated_results_are_ignored_by_repo_policy() -> None:
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
+    assert "node_modules/.vite/vitest/results.json" in gitignore

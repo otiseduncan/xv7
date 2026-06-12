@@ -47,3 +47,7 @@ vectors/
 Thumbs.db
 .vscode/settings.json
 .idea/
+
+# Node/Vitest generated artifacts
+node_modules/.vite/vitest/results.json
+node_modules/.vite/vitest/*.json
