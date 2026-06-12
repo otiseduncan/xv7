@@ -226,6 +226,7 @@ def build_assistant_payload(
     policy_provenance: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
     action_history_refs: list[str] | None = None,
+    code_artifact: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_memory_receipts: list[str] = []
     seen_memory_receipts: set[str] = set()
@@ -245,6 +246,7 @@ def build_assistant_payload(
         "policy_provenance": policy_provenance or {},
         "warnings": warnings or [],
         "action_history_refs": action_history_refs or [],
+        "code_artifact": code_artifact or {},
     }
 
 
@@ -3191,6 +3193,55 @@ async def add_session_message(
         0,
         ConversationMessage(role="system", content=brain_context.prompt),
     )
+    artifact_response = brain_context_manager.code_artifact_response(payload.raw_text)
+    if artifact_response is not None:
+        visible_text = str(artifact_response.get("visible_text", "")).strip()
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=artifact_response.get("context_receipt"),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "answer_contract",
+                "brain_answer_source": "code_artifact_request",
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=[
+                str(item.get("action_id", ""))
+                for item in get_history(session_state.metadata)[-5:]
+                if isinstance(item, dict) and str(item.get("action_id", ""))
+            ],
+            code_artifact=artifact_response.get("code_artifact"),
+        )
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     brain_answer = brain_context_manager.answer_from_records(
         payload.raw_text,
         session_metadata=session_state.metadata,

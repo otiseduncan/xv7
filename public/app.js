@@ -111,6 +111,9 @@ class Xv7UI {
   /** @type {Array<{role:string,text:string,timestamp:string,receiptSummary:string[]}>} */
   visibleConversation = [];
 
+  /** @type {Map<string, {copied:boolean, timer:number | null}>} */
+  artifactCopyState = new Map();
+
   /** @type {boolean} */
   diagnosticsDrawerOpen = false;
 
@@ -1081,6 +1084,10 @@ class Xv7UI {
           typeof assistantMessage.metadata === 'object'
             ? assistantMessage.metadata
             : {};
+        const assistantArtifacts = this.collectCodeArtifacts(assistantMessage);
+        if (assistantArtifacts.length) {
+          assistantMeta.code_artifacts = assistantArtifacts;
+        }
         const assistantText = this.resolveAssistantVisibleText(assistantMeta, assistantContent);
         const reasoningText = this.extractReasoning(assistantContent);
 
@@ -1329,6 +1336,7 @@ class Xv7UI {
 
     if (role === 'assistant') {
       copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
+      this.appendCodeArtifacts(article, messageMetadata);
       this.appendWhyThisAnswerDrawer(article, messageMetadata);
       if (messageMetadata && typeof messageMetadata === 'object') {
         this.latestAssistantMeta = messageMetadata;
@@ -1357,6 +1365,312 @@ class Xv7UI {
     this.visibleConversation.push(copyPayload);
 
     return article;
+  }
+
+  appendCodeArtifacts(article, messageMetadata) {
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const artifacts = [];
+
+    if (Array.isArray(meta.code_artifacts)) {
+      artifacts.push(...meta.code_artifacts);
+    }
+    if (meta.code_artifact && typeof meta.code_artifact === 'object') {
+      artifacts.push(meta.code_artifact);
+    }
+
+    if (!artifacts.length) return;
+
+    const artifactTray = document.createElement('div');
+    artifactTray.className = 'code-artifact-tray';
+
+    artifacts.forEach((artifact, index) => {
+      if (!artifact || typeof artifact !== 'object') return;
+      const filename = typeof artifact.filename === 'string' ? artifact.filename.trim() : '';
+      const content = typeof artifact.content === 'string' ? artifact.content : '';
+      if (!filename || !content) return;
+      artifactTray.append(
+        this.createCodeArtifactCard({
+          ...artifact,
+          filename,
+          content,
+          artifactIndex: index,
+        }),
+      );
+    });
+
+    if (artifactTray.childElementCount > 0) {
+      article.append(artifactTray);
+    }
+  }
+
+  createCodeArtifactCard(artifact) {
+    const filename = String(artifact.filename || '').trim();
+    const content = String(artifact.content || '');
+    const language = this.normalizeArtifactLanguage(artifact.language || this.inferLanguageFromFilename(filename));
+    const previewable = this.isArtifactPreviewable(artifact, filename, language);
+    const applied = artifact.applied === true;
+    const artifactId = `artifact-${++this.messageCounter}`;
+
+    const card = document.createElement('section');
+    card.className = 'code-artifact-card';
+    card.dataset.artifactId = artifactId;
+    card.dataset.filename = filename;
+    card.dataset.language = language;
+
+    const header = document.createElement('div');
+    header.className = 'code-artifact-header';
+
+    const chevron = document.createElement('button');
+    chevron.type = 'button';
+    chevron.className = 'code-artifact-chevron';
+    chevron.setAttribute('aria-expanded', 'true');
+    chevron.setAttribute('aria-label', 'Collapse code artifact');
+    chevron.textContent = '▾';
+
+    const identity = document.createElement('div');
+    identity.className = 'code-artifact-identity';
+
+    const fileNameEl = document.createElement('div');
+    fileNameEl.className = 'code-artifact-filename';
+    fileNameEl.textContent = filename;
+
+    const badgeRow = document.createElement('div');
+    badgeRow.className = 'code-artifact-badges';
+
+    const languageBadge = document.createElement('span');
+    languageBadge.className = 'code-artifact-badge code-artifact-badge-language';
+    languageBadge.textContent = this.languageLabel(language);
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'code-artifact-badge code-artifact-badge-status';
+    statusBadge.textContent = applied ? 'Applied' : 'Draft only';
+
+    badgeRow.append(languageBadge, statusBadge);
+    identity.append(fileNameEl, badgeRow);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'code-artifact-toolbar';
+
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'code-artifact-button';
+    copyButton.textContent = 'Copy';
+    copyButton.addEventListener('click', async () => {
+      await this.copyCodeArtifact(card, artifact, copyButton);
+    });
+
+    const downloadButton = document.createElement('button');
+    downloadButton.type = 'button';
+    downloadButton.className = 'code-artifact-button';
+    downloadButton.textContent = 'Download';
+    downloadButton.addEventListener('click', () => {
+      this.downloadCodeArtifact(artifact);
+    });
+
+    const previewButton = document.createElement('button');
+    previewButton.type = 'button';
+    previewButton.className = 'code-artifact-button';
+    previewButton.textContent = 'Preview';
+    previewButton.disabled = !previewable;
+    previewButton.title = previewable ? 'Preview artifact locally.' : 'Preview is available for HTML artifacts.';
+    previewButton.addEventListener('click', () => {
+      this.toggleArtifactPreview(card, artifact, previewButton);
+    });
+
+    toolbar.append(copyButton, downloadButton, previewButton);
+
+    header.append(chevron, identity, toolbar);
+
+    const tabs = document.createElement('div');
+    tabs.className = 'code-artifact-tabs';
+
+    const codeTab = document.createElement('button');
+    codeTab.type = 'button';
+    codeTab.className = 'code-artifact-tab is-active';
+    codeTab.textContent = 'Code';
+
+    const previewTab = document.createElement('button');
+    previewTab.type = 'button';
+    previewTab.className = 'code-artifact-tab';
+    previewTab.textContent = 'Preview';
+    previewTab.disabled = !previewable;
+    previewTab.title = previewable ? 'Preview artifact locally.' : 'Preview is available for HTML artifacts.';
+
+    tabs.append(codeTab, previewTab);
+
+    const body = document.createElement('div');
+    body.className = 'code-artifact-body';
+
+    const codePane = document.createElement('div');
+    codePane.className = 'code-artifact-pane code-artifact-pane-code';
+
+    const codeViewport = document.createElement('div');
+    codeViewport.className = 'code-artifact-codeview';
+
+    const lineNumbers = document.createElement('div');
+    lineNumbers.className = 'code-artifact-line-numbers';
+
+    const codeContent = document.createElement('pre');
+    codeContent.className = `code-artifact-code language-${language}`;
+    codeContent.textContent = content;
+
+    const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
+    lineNumbers.innerHTML = lines.map((_, idx) => `<span>${idx + 1}</span>`).join('');
+
+    codeViewport.append(lineNumbers, codeContent);
+    codePane.append(codeViewport);
+
+    const previewPane = document.createElement('div');
+    previewPane.className = 'code-artifact-pane code-artifact-pane-preview hidden';
+
+    if (previewable) {
+      if (language === 'html') {
+        const iframe = document.createElement('iframe');
+        iframe.className = 'code-artifact-preview-frame';
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.setAttribute('title', `${filename} preview`);
+        iframe.srcdoc = content;
+        previewPane.append(iframe);
+      } else {
+        const previewText = document.createElement('pre');
+        previewText.className = 'code-artifact-preview-text';
+        previewText.textContent = content;
+        previewPane.append(previewText);
+      }
+    } else {
+      const previewNote = document.createElement('p');
+      previewNote.className = 'code-artifact-preview-note';
+      previewNote.textContent = 'Preview is available for HTML artifacts.';
+      previewPane.append(previewNote);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'code-artifact-footer';
+    footer.innerHTML = `
+      <p class="code-artifact-footer-copy">This code has not been applied to the repo.</p>
+      <p class="code-artifact-footer-next">
+        Next step: Copy to VS Code or generate patch.
+        <button type="button" class="code-artifact-footer-link" title="Patch generation is not enabled yet.">generate patch</button>
+      </p>
+    `;
+
+    const collapseBody = () => {
+      const collapsed = card.classList.toggle('is-collapsed');
+      chevron.textContent = collapsed ? '▸' : '▾';
+      chevron.setAttribute('aria-expanded', String(!collapsed));
+      chevron.setAttribute('aria-label', collapsed ? 'Expand code artifact' : 'Collapse code artifact');
+      body.classList.toggle('hidden', collapsed);
+      tabs.classList.toggle('hidden', collapsed);
+      footer.classList.toggle('hidden', collapsed);
+    };
+
+    chevron.addEventListener('click', collapseBody);
+    codeTab.addEventListener('click', () => this.switchArtifactTab(card, 'code'));
+    previewTab.addEventListener('click', () => this.switchArtifactTab(card, 'preview'));
+
+    body.append(codePane, previewPane);
+    card.append(header, tabs, body, footer);
+
+    if (artifact.applied === true) {
+      statusBadge.textContent = 'Applied';
+    }
+
+    return card;
+  }
+
+  switchArtifactTab(card, tabName) {
+    if (!card) return;
+    const codeTab = card.querySelector('.code-artifact-tab:nth-of-type(1)');
+    const previewTab = card.querySelector('.code-artifact-tab:nth-of-type(2)');
+    const codePane = card.querySelector('.code-artifact-pane-code');
+    const previewPane = card.querySelector('.code-artifact-pane-preview');
+    if (!codeTab || !previewTab || !codePane || !previewPane) return;
+
+    const showPreview = tabName === 'preview' && !previewTab.disabled;
+    codeTab.classList.toggle('is-active', !showPreview);
+    previewTab.classList.toggle('is-active', showPreview);
+    codePane.classList.toggle('hidden', showPreview);
+    previewPane.classList.toggle('hidden', !showPreview);
+  }
+
+  normalizeArtifactLanguage(language) {
+    const normalized = String(language || '').trim().toLowerCase();
+    if (!normalized) return 'text';
+    if (normalized === 'py') return 'python';
+    if (normalized === 'md') return 'markdown';
+    return normalized;
+  }
+
+  inferLanguageFromFilename(filename) {
+    const lower = String(filename || '').toLowerCase();
+    if (lower.endsWith('.py')) return 'python';
+    if (lower.endsWith('.js')) return 'javascript';
+    if (lower.endsWith('.ts')) return 'typescript';
+    if (lower.endsWith('.css')) return 'css';
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+    if (lower.endsWith('.md')) return 'markdown';
+    return 'text';
+  }
+
+  languageLabel(language) {
+    const normalized = this.normalizeArtifactLanguage(language);
+    if (normalized === 'javascript') return 'JavaScript';
+    if (normalized === 'python') return 'Python';
+    if (normalized === 'typescript') return 'TypeScript';
+    if (normalized === 'markdown') return 'Markdown';
+    if (normalized === 'html') return 'HTML';
+    if (normalized === 'css') return 'CSS';
+    return normalized.toUpperCase();
+  }
+
+  isArtifactPreviewable(artifact, filename, language) {
+    if (artifact && artifact.previewable === true) return true;
+    const normalized = this.normalizeArtifactLanguage(language || this.inferLanguageFromFilename(filename));
+    return normalized === 'html';
+  }
+
+  async copyCodeArtifact(card, artifact, button) {
+    const content = String(artifact?.content || '');
+    if (!content) return;
+    await this.copyToClipboard(content);
+    if (!button) return;
+
+    const original = button.textContent || 'Copy';
+    button.textContent = 'Copied';
+    button.classList.add('is-copied');
+    window.clearTimeout(this.artifactCopyState.get(card)?.timer || 0);
+    const timer = window.setTimeout(() => {
+      button.textContent = original;
+      button.classList.remove('is-copied');
+    }, 1200);
+    this.artifactCopyState.set(card, { copied: true, timer });
+  }
+
+  downloadCodeArtifact(artifact) {
+    const filename = this.sanitizeArtifactDownloadName(artifact?.filename || 'artifact.txt');
+    const content = String(artifact?.content || '');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  sanitizeArtifactDownloadName(filename) {
+    const name = String(filename || 'artifact.txt').trim().split(/[\\/]/).pop() || 'artifact.txt';
+    return name;
+  }
+
+  toggleArtifactPreview(card, artifact, button) {
+    if (!card) return;
+    const previewPane = card.querySelector('.code-artifact-pane-preview');
+    const codePane = card.querySelector('.code-artifact-pane-code');
+    if (!previewPane || !codePane || button?.disabled) return;
+    this.switchArtifactTab(card, 'preview');
   }
 
   appendReceiptChips(article, messageMetadata) {
@@ -2632,6 +2946,31 @@ class Xv7UI {
     const matches = [...text.matchAll(/<\|think\|>([\s\S]*?)<\/\|think\|>/g)];
     if (!matches.length) return null;
     return matches.map((m) => m[1]).join('\n\n');
+  }
+
+  collectCodeArtifacts(message) {
+    const source = message && typeof message === 'object' ? message : {};
+    const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : source;
+    const artifacts = [];
+
+    if (Array.isArray(metadata.code_artifacts)) {
+      artifacts.push(...metadata.code_artifacts);
+    }
+
+    if (metadata.code_artifact && typeof metadata.code_artifact === 'object') {
+      artifacts.push(metadata.code_artifact);
+    }
+
+    return artifacts
+      .filter((artifact) => artifact && typeof artifact === 'object')
+      .map((artifact) => ({
+        filename: typeof artifact.filename === 'string' ? artifact.filename : '',
+        content: typeof artifact.content === 'string' ? artifact.content : '',
+        language: typeof artifact.language === 'string' ? artifact.language : '',
+        applied: artifact.applied === true,
+        previewable: artifact.previewable === true,
+      }))
+      .filter((artifact) => artifact.filename.trim() && artifact.content);
   }
 
   /**

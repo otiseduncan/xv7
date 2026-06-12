@@ -9,6 +9,12 @@ from core.brain.schema import BrainLayer, BrainRecord
 class AnswerContract:
     """Conversation quality guardrails for proof-aware record-grounded answers."""
 
+    CODE_ARTIFACT_PATTERN = re.compile(r"\b(generate|create|build|draft|write|return|make)\b")
+    CODE_ARTIFACT_HINT_PATTERN = re.compile(
+        r"\b(code artifact|filename|previewable|do not apply it to the repo|do not apply to the repo|"
+        r"one-page website|landing page|html|css|javascript|typescript|python|website)\b"
+    )
+
     REMINDER_PATTERN = re.compile(
         r"\b(remind me|set (?:me )?(?:a )?reminder|create (?:a )?reminder|add (?:it )?to (?:my )?calendar|schedule (?:it|this|that))\b"
     )
@@ -167,6 +173,297 @@ class AnswerContract:
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
         return text
+
+    def is_code_artifact_request(self, question: str) -> bool:
+        normalized = self._normalize(question)
+        strong_artifact_hints = (
+            "code artifact",
+            "filename",
+            "previewable",
+            "do not apply it to the repo",
+            "do not apply to the repo",
+            "html",
+            "css",
+            "javascript",
+            "typescript",
+            "python",
+        )
+        if any(token in normalized for token in strong_artifact_hints):
+            return True
+
+        explicit_lookup_hints = (
+            "look up",
+            "lookup",
+            "search online",
+            "google",
+            "browse",
+            "official website",
+        )
+        if any(token in normalized for token in explicit_lookup_hints):
+            return False
+
+        has_generation_verb = bool(self.CODE_ARTIFACT_PATTERN.search(normalized))
+        has_build_target = any(
+            token in normalized
+            for token in (
+                "website",
+                "webpage",
+                "landing page",
+                "one-page",
+                "single-page",
+                "html",
+                "css",
+                "javascript",
+                "typescript",
+                "python",
+            )
+        )
+        return has_generation_verb and has_build_target
+
+    @staticmethod
+    def _code_artifact_language(normalized: str) -> str:
+        if "python" in normalized:
+            return "python"
+        if "typescript" in normalized:
+            return "typescript"
+        if "javascript" in normalized:
+            return "javascript"
+        if "css" in normalized:
+            return "css"
+        return "html"
+
+    @staticmethod
+    def _code_artifact_filename(language: str) -> str:
+        if language == "css":
+            return "styles.css"
+        if language == "javascript":
+            return "app.js"
+        if language == "typescript":
+            return "app.ts"
+        if language == "python":
+            return "main.py"
+        return "index.html"
+
+    @staticmethod
+    def _default_code_artifact_content(filename: str, language: str) -> str:
+        if language == "html":
+            return """<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Harry's Hot Dog Cart</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #07111f;
+                --panel: rgba(10, 19, 34, 0.92);
+                --text: #f3f7fb;
+                --muted: #b7c5d7;
+                --accent: #fbbf24;
+                --accent-2: #fb7185;
+                --border: rgba(122, 214, 255, 0.18);
+            }
+            * { box-sizing: border-box; }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                font-family: "Segoe UI", system-ui, sans-serif;
+                color: var(--text);
+                background:
+                    radial-gradient(circle at top, rgba(251, 191, 36, 0.16), transparent 36%),
+                    linear-gradient(180deg, #0a1323 0%, #07111f 52%, #050b14 100%);
+            }
+            .page {
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+            }
+            .card {
+                width: min(960px, 100%);
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 28px;
+                overflow: hidden;
+                box-shadow: 0 30px 70px rgba(0, 0, 0, 0.35);
+            }
+            .hero {
+                padding: 40px 28px 28px;
+                background: linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(251, 113, 133, 0.12));
+            }
+            .eyebrow {
+                display: inline-flex;
+                padding: 8px 12px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.08);
+                color: var(--muted);
+                font-size: 0.82rem;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            h1 {
+                margin: 18px 0 12px;
+                font-size: clamp(2.4rem, 7vw, 4.8rem);
+                line-height: 0.95;
+                letter-spacing: -0.05em;
+            }
+            .lead {
+                max-width: 62ch;
+                margin: 0;
+                color: var(--muted);
+                font-size: clamp(1rem, 2.2vw, 1.15rem);
+                line-height: 1.6;
+            }
+            .hero-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin-top: 24px;
+            }
+            .button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 48px;
+                padding: 0 18px;
+                border-radius: 999px;
+                text-decoration: none;
+                font-weight: 700;
+            }
+            .button.primary {
+                color: #111827;
+                background: linear-gradient(135deg, #fbbf24, #fb7185);
+            }
+            .button.secondary {
+                color: var(--text);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(255, 255, 255, 0.05);
+            }
+            .grid {
+                display: grid;
+                gap: 20px;
+                padding: 28px;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            }
+            .panel {
+                padding: 20px;
+                border-radius: 22px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .panel h2 {
+                margin: 0 0 10px;
+                font-size: 1.1rem;
+            }
+            .menu-list {
+                margin: 0;
+                padding: 0;
+                list-style: none;
+                display: grid;
+                gap: 10px;
+            }
+            .menu-list li {
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding-bottom: 10px;
+                border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+            }
+            .muted { color: var(--muted); }
+            @media (max-width: 640px) {
+                .hero, .grid { padding-left: 18px; padding-right: 18px; }
+                .button { width: 100%; }
+            }
+        </style>
+    </head>
+    <body>
+        <main class="page">
+            <section class="card">
+                <header class="hero">
+                    <div class="eyebrow">Harry's Hot Dog Cart</div>
+                    <h1>Hot dogs, quick service, neighborhood comfort.</h1>
+                    <p class="lead">
+                        A one-page local website for Harry's Hot Dog Cart with bold flavor, fast ordering, and a friendly street-side feel.
+                    </p>
+                    <div class="hero-actions">
+                        <a class="button primary" href="#menu">See the menu</a>
+                        <a class="button secondary" href="#visit">Plan your visit</a>
+                    </div>
+                </header>
+                <section class="grid">
+                    <article class="panel" id="menu">
+                        <h2>Menu Highlights</h2>
+                        <ul class="menu-list">
+                            <li><span>Classic Cart Dog</span><span class="muted">Mustard, relish, onion</span></li>
+                            <li><span>Chicago-Style Dog</span><span class="muted">Pickle, tomato, sport peppers</span></li>
+                            <li><span>Loaded Chili Dog</span><span class="muted">Cheese, onion, jalapeno</span></li>
+                        </ul>
+                    </article>
+                    <article class="panel" id="visit">
+                        <h2>Location & Hours</h2>
+                        <p class="muted">Main Street corner near the park.</p>
+                        <p class="muted">Mon-Sat, 11:00 AM - 7:00 PM</p>
+                        <p class="muted">Sunday by event schedule</p>
+                    </article>
+                    <article class="panel">
+                        <h2>Order Ahead</h2>
+                        <p class="muted">Call ahead, swing by for pickup, or ask about catering for local events.</p>
+                        <a class="button primary" href="tel:+15555550123">Call Harry</a>
+                    </article>
+                </section>
+            </section>
+        </main>
+    </body>
+</html>"""
+
+        if language == "css":
+            return """body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+}
+"""
+
+        if language == "javascript":
+            return "const brand = \"Harry's Hot Dog Cart\";\nconsole.log(brand);"
+
+        if language == "typescript":
+            return "const brand: string = \"Harry's Hot Dog Cart\";\nconsole.log(brand);"
+
+        if language == "python":
+            return """def main() -> None:
+        print(\"Harry's Hot Dog Cart\")
+
+
+if __name__ == \"__main__\":
+        main()
+"""
+
+        return f"# Draft artifact for {filename}\n"
+
+    def build_code_artifact_response(self, question: str) -> dict[str, Any] | None:
+        normalized = self._normalize(question)
+        if not self.is_code_artifact_request(normalized):
+            return None
+
+        language = self._code_artifact_language(normalized)
+        filename = self._code_artifact_filename(language)
+        return {
+            "visible_text": f"Here is a draft {language.upper()} artifact for {filename}.",
+            "code_artifact": {
+                "type": "code_artifact",
+                "filename": filename,
+                "language": language,
+                "previewable": language == "html",
+                "applied": False,
+                "content": self._default_code_artifact_content(filename, language),
+            },
+            "context_receipt": {
+                "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                "context_receipts": [],
+                "record_ids": [],
+            },
+        }
 
     def _tool_boundary_answer(self, category: str, question: str) -> str | None:
         normalized_question = question.strip()

@@ -417,6 +417,76 @@ def test_missing_tool_prompts_are_deterministic_and_keep_knowledge_receipts(
         assert structured[0].get("layer") == "knowledge"
 
 
+def test_code_artifact_generation_prompt_emits_code_artifact_payload(
+    monkeypatch, tmp_path: Path
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+    memory_dir = tmp_path / "memory_records"
+    before_files = sorted(path.name for path in memory_dir.glob("XV7-MEMORY-*.json"))
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": (
+                "Generate a small HTML code artifact for a one-page \"Harry's Hot Dog Cart\" website. "
+                "Return it as a code artifact with filename index.html, language html, previewable true, "
+                "and do not apply it to the repo."
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"]
+    assert answer == "Here is a draft HTML artifact for index.html."
+    assert "cannot execute live web searches" not in answer.lower()
+    assert "browser tool" not in answer.lower()
+    assert "web lookup connector" not in answer.lower()
+
+    metadata = payload["messages"][-1].get("metadata", {})
+    artifact = metadata.get("code_artifact", {})
+    assert artifact.get("type") == "code_artifact"
+    assert artifact.get("filename") == "index.html"
+    assert artifact.get("language") == "html"
+    assert artifact.get("previewable") is True
+    assert artifact.get("applied") is False
+    content = artifact.get("content", "")
+    assert content.lstrip().startswith("<!doctype html>")
+    assert "Harry's Hot Dog Cart" in content
+    assert "<script" not in content.lower()
+    assert "http://" not in content.lower()
+    assert "https://" not in content.lower()
+
+    assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
+    assert assistant_payload.get("code_artifact", {}).get("filename") == "index.html"
+    assert assistant_payload.get("memory_receipts") == []
+    assert assistant_payload.get("operator_receipts") == []
+    assert assistant_payload.get("learned_record_id") is None
+
+    after_files = sorted(path.name for path in memory_dir.glob("XV7-MEMORY-*.json"))
+    assert after_files == before_files
+
+
+def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Look up the official website for Harry's Hot Dog Cart."},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "cannot execute live web searches" in answer
+    assert "browser tool" in answer
+    assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("code_artifact") == {}
+
+
 def test_become_prompt_is_personal_assistant_first(monkeypatch, tmp_path: Path) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)

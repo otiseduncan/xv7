@@ -1210,6 +1210,115 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
   });
 
+  it('renders an inline code artifact card inside the assistant chat flow', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard('user', 'Before artifact', null, null, '2026-06-11T00:00:00Z');
+    ui.appendMessageCard(
+      'assistant',
+      'Generated a draft artifact.',
+      null,
+      {
+        code_artifacts: [
+          {
+            filename: 'src/demo.ts',
+            language: 'typescript',
+            content: 'export const demo = 1;\n',
+          },
+        ],
+      },
+      '2026-06-11T00:00:01Z',
+    );
+    ui.appendMessageCard('user', 'After artifact', null, null, '2026-06-11T00:00:02Z');
+
+    const timelineCards = [...document.querySelectorAll('.chat-card')];
+    expect(timelineCards[0].textContent || '').toContain('Before artifact');
+    expect(timelineCards[1].querySelector('.code-artifact-card')).toBeTruthy();
+    expect(timelineCards[1].querySelector('.code-artifact-filename')?.textContent).toBe('src/demo.ts');
+    expect(timelineCards[1].querySelector('.code-artifact-badge-language')?.textContent).toBe('TypeScript');
+    expect(timelineCards[1].querySelector('.code-artifact-badge-status')?.textContent).toBe('Draft only');
+    expect([...timelineCards[1].querySelectorAll('.code-artifact-button')].map((node) => node.textContent)).toEqual([
+      'Copy',
+      'Download',
+      'Preview',
+    ]);
+    expect(timelineCards[1].querySelector('.code-artifact-footer-copy')?.textContent).toContain('not been applied to the repo');
+    expect(timelineCards[2].textContent || '').toContain('After artifact');
+  });
+
+  it('enables preview for HTML artifacts and swaps to the preview pane', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'HTML artifact ready.',
+      null,
+      {
+        code_artifacts: [
+          {
+            filename: 'preview.html',
+            language: 'html',
+            previewable: true,
+            content: '<main id="artifact-preview">Preview works</main>',
+          },
+        ],
+      },
+      '2026-06-11T00:00:03Z',
+    );
+
+    const artifactCard = document.querySelector('.code-artifact-card');
+    expect(artifactCard).toBeTruthy();
+
+    const previewButton = [...artifactCard.querySelectorAll('.code-artifact-button')].find((node) =>
+      (node.textContent || '').includes('Preview'),
+    );
+    expect(previewButton?.disabled).toBe(false);
+
+    previewButton?.click();
+    await flushAsync();
+
+    expect(artifactCard.querySelector('.code-artifact-pane-code')?.classList.contains('hidden')).toBe(true);
+    expect(artifactCard.querySelector('.code-artifact-pane-preview')?.classList.contains('hidden')).toBe(false);
+    expect(artifactCard.querySelector('iframe')?.getAttribute('srcdoc')).toContain('Preview works');
+  });
+
+  it('renders a singular code_artifact payload inline in the assistant chat flow', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Here is a draft HTML artifact for index.html.',
+      null,
+      {
+        code_artifact: {
+          type: 'code_artifact',
+          filename: 'index.html',
+          language: 'html',
+          previewable: true,
+          applied: false,
+          content: '<!doctype html><html><body><main>Draft</main></body></html>',
+        },
+      },
+      '2026-06-11T00:00:04Z',
+    );
+
+    const artifactCard = document.querySelector('.code-artifact-card');
+    expect(artifactCard).toBeTruthy();
+    expect(artifactCard.querySelector('.code-artifact-filename')?.textContent).toBe('index.html');
+    expect(artifactCard.querySelector('.code-artifact-badge-language')?.textContent).toBe('HTML');
+    expect(artifactCard.querySelector('.code-artifact-badge-status')?.textContent).toBe('Draft only');
+    expect(artifactCard.querySelector('.code-artifact-button:last-child')?.textContent).toBe('Preview');
+  });
+
   it('renders operator receipt chip and expandable details', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
