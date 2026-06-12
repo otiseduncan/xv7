@@ -19,7 +19,7 @@ Use this page first when asking: "what is next?"
 | CODE-01 | Workspace Context Map | implemented | Read-only workspace inspection and stack map. |
 | CODE-02 | Patch Planner | implemented | Read-only planner action fully wired into operator registry; ready for action queue integration. |
 | CODE-03 | Approved Patch Apply | implemented | Approval-gated patch application inside repo root; no commit or push. |
-| CODE-04 | Test Runner | prompt written | Standardized local validation runner and result receipts. |
+| CODE-04 | Test Runner | implemented | Allowlisted local validation runner with compact receipts. |
 | CODE-05 | Diff Summary | prompt written | Compact changed-file summary with risks and next step. |
 | CODE-06 | Commit Helper | prompt written | Approval-gated commit helper with safety warnings. |
 | CODE-07 | App Builder Mode | prompt written | Controlled app-builder interaction lane. |
@@ -64,13 +64,15 @@ Use this page first when asking: "what is next?"
 
 ## What To Do Next
 
-Current next recommended implementation target: CODE-04 Test Runner.
+Current next recommended implementation target: CODE-05 Diff Summary.
 
 CODE-01 is implemented as a read-only workspace map action with registry exposure and tests.
 
 CODE-02 is implemented as a read-only `patch_plan` action with registry exposure and tests.
 
 CODE-03 is implemented as an approval-gated `apply_approved_patch` action. It denies unapproved changes, rejects outside-root paths, writes only inside the repo root, returns changed files and compact diff data, and never commits or pushes.
+
+CODE-04 is implemented as a read-only `test_runner` action. It runs only allowlisted validation presets, blocks raw shell execution, validates single pytest targets, returns compact command receipts, and is wired through the operator registry.
 
 After CODE-01 through CODE-05 are implemented and stable, run the gauntlet in:
 
