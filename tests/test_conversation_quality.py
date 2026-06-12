@@ -513,6 +513,109 @@ def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -
     assert len(set(seen_contents)) == len(cases)
 
 
+def test_code_artifact_generation_has_no_cross_category_leakage(
+    monkeypatch, tmp_path: Path
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    cases = [
+        (
+            "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website.",
+            ["flow flowers", "fresh blooms"],
+            ["harry", "hot dog", "loaded chili dog", "chicago-style dog", "detailing", "arcade"],
+        ),
+        (
+            "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website.",
+            ["rico's mobile detailing", "showroom finish"],
+            ["harry", "hot dog", "flow flowers", "bouquet", "arcade", "neon byte"],
+        ),
+        (
+            "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website with purple and cyan futuristic styling.",
+            ["neon byte arcade", "high scores"],
+            ["harry", "hot dog", "flow flowers", "bouquet", "detailing", "rico"],
+        ),
+    ]
+
+    for prompt, must_have, must_not_have in cases:
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        content = payload["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+        for token in must_have:
+            assert token in content
+        for token in must_not_have:
+            assert token not in content
+        assert (
+            payload.get("metadata", {})
+            .get("last_assistant_payload", {})
+            .get("policy_provenance", {})
+            .get("artifact_generation")
+            == "deterministic_prompt_template"
+        )
+
+
+def test_code_artifact_generation_sentinel_business_name(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    prompt = (
+        "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. "
+        "Use black, red, and silver colors. Return it as a code artifact with filename index.html, "
+        "language html, previewable true, and do not apply it to the repo."
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    artifact = payload["messages"][-1]["metadata"]["code_artifact"]
+    content = str(artifact.get("content", ""))
+    lowered = content.lower()
+
+    assert artifact.get("filename") == "index.html"
+    assert artifact.get("language") == "html"
+    assert artifact.get("previewable") is True
+    assert artifact.get("applied") is False
+    assert "Crimson Turtle Locksmiths" in content
+
+    # If locksmith-specific semantics are unsupported, generic-business template text is acceptable.
+    assert (
+        "locksmith" in lowered
+        or "security" in lowered
+        or "key" in lowered
+        or "one-page business website" in lowered
+    )
+
+    for forbidden in (
+        "harry",
+        "hot dog",
+        "flow flowers",
+        "rico",
+        "detailing",
+        "neon byte",
+        "arcade",
+        "bouquet",
+    ):
+        assert forbidden not in lowered
+
+    assert (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+        .get("artifact_generation")
+        == "deterministic_prompt_template"
+    )
+
+
 def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Path) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
