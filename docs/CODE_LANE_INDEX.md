@@ -17,7 +17,7 @@ Use this page first when asking: "what is next?"
 | ID | Title | Status | Short Description |
 | --- | --- | --- | --- |
 | CODE-01 | Workspace Context Map | implemented | Read-only workspace inspection and stack map. |
-| CODE-02 | Patch Planner | prompt written | Plan likely files/risks/tests before mutation. |
+| CODE-02 | Patch Planner | partial | Read-only planner action and direct tests landed; registry/chat routing still needs local VS Code wiring. |
 | CODE-03 | Approved Patch Apply | prompt written | Approval-gated patch application inside repo root. |
 | CODE-04 | Test Runner | prompt written | Standardized local validation runner and result receipts. |
 | CODE-05 | Diff Summary | prompt written | Compact changed-file summary with risks and next step. |
@@ -64,9 +64,11 @@ Use this page first when asking: "what is next?"
 
 ## What To Do Next
 
-Current next recommended implementation target: CODE-02 Patch Planner.
+Current next recommended implementation target: finish CODE-02 registry/export/chat wiring, then run the targeted CODE-02 tests.
 
-CODE-01 is implemented as a read-only workspace map action with registry exposure and tests. Pull the repo, run the targeted tests, then advance to CODE-02.
+CODE-01 is implemented as a read-only workspace map action with registry exposure and tests.
+
+CODE-02 now has the core read-only `patch_plan` action and direct unit coverage. The remote writer could not safely update registry/export files because those files include sensitive operator/scan strings, so finish the small registry/export wiring in VS Code before marking CODE-02 implemented.
 
 After CODE-01 through CODE-03 are implemented and stable, run the gauntlet in:
 
