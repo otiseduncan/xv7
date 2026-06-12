@@ -777,9 +777,28 @@ def _extract_after_prefixes(normalized: str, prefixes: tuple[str, ...]) -> str:
 def _classify_speech_act(question: str) -> str:
     normalized = _normalize_intent_text(question)
     is_question = STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?")
+    is_repo_build_task = (
+        (
+            "build this feature" in normalized
+            or "add tests" in normalized
+            or "run pytest" in normalized
+            or "code builder smoke test" in normalized
+            or "git commit" in normalized
+            or "git push" in normalized
+        )
+        and (
+            "we are in" in normalized
+            or "x:\\" in normalized
+            or "pytest" in normalized
+            or "git" in normalized
+        )
+    )
 
     if _extract_active_focus_instruction(question) is not None:
         return "active_focus_update"
+
+    if is_repo_build_task:
+        return "implementation_task"
 
     if any(normalized.startswith(prefix) for prefix in CORRECTION_PREFIXES):
         return "user_correction"

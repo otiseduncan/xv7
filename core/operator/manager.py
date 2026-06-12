@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import json
 import shlex
 import shutil
 import subprocess
@@ -129,6 +130,9 @@ class OperatorManager:
             "/search-files": SlashCommandSpec(
                 "/search-files", "read_only_scan", "low", "read_only"
             ),
+            "/run-tests": SlashCommandSpec(
+                "/run-tests", "read_only_scan", "low", "read_only"
+            ),
             "/vscode-open-workspace": SlashCommandSpec(
                 "/vscode-open-workspace",
                 "vscode_read_only",
@@ -186,7 +190,7 @@ class OperatorManager:
                 implemented=False,
             ),
             "/apply-patch": SlashCommandSpec(
-                "/apply-patch", "mutation", "medium", "operator", implemented=False
+                "/apply-patch", "mutation", "medium", "operator"
             ),
             "/restart-container": SlashCommandSpec(
                 "/restart-container", "runtime_mutation", "medium", "operator"
@@ -571,6 +575,34 @@ class OperatorManager:
                 stdout=f"matches={len(files)}",
                 data={"matches": files},
             )
+        if slash == "/run-tests":
+            target: str | None = None
+            if args:
+                requested = " ".join(args).strip()
+                if requested.startswith(("tests/", "tests\\")):
+                    target = json.dumps(
+                        {
+                            "preset": "single_pytest",
+                            "test_target": requested,
+                        }
+                    )
+                else:
+                    target = requested
+            try:
+                return run_action(
+                    "test_runner",
+                    action_id=self._next_action_id(),
+                    repo_root=self.repo_root,
+                    target=target,
+                )
+            except ValueError as exc:
+                return self._build_result(
+                    action_name="run_tests",
+                    status="failed",
+                    command_preview="run allowlisted tests",
+                    target=str(self.repo_root),
+                    stderr=str(exc),
+                )
         return self._build_result(
             action_name=slash.strip("/"),
             status="failed",
@@ -800,6 +832,26 @@ class OperatorManager:
                 stdout="container restarted",
                 mutates_runtime=True,
             )
+
+        if slash == "/apply-patch":
+            patch_payload = " ".join(args).strip()
+            try:
+                return run_action(
+                    "apply_approved_patch",
+                    action_id=self._next_action_id(),
+                    repo_root=self.repo_root,
+                    target=patch_payload,
+                )
+            except ValueError as exc:
+                return self._build_result(
+                    action_name="apply_patch",
+                    status="failed",
+                    command_preview="approval-gated patch apply",
+                    target=str(self.repo_root),
+                    stderr=str(exc),
+                    mutates_files=True,
+                    requires_approval=True,
+                )
 
         return self._build_result(
             action_name=slash.strip("/"),

@@ -601,3 +601,36 @@ def test_learning_rule_applies_to_future_answer_and_stays_hidden(
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
     assert assistant_payload.get("speech_act") == "learned_rule_applied"
     assert assistant_payload.get("learned_record_id")
+
+
+def test_normal_preference_prompts_still_save_with_unique_memory_ids(
+    monkeypatch, tmp_path: Path
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    first = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "I prefer concise updates unless I ask for details."},
+    )
+    assert first.status_code == 200
+    first_payload = first.json().get("metadata", {}).get("last_assistant_payload", {})
+    first_id = str(first_payload.get("learned_record_id", ""))
+    assert first_id.startswith("XV7-MEMORY-")
+    assert first_payload.get("learning_layer") == "memory"
+
+    second = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Keep answers direct and short unless I ask for a deep dive."},
+    )
+    assert second.status_code == 200
+    second_payload = (
+        second.json().get("metadata", {}).get("last_assistant_payload", {})
+    )
+    second_id = str(second_payload.get("learned_record_id", ""))
+    assert second_id.startswith("XV7-MEMORY-")
+    assert second_payload.get("learning_layer") == "memory"
+
+    assert first_id != second_id

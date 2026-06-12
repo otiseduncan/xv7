@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+import json
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -256,3 +257,125 @@ def test_read_only_scan_works_without_operator_mode(
     assert ports_payload["receipt"]["status"] == "success"
     assert ports_payload["pending_action"] is None
     assert "scan_ports" in calls
+
+
+def test_apply_patch_requires_confirmation_then_executes_when_confirmed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+    payload = {
+        "approval": {"approved": True, "approval_id": "APP-9A"},
+        "source_plan_id": "PLAN-9A",
+        "risk": "low",
+        "changes": [{"path": "docs/code9a.txt", "content": "ready\n"}],
+    }
+
+    staged = _stage(
+        client,
+        session_id,
+        f"/apply-patch {json.dumps(payload, separators=(',', ':'))}",
+        operator_mode=True,
+    )
+
+    assert staged["executed"] is False
+    assert staged["pending_action"] is not None
+    assert staged["receipt"]["status"] == "pending"
+    assert not (tmp_path / "docs" / "code9a.txt").exists()
+
+    confirm = client.post(
+        "/operator/confirm",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "session_id": session_id,
+            "action_id": staged["pending_action"]["action_id"],
+        },
+    )
+    assert confirm.status_code == 200
+    confirmed = confirm.json()
+    assert confirmed["receipt"]["status"] == "success"
+    assert confirmed["pending_action"] is None
+    assert (tmp_path / "docs" / "code9a.txt").read_text(encoding="utf-8") == "ready\n"
+
+
+def test_apply_patch_invalid_payload_fails_safely_after_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    staged = _stage(client, session_id, "/apply-patch not-json", operator_mode=True)
+    assert staged["pending_action"] is not None
+
+    confirm = client.post(
+        "/operator/confirm",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "session_id": session_id,
+            "action_id": staged["pending_action"]["action_id"],
+        },
+    )
+    assert confirm.status_code == 200
+    payload = confirm.json()
+    assert payload["receipt"]["status"] == "failed"
+    summary = str(payload["receipt"].get("summary", "")).lower()
+    assert "valid json" in summary or "json payload" in summary
+
+
+def test_run_tests_slash_routes_to_test_runner_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+    captured: dict[str, str | None] = {"action_name": None, "target": None}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        captured["action_name"] = action_name
+        captured["target"] = target
+        now = datetime.now(UTC)
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name=action_name,
+            status="success",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="test",
+            target=str(repo_root),
+            stdout_summary="ok",
+            stderr_summary="",
+            exit_code=0,
+            data={"passed": True},
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"{action_name} {action_id}",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    no_arg = _stage(client, session_id, "/run-tests", operator_mode=False)
+    assert no_arg["executed"] is True
+    assert no_arg["receipt"]["status"] == "success"
+    assert captured["action_name"] == "test_runner"
+    assert captured["target"] is None
+
+    single_target = _stage(
+        client,
+        session_id,
+        "/run-tests tests/test_operator_registry.py",
+        operator_mode=False,
+    )
+    assert single_target["executed"] is True
+    assert single_target["receipt"]["status"] == "success"
+    assert captured["action_name"] == "test_runner"
+    assert captured["target"] is not None
+    forwarded = json.loads(str(captured["target"]))
+    assert forwarded["preset"] == "single_pytest"
+    assert forwarded["test_target"] == "tests/test_operator_registry.py"

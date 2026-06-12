@@ -945,3 +945,44 @@ def test_working_tree_clean_prompt_routes_to_repo_status_not_mutation_deny(
     answer = response.json()["messages"][-1]["content"]
     assert "denied" not in answer.lower()
     assert "Operator receipt:" not in answer
+
+
+def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    runtime_dir = tmp_path / "brain_runtime_records"
+    knowledge_before = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
+    memory_before = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": (
+                "We are in X:\\XV7\\xv7. Build this feature. Add tests. "
+                "Run pytest. git commit. git push. Code Builder Smoke Test."
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert "operator mode" in answer
+
+    assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
+    operator_receipts = assistant_payload.get("operator_receipts", [])
+    assert operator_receipts
+    assert operator_receipts[0].get("action_name") == "read_only_guard"
+    assert operator_receipts[0].get("status") == "denied"
+    assert not assistant_payload.get("memory_receipts")
+    assert "learned_record_id" not in assistant_payload
+
+    knowledge_after = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
+    memory_after = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
+    assert knowledge_after == knowledge_before
+    assert memory_after == memory_before
