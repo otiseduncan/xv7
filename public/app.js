@@ -1499,11 +1499,13 @@ class Xv7UI {
     const codeTab = document.createElement('button');
     codeTab.type = 'button';
     codeTab.className = 'code-artifact-tab is-active';
+    codeTab.setAttribute('aria-selected', 'true');
     codeTab.textContent = 'Code';
 
     const previewTab = document.createElement('button');
     previewTab.type = 'button';
     previewTab.className = 'code-artifact-tab';
+    previewTab.setAttribute('aria-selected', 'false');
     previewTab.textContent = 'Preview';
     previewTab.disabled = !previewable;
     previewTab.title = previewable ? 'Preview artifact locally.' : 'Preview is available for HTML artifacts.';
@@ -1514,7 +1516,8 @@ class Xv7UI {
     body.className = 'code-artifact-body';
 
     const codePane = document.createElement('div');
-    codePane.className = 'code-artifact-pane code-artifact-pane-code';
+    codePane.className = 'code-artifact-pane code-artifact-code-panel code-artifact-pane-code';
+    codePane.style.minHeight = '480px';
 
     const codeViewport = document.createElement('div');
     codeViewport.className = 'code-artifact-codeview';
@@ -1533,7 +1536,9 @@ class Xv7UI {
     codePane.append(codeViewport);
 
     const previewPane = document.createElement('div');
-    previewPane.className = 'code-artifact-pane code-artifact-pane-preview hidden';
+    previewPane.className = 'code-artifact-pane code-artifact-preview-panel code-artifact-pane-preview';
+    previewPane.style.minHeight = '480px';
+    previewPane.hidden = true;
 
     if (previewable) {
       if (language === 'html') {
@@ -1571,9 +1576,9 @@ class Xv7UI {
       chevron.textContent = collapsed ? '▸' : '▾';
       chevron.setAttribute('aria-expanded', String(!collapsed));
       chevron.setAttribute('aria-label', collapsed ? 'Expand code artifact' : 'Collapse code artifact');
-      body.classList.toggle('hidden', collapsed);
-      tabs.classList.toggle('hidden', collapsed);
-      footer.classList.toggle('hidden', collapsed);
+      body.hidden = collapsed;
+      tabs.hidden = collapsed;
+      footer.hidden = collapsed;
     };
 
     chevron.addEventListener('click', collapseBody);
@@ -1594,15 +1599,17 @@ class Xv7UI {
     if (!card) return;
     const codeTab = card.querySelector('.code-artifact-tab:nth-of-type(1)');
     const previewTab = card.querySelector('.code-artifact-tab:nth-of-type(2)');
-    const codePane = card.querySelector('.code-artifact-pane-code');
-    const previewPane = card.querySelector('.code-artifact-pane-preview');
+    const codePane = card.querySelector('.code-artifact-code-panel');
+    const previewPane = card.querySelector('.code-artifact-preview-panel');
     if (!codeTab || !previewTab || !codePane || !previewPane) return;
 
     const showPreview = tabName === 'preview' && !previewTab.disabled;
     codeTab.classList.toggle('is-active', !showPreview);
     previewTab.classList.toggle('is-active', showPreview);
-    codePane.classList.toggle('hidden', showPreview);
-    previewPane.classList.toggle('hidden', !showPreview);
+    codeTab.setAttribute('aria-selected', String(!showPreview));
+    previewTab.setAttribute('aria-selected', String(showPreview));
+    codePane.hidden = showPreview;
+    previewPane.hidden = !showPreview;
   }
 
   normalizeArtifactLanguage(language) {

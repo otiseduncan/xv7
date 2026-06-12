@@ -528,6 +528,8 @@ details[open] > .diag-section-title::before {
 
 .code-artifact-body {
   padding: 0.7rem 0.95rem 0.95rem;
+  min-height: 480px;
+  display: grid;
 }
 
 .code-artifact-pane.hidden,
@@ -539,6 +541,7 @@ details[open] > .diag-section-title::before {
 .code-artifact-codeview {
   display: grid;
   grid-template-columns: auto 1fr;
+  min-height: 480px;
   border: 1px solid rgba(0, 163, 255, 0.14);
   border-radius: 0.7rem;
   background: rgba(2, 6, 14, 0.96);
@@ -586,7 +589,7 @@ details[open] > .diag-section-title::before {
 }
 
 .code-artifact-pane-preview {
-  margin-top: 0.75rem;
+  margin-top: 0;
   border: 1px solid rgba(0, 163, 255, 0.14);
   border-radius: 0.7rem;
   background: rgba(2, 6, 14, 0.96);
@@ -595,7 +598,8 @@ details[open] > .diag-section-title::before {
 
 .code-artifact-preview-frame {
   width: 100%;
-  min-height: 10rem;
+  min-height: 480px;
+  height: 100%;
   border: 0;
   background: #fff;
 }
@@ -603,10 +607,20 @@ details[open] > .diag-section-title::before {
 .code-artifact-preview-text {
   margin: 0;
   padding: 0.85rem 0.9rem;
+  min-height: 480px;
   color: #d7f3ff;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.78rem;
   white-space: pre-wrap;
+}
+
+.code-artifact-code-panel,
+.code-artifact-preview-panel {
+  min-height: 480px;
+}
+
+.code-artifact-preview-panel {
+  display: grid;
 }
 
 .code-artifact-footer {

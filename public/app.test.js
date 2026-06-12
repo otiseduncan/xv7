@@ -1237,6 +1237,7 @@ describe('ModelProfileControl', () => {
     const timelineCards = [...document.querySelectorAll('.chat-card')];
     expect(timelineCards[0].textContent || '').toContain('Before artifact');
     expect(timelineCards[1].querySelector('.code-artifact-card')).toBeTruthy();
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
     expect(timelineCards[1].querySelector('.code-artifact-filename')?.textContent).toBe('src/demo.ts');
     expect(timelineCards[1].querySelector('.code-artifact-badge-language')?.textContent).toBe('TypeScript');
     expect(timelineCards[1].querySelector('.code-artifact-badge-status')?.textContent).toBe('Draft only');
@@ -1245,7 +1246,32 @@ describe('ModelProfileControl', () => {
       'Download',
       'Preview',
     ]);
+    expect(timelineCards[1].querySelectorAll('.code-artifact-header')).toHaveLength(1);
+    expect(timelineCards[1].querySelectorAll('.code-artifact-footer')).toHaveLength(1);
     expect(timelineCards[1].querySelector('.code-artifact-footer-copy')?.textContent).toContain('not been applied to the repo');
+
+    const copyButton = timelineCards[1].querySelector('.code-artifact-button');
+    const downloadButton = [...timelineCards[1].querySelectorAll('.code-artifact-button')][1];
+    const createObjectURLSpy = vi.fn(() => 'blob:artifact');
+    const revokeObjectURLSpy = vi.fn();
+    Object.defineProperty(window.URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURLSpy,
+    });
+    Object.defineProperty(window.URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURLSpy,
+    });
+    const anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    copyButton?.click();
+    downloadButton?.click();
+    await flushAsync();
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('export const demo = 1;\n');
+    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURLSpy).toHaveBeenCalledTimes(1);
     expect(timelineCards[2].textContent || '').toContain('After artifact');
   });
 
@@ -1274,6 +1300,14 @@ describe('ModelProfileControl', () => {
 
     const artifactCard = document.querySelector('.code-artifact-card');
     expect(artifactCard).toBeTruthy();
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
+    expect(artifactCard.querySelectorAll('.code-artifact-header')).toHaveLength(1);
+    expect(artifactCard.querySelectorAll('.code-artifact-footer')).toHaveLength(1);
+    expect(artifactCard.querySelector('.code-artifact-code-panel')?.hidden).toBe(false);
+    expect(artifactCard.querySelector('.code-artifact-preview-panel')?.hidden).toBe(true);
+    expect(artifactCard.querySelector('.code-artifact-preview-panel')?.style.minHeight).toBe('480px');
+    expect(artifactCard.querySelector('.code-artifact-code-panel')?.style.minHeight).toBe('480px');
+    expect(artifactCard.querySelector('.code-artifact-tab.is-active')?.textContent).toBe('Code');
 
     const previewButton = [...artifactCard.querySelectorAll('.code-artifact-button')].find((node) =>
       (node.textContent || '').includes('Preview'),
@@ -1283,9 +1317,21 @@ describe('ModelProfileControl', () => {
     previewButton?.click();
     await flushAsync();
 
-    expect(artifactCard.querySelector('.code-artifact-pane-code')?.classList.contains('hidden')).toBe(true);
-    expect(artifactCard.querySelector('.code-artifact-pane-preview')?.classList.contains('hidden')).toBe(false);
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
+    expect(artifactCard.querySelector('.code-artifact-code-panel')?.hidden).toBe(true);
+    expect(artifactCard.querySelector('.code-artifact-preview-panel')?.hidden).toBe(false);
+    expect(artifactCard.querySelector('.code-artifact-tab.is-active')?.textContent).toBe('Preview');
     expect(artifactCard.querySelector('iframe')?.getAttribute('srcdoc')).toContain('Preview works');
+
+    const codeTab = [...artifactCard.querySelectorAll('.code-artifact-tab')].find((node) =>
+      (node.textContent || '').includes('Code'),
+    );
+    codeTab?.click();
+    await flushAsync();
+
+    expect(artifactCard.querySelector('.code-artifact-code-panel')?.hidden).toBe(false);
+    expect(artifactCard.querySelector('.code-artifact-preview-panel')?.hidden).toBe(true);
+    expect(artifactCard.querySelector('.code-artifact-tab.is-active')?.textContent).toBe('Code');
   });
 
   it('renders a singular code_artifact payload inline in the assistant chat flow', async () => {
@@ -1313,6 +1359,7 @@ describe('ModelProfileControl', () => {
 
     const artifactCard = document.querySelector('.code-artifact-card');
     expect(artifactCard).toBeTruthy();
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
     expect(artifactCard.querySelector('.code-artifact-filename')?.textContent).toBe('index.html');
     expect(artifactCard.querySelector('.code-artifact-badge-language')?.textContent).toBe('HTML');
     expect(artifactCard.querySelector('.code-artifact-badge-status')?.textContent).toBe('Draft only');
