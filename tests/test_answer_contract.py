@@ -833,6 +833,29 @@ def test_prompt_fidelity_contract_extracts_tony_tavern_prompt() -> None:
     assert payload["source_prompt"] == prompt
 
 
+def test_explicit_artifact_intent_prioritizes_artifact_over_build_guard() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize(
+        "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"
+    )
+    assert contract._has_explicit_artifact_intent(normalized) is True
+    assert contract._is_repo_mutation_build_prompt(normalized) is False
+    assert contract._prioritize_artifact_over_build_guard(normalized) is True
+
+
+def test_repo_mutation_build_phrases_do_not_bypass_build_guard() -> None:
+    contract = AnswerContract()
+
+    guard_cases = (
+        "build me a website for another business",
+        "create a website in the repo and commit it",
+    )
+    for raw in guard_cases:
+        normalized = contract._normalize(raw)
+        assert contract._prioritize_artifact_over_build_guard(normalized) is False
+
+
 def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
     contract = AnswerContract()
     prompt = "generate a small HTML artifact for tony tavern grooming using black yellow and green"

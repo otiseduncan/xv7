@@ -30,6 +30,15 @@ class AnswerContract:
         r"\b(code artifact|filename|previewable|do not apply it to the repo|do not apply to the repo|"
         r"one-page website|landing page|html|css|javascript|typescript|python)\b"
     )
+    EXPLICIT_ARTIFACT_INTENT_PATTERN = re.compile(
+        r"\b(html artifact|code artifact|draft html|inline html|single-file html|single file html|"
+        r"one-page html artifact|one page html artifact|generate html artifact|create html artifact|artifact)\b"
+    )
+    ARTIFACT_REPO_MUTATION_PATTERN = re.compile(
+        r"\b(build me a website|create a website in the repo|make the app|implement this feature|"
+        r"change the project files|write this into the repo|write this to the repo|"
+        r"in the repo and commit it|commit it|git commit|git push|push it)\b"
+    )
 
     REMINDER_PATTERN = re.compile(
         r"\b(remind me|set (?:me )?(?:a )?reminder|create (?:a )?reminder|add (?:it )?to (?:my )?calendar|schedule (?:it|this|that))\b"
@@ -281,6 +290,8 @@ class AnswerContract:
             (r"for\s+([^,.]+?)\s+website", False),
             (r"for\s+([^,.]+?)\s+(?:grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b", True),
             (r"for\s+([^,.]+?)\s+using\b", True),
+            (r"(?:html\s+)?artifact\s+([^,.]+?)\s+and\s+(?:a\s+)?(?:biker\s+bar|bar|grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b", True),
+            (r"(?:html\s+)?artifact\s+([^,.]+?)\s+using\b", True),
             (r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)", False),
         ]
 
@@ -370,6 +381,8 @@ class AnswerContract:
             return "detailing"
         if any(token in text for token in ("arcade", "gaming", "game", "retro", "neon byte", "pixel", "high score")):
             return "arcade"
+        if any(token in text for token in ("biker bar", "bar", "tavern", "pub", "alehouse")):
+            return "biker_bar"
         return "generic"
 
     @staticmethod
@@ -410,6 +423,19 @@ class AnswerContract:
             style.update({"accent": "#38bdf8", "accent_2": "#22d3ee", "font_stack": '"Segoe UI", system-ui, sans-serif'})
         elif category == "arcade":
             style.update({"accent": "#a855f7", "accent_2": "#22d3ee", "font_stack": '"Trebuchet MS", "Arial Black", sans-serif', "hero_transform": "uppercase"})
+        elif category == "biker_bar":
+            style.update(
+                {
+                    "accent": "#f97316",
+                    "accent_2": "#facc15",
+                    "font_stack": '"Trebuchet MS", "Arial Black", sans-serif',
+                    "bg": "#070707",
+                    "panel": "rgba(12, 12, 12, 0.96)",
+                    "text": "#f5f5f5",
+                    "muted": "#d4d4d4",
+                    "border": "rgba(249, 115, 22, 0.24)",
+                }
+            )
 
         if any(token in text for token in ("purple", "violet", "magenta")):
             style["accent"] = "#a855f7"
@@ -629,6 +655,31 @@ class AnswerContract:
                 "action_title": "Join the Game",
                 "action_body": "Drop in, power up, and claim a spot on the scoreboard.",
                 "action_label": "Play Now",
+            }
+
+        if category == "biker_bar":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Heavy bikes, loud riffs, cold pours, and a road-ready crowd.",
+                "lead": f"A one-page biker bar website for {display_name} with live music nights, tap highlights, and rally-friendly events.",
+                "primary_cta": "See tonight's lineup",
+                "secondary_cta": "View tap list",
+                "highlight_title": "Biker Bar Highlights",
+                "highlights": [
+                    ("Live Music Nights", "Weekly sets with local hard rock and blues bands"),
+                    ("House Tap Picks", "Rotating drafts, whiskey pours, and rider specials"),
+                    ("Road Crew Events", "Bike meetups, poker runs, and weekend rally starts"),
+                ],
+                "info_title": "The Tavern Vibe",
+                "info_lines": [
+                    "Leather jackets welcome, helmets by the door, good times on tap.",
+                    "Black, orange, and yellow palette tuned for a bold late-night biker bar look.",
+                    "Open late with food, drinks, and event nights built for the ride-in crowd.",
+                ],
+                "action_title": "Roll In Tonight",
+                "action_body": "Check the live set, lock in your crew, and ride over for the next round.",
+                "action_label": "Plan Your Night",
             }
 
         return {
@@ -1519,6 +1570,32 @@ if __name__ == \"__main__\":
                 cls._is_post_apply_targeted_validation_request(normalized_question),
                 cls._is_post_apply_full_test_guard_request(normalized_question),
             )
+        )
+
+    @classmethod
+    def _has_explicit_artifact_intent(cls, normalized_question: str) -> bool:
+        return bool(cls.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_repo_mutation_build_prompt(cls, normalized_question: str) -> bool:
+        if not normalized_question:
+            return False
+
+        if cls.ARTIFACT_REPO_MUTATION_PATTERN.search(normalized_question):
+            return True
+
+        if (
+            any(marker in normalized_question for marker in (" in the repo", " into the repo", " to the repo"))
+            and not re.search(r"\b(do not|don't)\s+(apply|write|save)\b", normalized_question)
+        ):
+            return True
+
+        return False
+
+    @classmethod
+    def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
+        return cls._has_explicit_artifact_intent(normalized_question) and not cls._is_repo_mutation_build_prompt(
+            normalized_question
         )
 
     @staticmethod

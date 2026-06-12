@@ -1906,6 +1906,113 @@ def test_post_apply_full_test_prompt_returns_guard_message(monkeypatch, tmp_path
     assert provenance.get("artifact_patch") == "full_test_guard"
 
 
+def test_explicit_create_html_artifact_prompt_routes_to_artifact_generation(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            AnswerContract._default_code_artifact_content(filename, language, question),
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    session_id = _new_session(client)
+    prompt = "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    answer = str(message["content"])
+    metadata = message["metadata"]
+    artifact = metadata.get("code_artifact", {})
+    content = str(artifact.get("content", "")).lower()
+    provenance = metadata.get("policy_provenance", {})
+    compact = str(metadata.get("context_receipt", {}).get("compact", ""))
+
+    assert "build task" not in answer.lower()
+    assert provenance.get("brain_answer_source") != "implementation_task_guard"
+    assert "code-artifact-draft" in compact
+    assert artifact.get("type") == "code_artifact"
+    assert artifact.get("applied") is False
+    assert "tony's tavern" in content
+    assert "biker" in content and "bar" in content
+    assert "black" in content or "#0" in content
+    assert "orange" in content or "#f59e0b" in content or "#ea580c" in content
+    assert "yellow" in content or "#facc15" in content or "#eab308" in content
+    assert "soggy doggy" not in content
+    assert "groom" not in content
+    assert "white" not in content
+    assert "purple" not in content
+    assert "green" not in content
+    assert not (tmp_path / "generated-sites").exists()
+
+
+def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            AnswerContract._default_code_artifact_content(filename, language, question),
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    session_id = _new_session(client)
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "build an HTML artifact for Tony's Tavern biker bar using black orange and yellow"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+    compact = str(metadata.get("context_receipt", {}).get("compact", ""))
+
+    assert "build task" not in answer
+    assert metadata.get("policy_provenance", {}).get("brain_answer_source") != "implementation_task_guard"
+    assert metadata.get("code_artifact", {}).get("type") == "code_artifact"
+    assert "code-artifact-draft" in compact
+    assert not (tmp_path / "generated-sites").exists()
+
+
 def test_natural_language_build_prompt_does_not_mutate_repo(monkeypatch, tmp_path: Path) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -1914,9 +2021,16 @@ def test_natural_language_build_prompt_does_not_mutate_repo(monkeypatch, tmp_pat
     response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "build me a website for Soggy Doggy"},
+        json={"raw_text": "build me a website for another business"},
     )
     assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+    assert "build task" in answer
+    assert metadata.get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
+    assert metadata.get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()
 
 
@@ -1931,9 +2045,87 @@ def test_build_guard_still_wins_when_commit_words_are_present(monkeypatch, tmp_p
         json={"raw_text": "build me a website for Soggy Doggy and commit it"},
     )
     assert response.status_code == 200
-    answer = response.json()["messages"][-1]["content"].lower()
+    message = response.json()["messages"][-1]
+    answer = message["content"].lower()
     assert "build task" in answer
+    assert message["metadata"].get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
+    assert message["metadata"].get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()
+
+
+def test_repo_mutation_wording_still_hits_build_guard(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "create a website in the repo and commit it"},
+    )
+    assert response.status_code == 200
+    message = response.json()["messages"][-1]
+    answer = str(message["content"]).lower()
+    assert "build task" in answer
+    assert message["metadata"].get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
+    assert message["metadata"].get("code_artifact", {}) == {}
+    assert not (tmp_path / "generated-sites").exists()
+
+
+def test_back_to_back_create_artifact_preserves_code16_fidelity(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            AnswerContract._default_code_artifact_content(filename, language, question),
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    session_id = _new_session(client)
+    soggy = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert soggy.status_code == 200
+
+    tony = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"},
+    )
+    assert tony.status_code == 200
+    payload = tony.json()
+    artifact = payload["messages"][-1]["metadata"]["code_artifact"]
+    content = str(artifact.get("content", "")).lower()
+
+    assert "tony's tavern" in content
+    assert "biker" in content and "bar" in content
+    assert "black" in content or "#0" in content
+    assert "orange" in content or "#f59e0b" in content or "#ea580c" in content
+    assert "yellow" in content or "#facc15" in content or "#eab308" in content
+    assert "soggy doggy" not in content
+    assert "groom" not in content
+    assert "white" not in content
+    assert "purple" not in content
+    assert "green" not in content
 
 
 def test_commit_proposal_on_clean_repo_returns_clear_message(monkeypatch, tmp_path: Path) -> None:

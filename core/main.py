@@ -2518,6 +2518,9 @@ async def add_session_message(
         or is_post_apply_file_check_prompt
         or is_post_apply_full_test_prompt
     )
+    prioritize_artifact_over_build_guard = (
+        brain_context_manager.answer_contract._prioritize_artifact_over_build_guard(normalized_question)
+    )
 
     if is_artifact_patch_lane_prompt:
         brain_context = brain_context_manager.build_context_for_question(payload.raw_text)
@@ -2639,7 +2642,11 @@ async def add_session_message(
             await memory_manager.update_session(updated_state)
             return updated_state
 
-    if intent_class == "implementation_task" and not is_artifact_patch_lane_prompt:
+    if (
+        intent_class == "implementation_task"
+        and not is_artifact_patch_lane_prompt
+        and not prioritize_artifact_over_build_guard
+    ):
         visible_text = _build_task_guard_answer()
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
