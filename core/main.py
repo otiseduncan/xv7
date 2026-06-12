@@ -3193,9 +3193,12 @@ async def add_session_message(
         0,
         ConversationMessage(role="system", content=brain_context.prompt),
     )
-    artifact_response = brain_context_manager.code_artifact_response(payload.raw_text)
+    artifact_response = await brain_context_manager.code_artifact_response(payload.raw_text)
     if artifact_response is not None:
         visible_text = str(artifact_response.get("visible_text", "")).strip()
+        artifact_provenance = artifact_response.get("provenance", {})
+        if not isinstance(artifact_provenance, dict):
+            artifact_provenance = {}
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=artifact_response.get("context_receipt"),
@@ -3206,10 +3209,10 @@ async def add_session_message(
                 "answer_source": "brain_policy",
                 "policy_source": "answer_contract",
                 "brain_answer_source": "code_artifact_request",
-                "artifact_generation": "deterministic_prompt_template",
                 "request_id": str(uuid4()),
                 "session_id": str(session_id),
                 "runtime_model_inference_proven": False,
+                **artifact_provenance,
             },
             warnings=[],
             action_history_refs=[

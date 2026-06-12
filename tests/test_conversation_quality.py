@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import re
 
 from fastapi.testclient import TestClient
 
@@ -64,6 +65,72 @@ def _new_session(client: TestClient) -> str:
     )
     assert session_response.status_code == 201
     return session_response.json()["session_id"]
+
+
+def _extract_business_name(prompt: str) -> str:
+    quoted = re.search(r'"([^"]{2,80})"', prompt)
+    if quoted:
+        return quoted.group(1)
+    return "Local Business Website"
+
+
+def _make_fake_model_html(prompt: str) -> str:
+    name = _extract_business_name(prompt)
+    lowered = prompt.lower()
+    colors: list[str] = []
+    for token in ("pink", "cream", "gold", "black", "silver", "blue", "purple", "cyan", "red"):
+        if token in lowered:
+            colors.append(token)
+    color_css = ", ".join(colors) if colors else "slate, sky"
+    mood = "elegant" if "elegant" in lowered else "bold"
+    if "futuristic" in lowered:
+        mood = "futuristic"
+    if "trustworthy" in lowered:
+        mood = "trustworthy"
+
+    return f"""<!doctype html>
+<html lang=\"en\">
+  <head>
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+    <title>{name}</title>
+    <style>
+      body {{ font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, {color_css}); color: #111; }}
+      .hero {{ max-width: 920px; margin: 2rem auto; padding: 1.5rem; border-radius: 14px; background: rgba(255,255,255,0.82); }}
+      h1 {{ margin: 0 0 0.5rem; letter-spacing: 0.02em; }}
+    </style>
+  </head>
+  <body>
+    <main class=\"hero\">
+      <h1>{name}</h1>
+      <p>{mood} one-page website for {name}.</p>
+      <p>Generated from local model test double.</p>
+    </main>
+  </body>
+</html>"""
+
+
+def _use_fake_local_model(monkeypatch, *, should_fail: bool = False, reason: str = "invalid_html") -> None:
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        if should_fail:
+            raise RuntimeError(reason)
+        return _make_fake_model_html(question), "fake-code-model:test"
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
 
 
 def test_missing_memory_answer_is_honest(monkeypatch, tmp_path: Path) -> None:
@@ -420,6 +487,7 @@ def test_missing_tool_prompts_are_deterministic_and_keep_knowledge_receipts(
 def test_code_artifact_generation_prompt_emits_code_artifact_payload(
     monkeypatch, tmp_path: Path
 ) -> None:
+    _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
     memory_dir = tmp_path / "memory_records"
@@ -463,7 +531,15 @@ def test_code_artifact_generation_prompt_emits_code_artifact_payload(
     assert assistant_payload.get("code_artifact", {}).get("filename") == "index.html"
     assert assistant_payload.get("policy_provenance", {}).get(
         "artifact_generation"
-    ) == "deterministic_prompt_template"
+    ) == "local_model"
+    assert (
+        assistant_payload.get("policy_provenance", {}).get("model_used")
+        == "fake-code-model:test"
+    )
+    assert (
+        assistant_payload.get("policy_provenance", {}).get("artifact_validation")
+        == "passed"
+    )
     assert assistant_payload.get("memory_receipts") == []
     assert assistant_payload.get("operator_receipts") == []
     assert assistant_payload.get("learned_record_id") is None
@@ -473,25 +549,26 @@ def test_code_artifact_generation_prompt_emits_code_artifact_payload(
 
 
 def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     cases = [
         (
-            "Generate a small HTML code artifact for a one-page \"Harry's Hot Dog Cart\" website.",
-            ["Harry's Hot Dog Cart", "#fbbf24", "#fb7185"],
+            "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. Use soft pink, cream, and gold colors with an elegant script-style heading. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            ["Flow Flowers", "pink", "cream", "gold", "elegant"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website.",
-            ["Flow Flowers", "Fresh blooms", "#f59e0b", "#ec4899", "Georgia"],
+            "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website. Make it black, silver, and electric blue with a bold automotive feel. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            ["Rico's Mobile Detailing", "black", "silver", "blue", "bold"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Rico's Detailing\" website.",
-            ["Rico's Detailing", "showroom finish", "#38bdf8", "#22d3ee"],
+            "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website. Use bright purple and cyan colors, a retro arcade feel, and a bold futuristic font style. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            ["Neon Byte Arcade", "purple", "cyan", "futuristic"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website with purple, cyan, retro, and futuristic energy.",
-            ["Neon Byte Arcade", "high scores", "#a855f7", "#22d3ee", "uppercase"],
+            "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            ["Crimson Turtle Locksmiths", "black", "red", "silver", "trustworthy"],
         ),
     ]
 
@@ -516,23 +593,24 @@ def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -
 def test_code_artifact_generation_has_no_cross_category_leakage(
     monkeypatch, tmp_path: Path
 ) -> None:
+    _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     cases = [
         (
             "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website.",
-            ["flow flowers", "fresh blooms"],
+            ["flow flowers", "one-page website"],
             ["harry", "hot dog", "loaded chili dog", "chicago-style dog", "detailing", "arcade"],
         ),
         (
             "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website.",
-            ["rico's mobile detailing", "showroom finish"],
+            ["rico's mobile detailing", "one-page website"],
             ["harry", "hot dog", "flow flowers", "bouquet", "arcade", "neon byte"],
         ),
         (
             "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website with purple and cyan futuristic styling.",
-            ["neon byte arcade", "high scores"],
+            ["neon byte arcade", "futuristic"],
             ["harry", "hot dog", "flow flowers", "bouquet", "detailing", "rico"],
         ),
     ]
@@ -555,11 +633,12 @@ def test_code_artifact_generation_has_no_cross_category_leakage(
             .get("last_assistant_payload", {})
             .get("policy_provenance", {})
             .get("artifact_generation")
-            == "deterministic_prompt_template"
+            == "local_model"
         )
 
 
 def test_code_artifact_generation_sentinel_business_name(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -612,8 +691,36 @@ def test_code_artifact_generation_sentinel_business_name(monkeypatch, tmp_path: 
         .get("last_assistant_payload", {})
         .get("policy_provenance", {})
         .get("artifact_generation")
-        == "deterministic_prompt_template"
+        == "local_model"
     )
+
+
+def test_code_artifact_generation_fallback_is_honest(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch, should_fail=True, reason="timeout")
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": (
+                "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. "
+                "Return it as a code artifact with filename index.html, language html, previewable true, "
+                "and do not apply it to the repo."
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
+    assert provenance.get("artifact_generation") == "deterministic_prompt_template_fallback"
+    assert provenance.get("fallback_reason")
 
 
 def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Path) -> None:

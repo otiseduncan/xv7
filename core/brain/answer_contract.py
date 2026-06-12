@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import os
 import html
 import re
 from typing import Any
 
+import httpx
+
 from core.brain.schema import BrainLayer, BrainRecord
+from core.runtime.model_registry import (
+    configured_ollama_base_url,
+    resolve_model_for_runtime_role,
+)
 
 
 class AnswerContract:
@@ -594,8 +601,8 @@ class AnswerContract:
 }
 """
 
-        display_name = cls._format_business_name(
-            cls._extract_artifact_name(question),
+        display_name = AnswerContract._format_business_name(
+            AnswerContract._extract_artifact_name(question),
             "Local Business Website" if language == "html" else "Draft Artifact",
         )
 
@@ -616,28 +623,358 @@ if __name__ == \"__main__\":
 
         return f"# Draft artifact for {filename}\n"
 
-    def build_code_artifact_response(self, question: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _extract_requested_filename(question: str, language: str) -> str:
+        match = re.search(
+            r"\bfilename\s*[=:]?\s*[\"'“”‘’]?([a-zA-Z0-9._-]{1,80})[\"'“”‘’]?",
+            question,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+        return AnswerContract._code_artifact_filename(language)
+
+    @staticmethod
+    def _extract_requested_previewable(question: str, language: str) -> bool:
+        match = re.search(r"\bpreviewable\s*[=:]?\s*(true|false)\b", question, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).lower() == "true"
+        return language == "html"
+
+    @staticmethod
+    def _extract_apply_intent(question: str) -> bool:
+        lowered = question.lower()
+        if "do not apply" in lowered or "don't apply" in lowered:
+            return False
+        if "apply it to the repo" in lowered or "apply to the repo" in lowered:
+            return True
+        return False
+
+    @staticmethod
+    def _extract_style_hints(question: str) -> dict[str, list[str]]:
+        lowered = question.lower()
+        known_colors = (
+            "black",
+            "white",
+            "red",
+            "blue",
+            "green",
+            "yellow",
+            "orange",
+            "purple",
+            "pink",
+            "cream",
+            "gold",
+            "silver",
+            "cyan",
+            "teal",
+            "magenta",
+        )
+        colors = [color for color in known_colors if re.search(rf"\b{re.escape(color)}\b", lowered)]
+        colors.extend(re.findall(r"#[0-9a-f]{3,8}\b", lowered))
+
+        style_keywords = (
+            "elegant",
+            "script",
+            "futuristic",
+            "retro",
+            "bold",
+            "playful",
+            "trustworthy",
+            "urgent",
+            "automotive",
+            "clean",
+            "modern",
+            "minimal",
+            "neon",
+        )
+        styles = [token for token in style_keywords if re.search(rf"\b{re.escape(token)}\b", lowered)]
+        return {
+            "colors": list(dict.fromkeys(colors)),
+            "styles": list(dict.fromkeys(styles)),
+        }
+
+    @staticmethod
+    def _extract_layout_hints(question: str) -> list[str]:
+        candidates = re.findall(
+            r"\b(include|with|featuring|highlight|show)\s+([^.;]{3,140})",
+            question,
+            flags=re.IGNORECASE,
+        )
+        hints: list[str] = []
+        for _, value in candidates:
+            cleaned = value.strip(" .")
+            if cleaned:
+                hints.append(cleaned)
+        return hints[:6]
+
+    @classmethod
+    def _build_local_artifact_prompt(
+        cls,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+        strict_retry: bool,
+    ) -> str:
+        retry_line = (
+            "This is a retry because the first draft failed validation. Be stricter and output only valid source code."
+            if strict_retry
+            else "Output only source code that satisfies all constraints below."
+        )
+        colors = ", ".join(style_hints.get("colors", [])) or "none specified"
+        styles = ", ".join(style_hints.get("styles", [])) or "none specified"
+        layout = "; ".join(layout_hints) or "none specified"
+
+        return (
+            f"Generate one {language} code artifact for filename {filename}.\n"
+            f"Request summary: {question.strip()}\n"
+            f"Business/site name: {business_name}\n"
+            f"Requested colors: {colors}\n"
+            f"Requested style/font mood: {styles}\n"
+            f"Requested layout/content hints: {layout}\n"
+            f"Previewable requested: {str(previewable).lower()}\n"
+            f"Apply to repo requested: {str(apply_requested).lower()} (must remain false in artifact metadata and never mutate repo)\n"
+            "Hard constraints:\n"
+            "- Return ONLY raw source code; no markdown fences and no explanation.\n"
+            "- No file writes, no repo mutation, no apply behavior.\n"
+            "- No tracking code.\n"
+            "- No remote assets, no remote scripts, no remote fonts, no remote images.\n"
+            "- No external script tags.\n"
+            "- Must include the exact business/site name text in visible content.\n"
+            "- Must reflect requested colors/style when provided.\n"
+            "- Must not include unrelated business names from earlier prompts.\n"
+            "- If language is html: return a complete single-file document including <!doctype html>, inline CSS, and no external dependencies.\n"
+            f"{retry_line}\n"
+        )
+
+    @staticmethod
+    def _strip_markdown_fences(content: str) -> str:
+        stripped = content.strip()
+        if not stripped.startswith("```"):
+            return stripped
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
+    @classmethod
+    def _validate_artifact_content(
+        cls,
+        *,
+        content: str,
+        language: str,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        requested_question: str,
+    ) -> tuple[bool, str]:
+        lowered = content.lower()
+        requested_lower = requested_question.lower()
+
+        if not content.strip():
+            return False, "empty_content"
+        if "```" in content:
+            return False, "markdown_fence_detected"
+        if len(content) < 120 or len(content) > 120000:
+            return False, "content_length_out_of_bounds"
+        if re.search(r"<script[^>]+src\s*=", lowered):
+            return False, "external_script_tag_detected"
+        if "http://" in lowered or "https://" in lowered:
+            return False, "remote_url_detected"
+
+        if business_name and business_name.lower() not in lowered:
+            return False, "business_name_missing"
+
+        for hint in style_hints.get("colors", []):
+            if hint.startswith("#"):
+                if hint.lower() in lowered:
+                    break
+            elif re.search(rf"\b{re.escape(hint.lower())}\b", lowered):
+                break
+        else:
+            if style_hints.get("colors"):
+                return False, "color_hints_missing"
+
+        if style_hints.get("styles"):
+            found_style = any(
+                re.search(rf"\b{re.escape(token.lower())}\b", lowered)
+                for token in style_hints["styles"]
+            )
+            if not found_style:
+                return False, "style_hints_missing"
+
+        protected_names = (
+            "harry's hot dog cart",
+            "flow flowers",
+            "rico's mobile detailing",
+            "rico's detailing",
+            "neon byte arcade",
+            "crimson turtle locksmiths",
+        )
+        for name in protected_names:
+            if name in lowered and name not in requested_lower:
+                return False, "stale_business_leak_detected"
+
+        if language == "html":
+            if "<!doctype html" not in lowered and "<html" not in lowered:
+                return False, "html_shell_missing"
+            if "<style" not in lowered:
+                return False, "inline_css_missing"
+
+        return True, "passed"
+
+    async def _generate_artifact_with_local_model(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        model_resolution = resolve_model_for_runtime_role("code")
+        model_tag = model_resolution.model_tag
+        if not model_tag:
+            raise RuntimeError("No configured code model available for artifact generation")
+
+        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "45"))
+        timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=10.0)
+        payload_base = {
+            "model": model_tag,
+            "stream": False,
+            "keep_alive": -1,
+            "options": {
+                "num_ctx": 8192,
+                "num_predict": 2200,
+                "temperature": 0.3,
+            },
+        }
+
+        system_prompt = (
+            "You are a strict code generator. Return only source code text that compiles or renders for the requested language. "
+            "Never include markdown fences or prose."
+        )
+
+        last_error = "model_generation_failed"
+        for strict_retry in (False, True):
+            user_prompt = self._build_local_artifact_prompt(
+                question=question,
+                filename=filename,
+                language=language,
+                previewable=previewable,
+                apply_requested=apply_requested,
+                business_name=business_name,
+                style_hints=style_hints,
+                layout_hints=layout_hints,
+                strict_retry=strict_retry,
+            )
+            payload = {
+                **payload_base,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            }
+
+            try:
+                async with httpx.AsyncClient(base_url=configured_ollama_base_url(), timeout=timeout) as client:
+                    response = await client.post("/api/chat", json=payload)
+                    response.raise_for_status()
+                data: dict[str, Any] = response.json()
+                message = data.get("message")
+                if not isinstance(message, dict):
+                    last_error = "missing_message"
+                    continue
+                raw_content = message.get("content")
+                if not isinstance(raw_content, str) or not raw_content.strip():
+                    last_error = "missing_content"
+                    continue
+                candidate = self._strip_markdown_fences(raw_content)
+                valid, reason = self._validate_artifact_content(
+                    content=candidate,
+                    language=language,
+                    business_name=business_name,
+                    style_hints=style_hints,
+                    requested_question=question,
+                )
+                if valid:
+                    return candidate, model_tag
+                last_error = reason
+            except (httpx.TimeoutException, httpx.HTTPError) as exc:
+                last_error = str(exc)
+
+        raise RuntimeError(last_error)
+
+    async def build_code_artifact_response(self, question: str) -> dict[str, Any] | None:
         normalized = self._normalize(question)
         if not self.is_code_artifact_request(normalized):
             return None
 
         language = self._code_artifact_language(normalized)
-        filename = self._code_artifact_filename(language)
+        filename = self._extract_requested_filename(question, language)
+        previewable = self._extract_requested_previewable(question, language)
+        apply_requested = self._extract_apply_intent(question)
+        business_name = self._format_business_name(
+            self._extract_artifact_name(question),
+            "Local Business Website" if language == "html" else "Draft Artifact",
+        )
+        style_hints = self._extract_style_hints(question)
+        layout_hints = self._extract_layout_hints(question)
+
+        content: str
+        provenance: dict[str, Any]
+        try:
+            content, model_used = await self._generate_artifact_with_local_model(
+                question=question,
+                filename=filename,
+                language=language,
+                previewable=previewable,
+                apply_requested=apply_requested,
+                business_name=business_name,
+                style_hints=style_hints,
+                layout_hints=layout_hints,
+            )
+            provenance = {
+                "artifact_generation": "local_model",
+                "model_used": model_used,
+                "artifact_validation": "passed",
+            }
+        except Exception as exc:
+            content = self._default_code_artifact_content(filename, language, question)
+            fallback_reason = str(exc).strip() or "local_model_error"
+            model_resolution = resolve_model_for_runtime_role("code")
+            provenance = {
+                "artifact_generation": "deterministic_prompt_template_fallback",
+                "model_used": model_resolution.model_tag or "unknown",
+                "fallback_reason": fallback_reason,
+            }
+
         return {
             "visible_text": f"Here is a draft {language.upper()} artifact for {filename}.",
             "code_artifact": {
                 "type": "code_artifact",
                 "filename": filename,
                 "language": language,
-                "previewable": language == "html",
+                "previewable": previewable,
                 "applied": False,
-                "content": self._default_code_artifact_content(filename, language, question),
+                "content": content,
             },
             "context_receipt": {
                 "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
                 "context_receipts": [],
                 "record_ids": [],
             },
+            "provenance": provenance,
         }
 
     def _tool_boundary_answer(self, category: str, question: str) -> str | None:

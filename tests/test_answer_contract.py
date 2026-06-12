@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer
@@ -496,3 +498,136 @@ def test_local_capability_prompts_are_phase_accurate() -> None:
     assert run_ps is not None
     assert "not as an unrestricted shell" in run_ps.lower()
     assert "powershell/cmd-backed scan actions" in run_ps.lower()
+
+
+def test_code_artifact_generation_uses_local_model_path(monkeypatch) -> None:
+    contract = AnswerContract()
+    prompt = (
+        "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. "
+        "Use soft pink, cream, and gold colors with an elegant script-style heading. "
+        "Return it as a code artifact with filename index.html, language html, previewable true, "
+        "and do not apply it to the repo."
+    )
+
+    called: dict[str, bool] = {"value": False}
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        called["value"] = True
+        return (
+            "<!doctype html><html><head><style>body{background:pink;color:gold;}</style></head>"
+            "<body><h1>Flow Flowers</h1><p>elegant floral service</p></body></html>",
+            "fake-code-model:test",
+        )
+
+    monkeypatch.setattr(
+        AnswerContract,
+        "_generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    response = asyncio.run(contract.build_code_artifact_response(prompt))
+    assert response is not None
+    assert called["value"] is True
+    assert response["code_artifact"]["content"].startswith("<!doctype html>")
+    assert response["code_artifact"]["filename"] == "index.html"
+    assert response["code_artifact"]["language"] == "html"
+    assert response["provenance"]["artifact_generation"] == "local_model"
+    assert response["provenance"]["model_used"] == "fake-code-model:test"
+    assert response["provenance"]["artifact_validation"] == "passed"
+
+
+def test_code_artifact_generation_falls_back_when_model_invalid(monkeypatch) -> None:
+    contract = AnswerContract()
+    prompt = (
+        "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website. "
+        "Return it as a code artifact with filename index.html, language html, previewable true, "
+        "and do not apply it to the repo."
+    )
+
+    async def _failing_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        raise RuntimeError("html_shell_missing")
+
+    monkeypatch.setattr(
+        AnswerContract,
+        "_generate_artifact_with_local_model",
+        _failing_generate,
+    )
+
+    response = asyncio.run(contract.build_code_artifact_response(prompt))
+    assert response is not None
+    assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+    assert response["provenance"]["fallback_reason"] == "html_shell_missing"
+    assert "Rico's Mobile Detailing" in response["code_artifact"]["content"]
+
+
+def test_code_artifact_generation_falls_back_on_timeout(monkeypatch) -> None:
+    contract = AnswerContract()
+    prompt = (
+        "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. "
+        "Return it as a code artifact with filename index.html, language html, previewable true, "
+        "and do not apply it to the repo."
+    )
+
+    async def _timeout_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        raise TimeoutError("Timed out while calling local model")
+
+    monkeypatch.setattr(
+        AnswerContract,
+        "_generate_artifact_with_local_model",
+        _timeout_generate,
+    )
+
+    response = asyncio.run(contract.build_code_artifact_response(prompt))
+    assert response is not None
+    assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+    assert "timed out" in response["provenance"]["fallback_reason"].lower()
+
+
+def test_artifact_validation_blocks_stale_business_leakage() -> None:
+    contract = AnswerContract()
+    content = (
+        "<!doctype html><html><head><style>body{background:black;color:red;}</style></head>"
+        "<body><h1>Crimson Turtle Locksmiths</h1><p>Flow Flowers special deal</p></body></html>"
+    )
+    valid, reason = contract._validate_artifact_content(
+        content=content,
+        language="html",
+        business_name="Crimson Turtle Locksmiths",
+        style_hints={"colors": ["black", "red"], "styles": []},
+        requested_question="Generate one-page site for Crimson Turtle Locksmiths.",
+    )
+    assert valid is False
+    assert reason == "stale_business_leak_detected"

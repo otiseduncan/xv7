@@ -2121,13 +2121,26 @@ class Xv7UI {
       ? meta.model_use_receipt
       : {};
 
+    const artifactGeneration = policy.artifact_generation || '-';
+    const artifactIsFallback = artifactGeneration === 'deterministic_prompt_template_fallback';
+    const resolvedModelUsed = policy.model_used
+      || modelUseReceipt.model_tag
+      || meta.model_used
+      || 'policy_only';
+    const resolvedFallbackReason = policy.fallback_reason
+      || meta.fallback_reason
+      || policy.brain_answer_source
+      || '-';
+
     const fields = [
       ['intent_class', policy.intent_class || meta.intent_class],
       ['speech_act', meta.speech_act || '-'],
       ['response_mode', policy.response_mode || meta.response_mode || '-'],
-      ['model_used', modelUseReceipt.model_tag || meta.model_used || 'policy_only'],
-      ['fallback_used', this.boolText(meta.fallback_used)],
-      ['fallback_reason', meta.fallback_reason || policy.brain_answer_source || '-'],
+      ['artifact_generation', artifactGeneration],
+      ['model_used', resolvedModelUsed],
+      ['artifact_validation', policy.artifact_validation || '-'],
+      ['fallback_used', this.boolText(meta.fallback_used ?? artifactIsFallback)],
+      ['fallback_reason', resolvedFallbackReason],
       ['learned_record_id', meta.learned_record_id || '-'],
       ['learning_layer', meta.learning_layer || '-'],
       ['learning_status', meta.learning_status || '-'],
