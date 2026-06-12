@@ -35,7 +35,10 @@ def _approved(patch: dict[str, Any], approval: dict[str, Any] | None) -> bool:
     approval_info = approval if approval is not None else patch.get("approval")
     if not isinstance(approval_info, dict):
         return False
-    return approval_info.get("approved") is True or approval_info.get("status") == "approved"
+    return (
+        approval_info.get("approved") is True
+        or approval_info.get("status") == "approved"
+    )
 
 
 def _inside_repo(repo_root: Path, candidate: Path) -> bool:
@@ -46,14 +49,16 @@ def _inside_repo(repo_root: Path, candidate: Path) -> bool:
         return False
 
 
-def _safe_target_path(repo_root: Path, raw_path: str) -> tuple[Path | None, str | None]:
+def _safe_target_path(
+    repo_root: Path, raw_path: str
+) -> tuple[Path | None, str | None]:
     if not raw_path or not raw_path.strip():
         return None, "Patch change path is required."
     path = Path(raw_path)
     if path.is_absolute():
         return None, f"Absolute patch paths are denied: {raw_path}"
     if any(part == ".." for part in path.parts):
-        return None, f"Outside-root path traversal is denied: {raw_path}"
+        return None, f"outside-root path traversal is denied: {raw_path}"
     if path.parts and path.parts[0] == ".git":
         return None, f"Git internals cannot be patched by operator action: {raw_path}"
     target = (repo_root / path).resolve()
@@ -202,7 +207,10 @@ def apply_approved_patch(
             target_path.write_text(after, encoding="utf-8")
             changed_files.append(relative_path)
             diff_lines = _diff_for_file(relative_path, before, after)
-            summary = f"Updated {relative_path}: {len(before.splitlines())} -> {len(after.splitlines())} lines."
+            summary = (
+                f"Updated {relative_path}: {len(before.splitlines())} -> "
+                f"{len(after.splitlines())} lines."
+            )
         diff_summary.append(summary)
         file_results.append(
             {
