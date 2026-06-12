@@ -1,0 +1,167 @@
+diff --git a/core/brain/records.py b/core/brain/records.py
+--- a/core/brain/records.py
++++ b/core/brain/records.py
+@@
+ class BrainRecordLoader:
+     """Load and validate canonical brain records from disk."""
+@@
+     ) -> None:
+         env_path = os.getenv("XV7_BRAIN_RECORDS_PATH")
+         runtime_env_path = os.getenv("XV7_BRAIN_RUNTIME_RECORDS_PATH")
++        self._allow_seed_record_writes = self._truthy_env("XV7_ALLOW_BRAIN_SEED_WRITES")
+         if records_dir is not None:
+             self.records_dir = records_dir
+         elif env_path:
+             self.records_dir = Path(env_path)
+         else:
+             self.records_dir = Path("data/brain/records")
+ 
+         if runtime_records_dir is not None:
+-            self.runtime_records_dir = runtime_records_dir
++            runtime_dir = runtime_records_dir
++            runtime_dir_source = "argument"
+         elif runtime_env_path:
+-            self.runtime_records_dir = Path(runtime_env_path)
++            runtime_dir = Path(runtime_env_path)
++            runtime_dir_source = "env"
+         elif records_dir is not None:
+-            self.runtime_records_dir = self.records_dir
++            runtime_dir = self.records_dir
++            runtime_dir_source = "records_dir"
+         else:
+-            self.runtime_records_dir = Path("data/brain/runtime_records")
++            runtime_dir = Path("data/brain/runtime_records")
++            runtime_dir_source = "default"
++
++        self.runtime_records_dir = self._guard_runtime_records_dir(
++            runtime_dir,
++            source=runtime_dir_source,
++        )
++
++    @staticmethod
++    def _truthy_env(name: str) -> bool:
++        return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
++
++    @staticmethod
++    def _same_path(left: Path, right: Path) -> bool:
++        try:
++            return left.resolve(strict=False) == right.resolve(strict=False)
++        except (OSError, RuntimeError):
++            return left.absolute() == right.absolute()
++
++    def _guard_runtime_records_dir(self, runtime_dir: Path, *, source: str) -> Path:
++        if self._allow_seed_record_writes:
++            return runtime_dir
++        if source in {"env", "argument"} and self._same_path(runtime_dir, self.records_dir):
++            return Path(os.getenv("XV7_BRAIN_RUNTIME_FALLBACK_PATH", "data/brain/runtime_records"))
++        return runtime_dir
+@@
+     def _runtime_record_path(self, record_id: str) -> Path:
+         return self.runtime_records_dir / f"{record_id}.json"
++
++    def _assert_runtime_store_writable(self) -> None:
++        if (
++            not self._allow_seed_record_writes
++            and self._same_path(self.runtime_records_dir, self.records_dir)
++        ):
++            raise RuntimeError(
++                "Refusing to write runtime brain records into the seed record store. "
++                "Set XV7_BRAIN_RUNTIME_RECORDS_PATH to a writable runtime directory."
++            )
++
++        probe_path = self.runtime_records_dir / ".xv7-write-probe"
++        try:
++            self.runtime_records_dir.mkdir(parents=True, exist_ok=True)
++            probe_path.write_text("ok\n", encoding="utf-8")
++            if probe_path.read_text(encoding="utf-8") != "ok\n":
++                raise RuntimeError("runtime write probe mismatch")
++        except Exception as exc:
++            raise RuntimeError(
++                f"Brain runtime record store is not writable: {self.runtime_records_dir}."
++            ) from exc
++        finally:
++            try:
++                if probe_path.exists():
++                    probe_path.unlink()
++            except OSError:
++                pass
+ 
+     def _save_record(self, record: BrainRecord) -> None:
+-        self.runtime_records_dir.mkdir(parents=True, exist_ok=True)
++        self._assert_runtime_store_writable()
+         payload = record.model_dump(mode="json")
+         path = self._runtime_record_path(record.record_id)
+-        path.write_text(
+-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+-            encoding="utf-8",
+-        )
++        temp_path = path.with_name(f".{path.name}.tmp")
++        try:
++            temp_path.write_text(
++                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
++                encoding="utf-8",
++            )
++            temp_path.replace(path)
++            read_back = json.loads(path.read_text(encoding="utf-8"))
++        except Exception as exc:
++            raise RuntimeError(
++                f"Failed to persist runtime brain record {record.record_id} at {path}."
++            ) from exc
++        finally:
++            try:
++                if temp_path.exists():
++                    temp_path.unlink()
++            except OSError:
++                pass
++
++        if read_back.get("record_id") != record.record_id:
++            raise RuntimeError(
++                f"Failed to verify runtime brain record write for {record.record_id}."
++            )
+@@
+     def apply_active_focus_instruction(self, focus_summary: str) -> BrainRecord:
+         cleaned_summary = " ".join(focus_summary.strip().split())
++        if not cleaned_summary:
++            raise ValueError("Active Focus summary cannot be empty.")
++
++        self._assert_runtime_store_writable()
+         records = self.load_records()
+@@
+-        for record in active_focus_records:
++        next_record_id = f"XV7-FOCUS-{max_focus_index + 1:04d}"
++        now = datetime.now(timezone.utc).isoformat()
++
++        for record in active_focus_records:
+             archived_tags = list(record.tags)
+             if "superseded" not in archived_tags:
+                 archived_tags.append("superseded")
++            if "runtime-override" not in archived_tags:
++                archived_tags.append("runtime-override")
+ 
+             archived = record.model_copy(
+                 update={
+                     "status": "archived",
+                     "tags": archived_tags,
++                    "relevance_state": "superseded",
++                    "superseded_by": next_record_id,
++                    "last_reviewed_at": now,
+                 }
+             )
+             self._save_record(archived)
+ 
+-        next_record_id = f"XV7-FOCUS-{max_focus_index + 1:04d}"
+         new_record = BrainRecord.model_validate(
+@@
+                 ),
+                 "status": "active",
++                "relevance_state": "current",
+                 "priority": 300,
+-                "tags": ["focus", "user-instruction", "working-context"],
++                "tags": ["focus", "user-instruction", "working-context", "runtime"],
+@@
+                 "evidence": [
+                     f"Direct user instruction: {cleaned_summary}",
++                    f"supersedes={','.join(record.record_id for record in active_focus_records) or 'none'}",
+                 ],
+             }
+         )
