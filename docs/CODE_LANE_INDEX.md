@@ -16,7 +16,7 @@ Use this page first when asking: "what is next?"
 
 | ID | Title | Status | Short Description |
 | --- | --- | --- | --- |
-| CODE-01 | Workspace Context Map | prompt written | Read-only workspace inspection and stack map. |
+| CODE-01 | Workspace Context Map | implemented | Read-only workspace inspection and stack map. |
 | CODE-02 | Patch Planner | prompt written | Plan likely files/risks/tests before mutation. |
 | CODE-03 | Approved Patch Apply | prompt written | Approval-gated patch application inside repo root. |
 | CODE-04 | Test Runner | prompt written | Standardized local validation runner and result receipts. |
@@ -31,9 +31,9 @@ Use this page first when asking: "what is next?"
 | CODE-13 | Operator Command Center | prompt written | Calm command center UI for inspect-plan-approve loop. |
 | CODE-14 | Local Bridge Health | prompt written | Local bridge health checks and honest fallback states. |
 | CODE-15 | App Template Registry | prompt written | Registry for approved app templates and usage constraints. |
-| CODE-16 | Implementation Session Protocol | prompt written | Session protocol for inspect->plan->approve->patch->test->report. |
+| CODE-16 | Implementation Session Protocol | prompt written | Session protocol for implementation work. |
 | CODE-17 | Safe Repo Writer | prompt written | Bound file-writing behavior with strict safety checks. |
-| CODE-18 | Context Source Router | prompt written | Route answers to correct source with confidence and no hallucination. |
+| CODE-18 | Context Source Router | prompt written | Route answers to correct source with confidence. |
 | CODE-19 | Operator UI Action Queue | prompt written | Pending mutation queue with explicit approval lifecycle. |
 | CODE-20 | Beta Readiness Gate | prompt written | Testable checklist for beta-ready declaration. |
 | CODE-21 | Session Notes | prompt written | Session scratchpad and continuity notes for CODE lane. |
@@ -64,7 +64,9 @@ Use this page first when asking: "what is next?"
 
 ## What To Do Next
 
-Current next recommended implementation target: CODE-01 Workspace Context Map.
+Current next recommended implementation target: CODE-02 Patch Planner.
+
+CODE-01 is implemented as a read-only workspace map action with registry exposure and tests. Pull the repo, run the targeted tests, then advance to CODE-02.
 
 After CODE-01 through CODE-03 are implemented and stable, run the gauntlet in:
 
