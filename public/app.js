@@ -3316,13 +3316,23 @@ class Xv7UI {
     if (!proposal || typeof proposal !== 'object') return null;
     if (proposal.type !== 'artifact_patch_proposal') return null;
     const targetPath = typeof proposal.target_path === 'string' ? proposal.target_path.trim() : '';
+    const previewPath = typeof proposal.preview_path === 'string' ? proposal.preview_path.trim() : '';
     const diff = typeof proposal.diff === 'string' ? proposal.diff : '';
     if (!targetPath) return null;
     const validation = proposal.validation && typeof proposal.validation === 'object' ? proposal.validation : {};
+    const postApplyVerification = proposal.post_apply_verification && typeof proposal.post_apply_verification === 'object'
+      ? proposal.post_apply_verification
+      : {};
+    const targetedValidation = proposal.targeted_validation && typeof proposal.targeted_validation === 'object'
+      ? proposal.targeted_validation
+      : {};
     const checks = Array.isArray(validation.checks) ? validation.checks : [];
+    const verifyChecks = Array.isArray(postApplyVerification.checks) ? postApplyVerification.checks : [];
+    const targetedChecks = Array.isArray(targetedValidation.checks) ? targetedValidation.checks : [];
     return {
       ...proposal,
       target_path: targetPath,
+      preview_path: previewPath,
       operation: typeof proposal.operation === 'string' ? proposal.operation : 'create',
       diff,
       applied: proposal.applied === true,
@@ -3332,6 +3342,16 @@ class Xv7UI {
         checks,
         failures: Array.isArray(validation.failures) ? validation.failures : [],
       },
+      post_apply_verification: {
+        status: typeof postApplyVerification.status === 'string' ? postApplyVerification.status : '',
+        checks: verifyChecks,
+        failures: Array.isArray(postApplyVerification.failures) ? postApplyVerification.failures : [],
+      },
+      targeted_validation: {
+        status: typeof targetedValidation.status === 'string' ? targetedValidation.status : '',
+        checks: targetedChecks,
+        failures: Array.isArray(targetedValidation.failures) ? targetedValidation.failures : [],
+      },
     };
   }
 
@@ -3339,6 +3359,8 @@ class Xv7UI {
     if (!proposal || typeof proposal !== 'object') return;
 
     const status = String(proposal.validation?.status || 'failed').toLowerCase();
+    const verifyStatus = String(proposal.post_apply_verification?.status || '').toLowerCase();
+    const targetedStatus = String(proposal.targeted_validation?.status || '').toLowerCase();
     const panel = document.createElement('section');
     panel.className = 'artifact-patch-proposal';
 
@@ -3350,9 +3372,35 @@ class Xv7UI {
       <span class="artifact-patch-chip ${status === 'passed' ? 'is-valid' : 'is-invalid'}">validation: ${status}</span>
     `;
 
+    if (verifyStatus) {
+      const verifyChip = document.createElement('span');
+      verifyChip.className = `artifact-patch-chip ${verifyStatus === 'passed' ? 'is-valid' : 'is-invalid'}`;
+      verifyChip.textContent = `post-apply verify: ${verifyStatus}`;
+      header.append(verifyChip);
+    }
+
+    if (targetedStatus) {
+      const targetedChip = document.createElement('span');
+      targetedChip.className = `artifact-patch-chip ${targetedStatus === 'passed' ? 'is-valid' : 'is-invalid'}`;
+      targetedChip.textContent = `targeted validation: ${targetedStatus}`;
+      header.append(targetedChip);
+    }
+
     const summary = document.createElement('p');
     summary.className = 'artifact-patch-proposal-summary';
     summary.textContent = `target: ${proposal.target_path} | operation: ${proposal.operation} | confirmation required: ${proposal.requires_confirmation ? 'yes' : 'no'}`;
+
+    const previewLine = proposal.preview_path
+      ? `preview: ${proposal.preview_path}`
+      : '';
+    if (previewLine) {
+      const preview = document.createElement('p');
+      preview.className = 'artifact-patch-proposal-summary artifact-patch-preview';
+      preview.textContent = previewLine;
+      panel.append(header, summary, preview);
+    } else {
+      panel.append(header, summary);
+    }
 
     const diffBlock = document.createElement('pre');
     diffBlock.className = 'artifact-patch-diff';
@@ -3368,9 +3416,39 @@ class Xv7UI {
         item.textContent = `${check.name || 'check'}: ${check.status || 'unknown'}`;
         list.append(item);
       });
-      panel.append(header, summary, list, diffBlock);
+      panel.append(list, diffBlock);
     } else {
-      panel.append(header, summary, diffBlock);
+      panel.append(diffBlock);
+    }
+
+    const verifyChecks = Array.isArray(proposal.post_apply_verification?.checks)
+      ? proposal.post_apply_verification.checks
+      : [];
+    if (verifyChecks.length) {
+      const verifyList = document.createElement('ul');
+      verifyList.className = 'artifact-patch-checks artifact-patch-checks-verify';
+      verifyChecks.slice(0, 8).forEach((check) => {
+        if (!check || typeof check !== 'object') return;
+        const item = document.createElement('li');
+        item.textContent = `verify ${check.name || 'check'}: ${check.status || 'unknown'}`;
+        verifyList.append(item);
+      });
+      panel.append(verifyList);
+    }
+
+    const targetedChecks = Array.isArray(proposal.targeted_validation?.checks)
+      ? proposal.targeted_validation.checks
+      : [];
+    if (targetedChecks.length) {
+      const targetedList = document.createElement('ul');
+      targetedList.className = 'artifact-patch-checks artifact-patch-checks-targeted';
+      targetedChecks.slice(0, 8).forEach((check) => {
+        if (!check || typeof check !== 'object') return;
+        const item = document.createElement('li');
+        item.textContent = `targeted ${check.name || 'check'}: ${check.status || 'unknown'}`;
+        targetedList.append(item);
+      });
+      panel.append(targetedList);
     }
 
     if (!proposal.applied && proposal.requires_confirmation) {

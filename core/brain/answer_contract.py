@@ -4,6 +4,8 @@ import os
 import html
 import re
 import difflib
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -63,6 +65,19 @@ class AnswerContract:
     ARTIFACT_PATCH_APPLY_PATTERN = re.compile(
         r"\b(apply\s+this\s+patch|apply\s+the\s+patch|approve\s+patch|confirm\s+apply|write\s+the\s+proposed\s+patch|"
         r"save\s+the\s+patch\s+to\s+the\s+repo|apply\s+patch)\b"
+    )
+    ARTIFACT_POST_APPLY_VERIFY_PATTERN = re.compile(
+        r"\b(verify it|verify the file|check the applied file|make sure it wrote correctly|did it save|"
+        r"did the file get created|confirm the file exists|check the file on disk|validate the applied patch)\b"
+    )
+    ARTIFACT_POST_APPLY_PREVIEW_PATTERN = re.compile(
+        r"\b(preview it|open preview|show me the preview|how do i view it|open the generated site|where can i see it)\b"
+    )
+    ARTIFACT_POST_APPLY_TARGETED_VALIDATION_PATTERN = re.compile(
+        r"\b(run validation|validate it|run safe checks|run html validation|check the generated site|run targeted tests)\b"
+    )
+    ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN = re.compile(
+        r"\b(run full tests|run pytest|run npm test|run full validation|run the full validation suite)\b"
     )
     EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
     EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
@@ -1118,6 +1133,33 @@ if __name__ == \"__main__\":
     def _is_patch_apply_request(cls, normalized_question: str) -> bool:
         return bool(cls.ARTIFACT_PATCH_APPLY_PATTERN.search(normalized_question))
 
+    @classmethod
+    def _is_post_apply_verify_request(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_POST_APPLY_VERIFY_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_post_apply_preview_request(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_POST_APPLY_PREVIEW_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_post_apply_targeted_validation_request(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_POST_APPLY_TARGETED_VALIDATION_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_post_apply_full_test_guard_request(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_post_apply_intent_request(cls, normalized_question: str) -> bool:
+        return any(
+            (
+                cls._is_post_apply_verify_request(normalized_question),
+                cls._is_post_apply_preview_request(normalized_question),
+                cls._is_post_apply_targeted_validation_request(normalized_question),
+                cls._is_post_apply_full_test_guard_request(normalized_question),
+            )
+        )
+
     @staticmethod
     def _workspace_root() -> Path:
         configured = str(os.getenv("XV7_ARTIFACT_PATCH_ROOT", "")).strip()
@@ -1248,6 +1290,125 @@ if __name__ == \"__main__\":
         status = "failed" if failures else "passed"
         return status, checks, failures
 
+    @staticmethod
+    def _content_sha256(content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _utc_now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    @classmethod
+    def _resolve_safe_patch_target(
+        cls,
+        *,
+        root: Path,
+        target_path: str,
+    ) -> tuple[Path | None, str | None]:
+        target_rel = Path(str(target_path or "").replace("\\", "/"))
+        if not str(target_path or "").strip():
+            return None, "target path is empty"
+        if target_rel.is_absolute() or ".." in target_rel.parts:
+            return None, "target path is unsafe"
+        normalized_target = str(target_rel).replace("\\", "/")
+        if not normalized_target.startswith("generated-sites/"):
+            return None, "target path must stay under generated-sites/"
+        if cls._is_blocked_patch_target(normalized_target):
+            return None, "target path is blocked by safety policy"
+
+        resolved = (root / target_rel).resolve()
+        root_resolved = root.resolve()
+        if not str(resolved).startswith(str(root_resolved)):
+            return None, "target path escapes repo root"
+        return resolved, None
+
+    @classmethod
+    def _verify_applied_patch_content(
+        cls,
+        *,
+        proposal: dict[str, Any],
+        include_business_name: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        root = cls._workspace_root()
+        target_path = str(proposal.get("target_path") or "").replace("\\", "/")
+        expected_content = str(proposal.get("content") or "")
+        language = str(proposal.get("language") or "html").lower()
+        checks: list[dict[str, str]] = []
+        failures: list[str] = []
+
+        def _add(name: str, passed: bool, detail: str) -> None:
+            checks.append({"name": name, "status": "passed" if passed else "failed", "detail": detail})
+            if not passed:
+                failures.append(f"{name}: {detail}")
+
+        resolved, resolve_error = cls._resolve_safe_patch_target(root=root, target_path=target_path)
+        _add("safe_target_path", resolve_error is None and resolved is not None, resolve_error or "target path resolved safely")
+
+        actual_content = ""
+        if resolved is not None:
+            exists = resolved.exists()
+            _add("file_exists", exists, "file exists on disk" if exists else "file is missing on disk")
+            if exists:
+                actual_content = resolved.read_text(encoding="utf-8")
+                _add("content_non_empty", bool(actual_content.strip()), "file content is non-empty")
+                _add("content_matches_applied_proposal", actual_content == expected_content, "file content matches applied proposal")
+                _add("content_no_markdown_fence", "```" not in actual_content, "content has no markdown fences")
+                _add(
+                    "content_no_remote_scripts_assets",
+                    not re.search(r"<script[^>]+src\s*=\s*['\"]https?://", actual_content, flags=re.IGNORECASE)
+                    and not re.search(r"<(img|link|source)[^>]+(src|href)\s*=\s*['\"]https?://", actual_content, flags=re.IGNORECASE),
+                    "content has no remote script or asset URLs",
+                )
+                if language == "html":
+                    lowered = actual_content.lower()
+                    _add("html_shell", "<!doctype html" in lowered or "<html" in lowered, "html shell markers are present")
+                if include_business_name:
+                    business_name = cls._extract_business_name_from_html(expected_content) or ""
+                    if business_name:
+                        _add("business_name_present", business_name.lower() in actual_content.lower(), "business name remains present")
+
+        status = "failed" if failures else "passed"
+        verification = {
+            "status": status,
+            "verified": status == "passed",
+            "checks": checks,
+            "failures": failures,
+            "verified_at": cls._utc_now_iso(),
+            "content_length": len(actual_content) if actual_content else 0,
+            "content_sha256": cls._content_sha256(actual_content) if actual_content else "",
+        }
+        return verification, {"actual_content": actual_content, "target_path": target_path}
+
+    @classmethod
+    def _applied_patch_with_runtime_fields(
+        cls,
+        *,
+        proposal: dict[str, Any],
+        verification: dict[str, Any] | None = None,
+        targeted_validation: dict[str, Any] | None = None,
+        preview_path: str | None = None,
+    ) -> dict[str, Any]:
+        content = str(proposal.get("content") or "")
+        updated = {
+            **proposal,
+            "applied": bool(proposal.get("applied", False)),
+            "applied_at": str(proposal.get("applied_at") or cls._utc_now_iso()),
+            "content_length": len(content),
+            "content_sha256": cls._content_sha256(content) if content else "",
+            "source_artifact_id": str(proposal.get("source_artifact_id") or ""),
+            "validation_status": str((proposal.get("validation") or {}).get("status") or "failed"),
+            "tests_run": bool(proposal.get("tests_run", False)),
+            "commit_created": bool(proposal.get("commit_created", False)),
+            "push_performed": bool(proposal.get("push_performed", False)),
+        }
+        if verification is not None:
+            updated["post_apply_verification"] = verification
+        if targeted_validation is not None:
+            updated["targeted_validation"] = targeted_validation
+        if preview_path:
+            updated["preview_path"] = preview_path
+        return updated
+
     @classmethod
     def _build_unified_diff(
         cls,
@@ -1306,6 +1467,35 @@ if __name__ == \"__main__\":
             if isinstance(payload, dict):
                 proposal = cls._extract_patch_proposal_from_metadata(payload)
                 if proposal is not None and proposal.get("applied") is not True:
+                    return proposal
+        return None
+
+    @classmethod
+    def _latest_applied_patch_proposal(
+        cls,
+        session_messages: list[Any] | None,
+        session_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if isinstance(session_messages, list):
+            for message in reversed(session_messages):
+                if not isinstance(message, dict):
+                    continue
+                if str(message.get("role") or "").lower() != "assistant":
+                    continue
+                metadata = message.get("metadata")
+                if not isinstance(metadata, dict):
+                    continue
+                proposal = cls._extract_patch_proposal_from_metadata(metadata)
+                if proposal is None:
+                    continue
+                if proposal.get("applied") is True:
+                    return proposal
+
+        if isinstance(session_metadata, dict):
+            payload = session_metadata.get("last_assistant_payload")
+            if isinstance(payload, dict):
+                proposal = cls._extract_patch_proposal_from_metadata(payload)
+                if proposal is not None and proposal.get("applied") is True:
                     return proposal
         return None
 
@@ -2095,6 +2285,10 @@ if __name__ == \"__main__\":
         is_generation = self.is_code_artifact_request(normalized)
         is_patch_proposal_request = self._is_patch_proposal_request(normalized)
         is_patch_apply_request = self._is_patch_apply_request(normalized)
+        is_post_apply_verify_request = self._is_post_apply_verify_request(normalized)
+        is_post_apply_preview_request = self._is_post_apply_preview_request(normalized)
+        is_post_apply_targeted_validation_request = self._is_post_apply_targeted_validation_request(normalized)
+        is_post_apply_full_test_guard_request = self._is_post_apply_full_test_guard_request(normalized)
         refinement_mode = (
             self._artifact_refinement_mode(normalized)
             if (not is_patch_proposal_request and self._looks_like_artifact_edit(normalized))
@@ -2187,7 +2381,6 @@ if __name__ == \"__main__\":
                     },
                 }
 
-            root = self._workspace_root()
             target_path = str(pending.get("target_path") or "").replace("\\", "/")
             operation = str(pending.get("operation") or "create")
             content = str(pending.get("content") or "")
@@ -2211,11 +2404,11 @@ if __name__ == \"__main__\":
                     },
                 }
 
-            target = (root / Path(target_path)).resolve()
-            root_resolved = root.resolve()
-            if not str(target).startswith(str(root_resolved)):
+            root = self._workspace_root()
+            target, resolve_error = self._resolve_safe_patch_target(root=root, target_path=target_path)
+            if target is None:
                 return {
-                    "visible_text": "I cannot apply this patch because validation failed: target path escapes the repo root.",
+                    "visible_text": "I cannot apply this patch because validation failed: target path failed safety checks.",
                     "code_artifact": {},
                     "artifact_patch_proposal": pending,
                     "context_receipt": {
@@ -2229,7 +2422,7 @@ if __name__ == \"__main__\":
                         "requires_confirmation": True,
                         "target_path": target_path,
                         "validation": "failed",
-                        "failure_reason": "unsafe_target_path",
+                        "failure_reason": resolve_error or "unsafe_target_path",
                     },
                 }
 
@@ -2256,10 +2449,29 @@ if __name__ == \"__main__\":
                     },
                 }
 
-            applied_proposal = {
+            preview_path = f"/{target_path}"
+            applied_base = {
                 **pending,
                 "applied": True,
+                "applied_at": self._utc_now_iso(),
+                "preview_path": preview_path,
             }
+            verification = {
+                "status": "passed",
+                "verified": True,
+                "checks": [
+                    {"name": "post_write_content_match", "status": "passed", "detail": "written content matches applied proposal"},
+                ],
+                "failures": [],
+                "verified_at": self._utc_now_iso(),
+                "content_length": len(content),
+                "content_sha256": self._content_sha256(content),
+            }
+            applied_proposal = self._applied_patch_with_runtime_fields(
+                proposal=applied_base,
+                verification=verification,
+                preview_path=preview_path,
+            )
             return {
                 "visible_text": (
                     f"Applied the proposed patch to {target_path}. File written locally with operation {operation}. "
@@ -2281,8 +2493,182 @@ if __name__ == \"__main__\":
                     "validation": "passed",
                     "commit_created": False,
                     "push_performed": False,
+                    "preview_path": preview_path,
                 },
             }
+
+        if is_post_apply_full_test_guard_request:
+            latest_applied = self._latest_applied_patch_proposal(session_messages, session_metadata)
+            if latest_applied is None:
+                return None
+            target_path = str((latest_applied or {}).get("target_path") or "")
+            return {
+                "visible_text": (
+                    "I did not run full tests automatically. I can only run the focused checks for the applied file in this lane. "
+                    "If you want full-suite validation, ask me explicitly and I will request confirmation before running it."
+                ),
+                "code_artifact": {},
+                "artifact_patch_proposal": latest_applied or {},
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-post-apply",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_patch": "full_test_guard",
+                    "applied": bool(latest_applied),
+                    "requires_confirmation": True,
+                    "target_path": target_path or None,
+                    "tests_run": False,
+                    "commit_created": False,
+                    "push_performed": False,
+                },
+            }
+
+        if (
+            is_post_apply_verify_request
+            or is_post_apply_preview_request
+            or is_post_apply_targeted_validation_request
+        ):
+            applied = self._latest_applied_patch_proposal(session_messages, session_metadata)
+            if applied is None:
+                return {
+                    "visible_text": "I do not have an applied patch to verify in this session.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-post-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "post_apply_unavailable",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "failure_reason": "no_applied_patch",
+                    },
+                }
+
+            target_path = str(applied.get("target_path") or "")
+            preview_path = str(applied.get("preview_path") or f"/{target_path}")
+            updated_applied = dict(applied)
+
+            if is_post_apply_verify_request:
+                verification, _verify_data = self._verify_applied_patch_content(
+                    proposal=applied,
+                    include_business_name=True,
+                )
+                updated_applied = self._applied_patch_with_runtime_fields(
+                    proposal=applied,
+                    verification=verification,
+                    preview_path=preview_path,
+                )
+                checks_total = len(verification.get("checks") or [])
+                failures_total = len(verification.get("failures") or [])
+                return {
+                    "visible_text": (
+                        f"Post-apply verification {'passed' if verification.get('status') == 'passed' else 'failed'} for {target_path}. "
+                        f"Checked {checks_total} items with {failures_total} failure(s)."
+                    ),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": updated_applied,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-post-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "post_apply_verified",
+                        "applied": True,
+                        "requires_confirmation": True,
+                        "target_path": target_path,
+                        "preview_path": preview_path,
+                        "verification_status": verification.get("status"),
+                        "tests_run": False,
+                        "commit_created": False,
+                        "push_performed": False,
+                    },
+                }
+
+            if is_post_apply_preview_request:
+                updated_applied = self._applied_patch_with_runtime_fields(
+                    proposal=applied,
+                    preview_path=preview_path,
+                )
+                return {
+                    "visible_text": (
+                        f"Preview path is {preview_path}. If the local app is running, open that route in your browser to view {target_path}."
+                    ),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": updated_applied,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-post-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "post_apply_preview",
+                        "applied": True,
+                        "requires_confirmation": True,
+                        "target_path": target_path,
+                        "preview_path": preview_path,
+                        "tests_run": False,
+                        "commit_created": False,
+                        "push_performed": False,
+                    },
+                }
+
+            if is_post_apply_targeted_validation_request:
+                verification, verify_data = self._verify_applied_patch_content(
+                    proposal=applied,
+                    include_business_name=False,
+                )
+                actual_content = str((verify_data or {}).get("actual_content") or "")
+                targeted_status, targeted_checks, targeted_failures = self._validate_patch_proposal(
+                    root=self._workspace_root(),
+                    target_path=target_path,
+                    content=actual_content,
+                    language=str(applied.get("language") or "html"),
+                    business_name="",
+                    operation=str(applied.get("operation") or "update"),
+                )
+                targeted_validation = {
+                    "status": targeted_status,
+                    "checks": targeted_checks,
+                    "failures": targeted_failures,
+                    "validated_at": self._utc_now_iso(),
+                    "mode": "post_apply_targeted",
+                }
+                updated_applied = self._applied_patch_with_runtime_fields(
+                    proposal=applied,
+                    verification=verification,
+                    targeted_validation=targeted_validation,
+                    preview_path=preview_path,
+                )
+                return {
+                    "visible_text": (
+                        f"Targeted validation {'passed' if targeted_status == 'passed' else 'failed'} for {target_path}. "
+                        "Only focused file checks were run; no broad test suites were executed."
+                    ),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": updated_applied,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-post-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "post_apply_targeted_validation",
+                        "applied": True,
+                        "requires_confirmation": True,
+                        "target_path": target_path,
+                        "preview_path": preview_path,
+                        "targeted_validation": targeted_status,
+                        "tests_run": False,
+                        "commit_created": False,
+                        "push_performed": False,
+                    },
+                }
 
         if not is_generation and refinement_mode is not None and latest_artifact is None:
             return {

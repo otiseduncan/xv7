@@ -466,6 +466,10 @@ details[open] > .diag-section-title::before {
   color: var(--color-text-muted);
 }
 
+.artifact-patch-preview {
+  color: #bbf7d0;
+}
+
 .artifact-patch-diff {
   margin: 0;
   border: 1px solid rgba(0, 163, 255, 0.16);
@@ -485,6 +489,14 @@ details[open] > .diag-section-title::before {
   padding-left: 1rem;
   font-size: 0.72rem;
   color: var(--color-text-muted);
+}
+
+.artifact-patch-checks-verify {
+  color: #a5f3fc;
+}
+
+.artifact-patch-checks-targeted {
+  color: #c4b5fd;
 }
 
 .artifact-patch-apply-button {

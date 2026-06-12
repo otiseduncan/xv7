@@ -2920,6 +2920,56 @@ describe('ModelProfileControl', () => {
     expect(panel?.querySelector('.artifact-patch-apply-button')?.textContent).toBe('Apply Patch');
   });
 
+  it('renders post-apply verification, preview, and targeted validation details', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Post-apply verification passed for generated-sites/soggy-doggy/index.html. Checked 6 items with 0 failure(s).',
+      null,
+      {
+        artifact_patch_proposal: {
+          type: 'artifact_patch_proposal',
+          proposal_id: 'patch-124',
+          source_artifact_id: 'soggy-doggy-artifact:r3',
+          filename: 'index.html',
+          target_path: 'generated-sites/soggy-doggy/index.html',
+          preview_path: '/generated-sites/soggy-doggy/index.html',
+          operation: 'update',
+          language: 'html',
+          applied: true,
+          requires_confirmation: true,
+          content: '<!doctype html><html><head><style>body{background:white}</style></head><body><h1>Soggy Doggy</h1></body></html>',
+          diff: '--- a/generated-sites/soggy-doggy/index.html\n+++ b/generated-sites/soggy-doggy/index.html\n@@\n+<!doctype html>',
+          validation: {
+            status: 'passed',
+            checks: [{ name: 'target_path_inside_repo', status: 'passed' }],
+          },
+          post_apply_verification: {
+            status: 'passed',
+            checks: [{ name: 'file_exists', status: 'passed' }],
+          },
+          targeted_validation: {
+            status: 'passed',
+            checks: [{ name: 'html_inline_css', status: 'passed' }],
+          },
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const panel = document.querySelector('.artifact-patch-proposal');
+    expect(panel).toBeTruthy();
+    expect(panel?.textContent || '').toContain('post-apply verify: passed');
+    expect(panel?.textContent || '').toContain('targeted validation: passed');
+    expect(panel?.textContent || '').toContain('preview: /generated-sites/soggy-doggy/index.html');
+    expect(panel?.textContent || '').toContain('verify file_exists: passed');
+    expect(panel?.textContent || '').toContain('targeted html_inline_css: passed');
+    expect(panel?.querySelector('.artifact-patch-apply-button')).toBeNull();
+  });
+
   it('renders NOW/REVIEW/HISTORY and LIBRARY relevance filters with lifecycle actions', async () => {
     global.fetch = createRuntimeFetchMock();
     new Xv7UI();

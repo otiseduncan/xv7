@@ -1447,6 +1447,212 @@ def test_apply_patch_writes_file_only_after_explicit_apply(tmp_path, monkeypatch
     assert "no push was performed" in apply_response["visible_text"]
 
 
+def test_post_apply_verify_reports_checks_and_preview_path(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_messages = _artifact_session_messages(
+        content="<!doctype html><html><head><style>body{background:white;color:#111}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></body></html>",
+    )
+
+    proposal_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+    proposal = proposal_response["artifact_patch_proposal"]
+
+    apply_messages = session_messages + [
+        {
+            "role": "assistant",
+            "content": "I prepared a patch proposal from the active artifact. No files were changed.",
+            "metadata": {
+                "artifact_patch_proposal": proposal,
+                "policy_provenance": {"artifact_patch": "proposed", "applied": False},
+            },
+        }
+    ]
+    apply_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply patch",
+            session_messages=apply_messages,
+            session_metadata={},
+        )
+    )
+    applied = apply_response["artifact_patch_proposal"]
+
+    verify_messages = apply_messages + [
+        {
+            "role": "assistant",
+            "content": apply_response["visible_text"],
+            "metadata": {
+                "artifact_patch_proposal": applied,
+                "policy_provenance": {"artifact_patch": "applied", "applied": True},
+            },
+        }
+    ]
+    verify_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "verify the file",
+            session_messages=verify_messages,
+            session_metadata={},
+        )
+    )
+
+    verify_proposal = verify_response["artifact_patch_proposal"]
+    assert verify_proposal["post_apply_verification"]["status"] == "passed"
+    assert verify_proposal["preview_path"] == "/generated-sites/soggy-doggy/index.html"
+    assert verify_proposal["tests_run"] is False
+    assert verify_proposal["commit_created"] is False
+    assert verify_proposal["push_performed"] is False
+
+
+def test_post_apply_preview_returns_route(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_messages = _artifact_session_messages(
+        content="<!doctype html><html><head><style>body{background:white;color:#111}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></body></html>",
+    )
+
+    proposal_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+    proposal = proposal_response["artifact_patch_proposal"]
+
+    apply_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply patch",
+            session_messages=session_messages
+            + [
+                {
+                    "role": "assistant",
+                    "content": "I prepared a patch proposal from the active artifact. No files were changed.",
+                    "metadata": {"artifact_patch_proposal": proposal},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    preview_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "show me the preview",
+            session_messages=session_messages
+            + [
+                {
+                    "role": "assistant",
+                    "content": apply_response["visible_text"],
+                    "metadata": {"artifact_patch_proposal": apply_response["artifact_patch_proposal"]},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert "/generated-sites/soggy-doggy/index.html" in preview_response["visible_text"]
+    assert preview_response["artifact_patch_proposal"]["preview_path"] == "/generated-sites/soggy-doggy/index.html"
+
+
+def test_post_apply_targeted_validation_runs_focused_checks_only(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_messages = _artifact_session_messages(
+        content="<!doctype html><html><head><style>body{background:white;color:#111}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></body></html>",
+    )
+
+    proposal = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )["artifact_patch_proposal"]
+
+    apply_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply patch",
+            session_messages=session_messages
+            + [
+                {
+                    "role": "assistant",
+                    "content": "I prepared a patch proposal from the active artifact. No files were changed.",
+                    "metadata": {"artifact_patch_proposal": proposal},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    targeted_response = asyncio.run(
+        contract.build_code_artifact_response(
+            "run validation",
+            session_messages=session_messages
+            + [
+                {
+                    "role": "assistant",
+                    "content": apply_response["visible_text"],
+                    "metadata": {"artifact_patch_proposal": apply_response["artifact_patch_proposal"]},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    targeted = targeted_response["artifact_patch_proposal"]["targeted_validation"]
+    assert targeted["status"] == "passed"
+    assert targeted["mode"] == "post_apply_targeted"
+    assert targeted_response["artifact_patch_proposal"]["tests_run"] is False
+
+
+def test_post_apply_full_test_request_is_guarded(tmp_path, monkeypatch) -> None:
+    contract = AnswerContract()
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+
+    applied_proposal = {
+        "type": "artifact_patch_proposal",
+        "proposal_id": "patch-applied-1",
+        "source_artifact_id": "artifact:r1",
+        "filename": "index.html",
+        "target_path": "generated-sites/soggy-doggy/index.html",
+        "preview_path": "/generated-sites/soggy-doggy/index.html",
+        "operation": "create",
+        "language": "html",
+        "applied": True,
+        "requires_confirmation": True,
+        "content": "<!doctype html><html><head><style>body{background:white}</style></head><body><h1>Soggy Doggy</h1></body></html>",
+        "diff": "--- /dev/null\n+++ b/generated-sites/soggy-doggy/index.html\n",
+        "validation": {
+            "status": "passed",
+            "checks": [{"name": "target_path_inside_repo", "status": "passed"}],
+            "failures": [],
+        },
+    }
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "run full tests",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "Applied the proposed patch to generated-sites/soggy-doggy/index.html.",
+                    "metadata": {"artifact_patch_proposal": applied_proposal},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert "did not run full tests automatically" in response["visible_text"].lower()
+    assert response["provenance"]["artifact_patch"] == "full_test_guard"
+    assert response["provenance"]["tests_run"] is False
+
+
 def test_failed_validation_patch_cannot_be_applied(tmp_path, monkeypatch) -> None:
     contract = AnswerContract()
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))

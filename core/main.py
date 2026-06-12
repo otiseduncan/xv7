@@ -2243,7 +2243,9 @@ async def add_session_message(
         "hallucination_guard",
         "answer_style_preference",
         "diagnostic_rule",
-    }:
+    } and not brain_context_manager.answer_contract._is_post_apply_intent_request(
+        _normalize_intent_text(payload.raw_text)
+    ):
         if intent_class == "user_correction":
             lesson_text = _extract_correction_text(payload.raw_text)
         elif intent_class == "workflow_habit_learning":
@@ -2495,10 +2497,139 @@ async def add_session_message(
         return updated_state
 
     normalized_question = _normalize_intent_text(payload.raw_text)
+    latest_applied_patch = brain_context_manager.answer_contract._latest_applied_patch_proposal(
+        session_state.messages,
+        session_state.metadata,
+    )
+    is_post_apply_file_check_prompt = (
+        brain_context_manager.answer_contract._is_post_apply_verify_request(normalized_question)
+        or brain_context_manager.answer_contract._is_post_apply_preview_request(normalized_question)
+        or brain_context_manager.answer_contract._is_post_apply_targeted_validation_request(normalized_question)
+    )
+    is_post_apply_full_test_prompt = (
+        brain_context_manager.answer_contract._is_post_apply_full_test_guard_request(normalized_question)
+        and latest_applied_patch is not None
+    )
     is_artifact_patch_lane_prompt = (
         brain_context_manager.answer_contract._is_patch_proposal_request(normalized_question)
         or brain_context_manager.answer_contract._is_patch_apply_request(normalized_question)
+        or is_post_apply_file_check_prompt
+        or is_post_apply_full_test_prompt
     )
+
+    if is_artifact_patch_lane_prompt:
+        brain_context = brain_context_manager.build_context_for_question(payload.raw_text)
+        inference_state.messages.insert(
+            0,
+            ConversationMessage(role="system", content=brain_context.prompt),
+        )
+        try:
+            artifact_response = await brain_context_manager.code_artifact_response(
+                payload.raw_text,
+                session_messages=[msg.model_dump(mode="json") for msg in session_state.messages],
+                session_metadata=session_state.metadata,
+            )
+        except RuntimeError as artifact_error:
+            artifact_error_text = str(artifact_error).lower()
+            if (
+                "artifact revision failed validation" in artifact_error_text
+                or "artifact generation failed validation" in artifact_error_text
+            ):
+                brain_answer_source = (
+                    "artifact_revision_error"
+                    if "artifact revision failed validation" in artifact_error_text
+                    else "artifact_generation_error"
+                )
+                visible_text = sanitize_visible_answer_text(str(artifact_error).strip())
+                assistant_payload = build_assistant_payload(
+                    visible_text=visible_text,
+                    context_receipt=_merge_focus_context_receipt(brain_context.receipt, session_state.metadata),
+                    operator_receipts=[],
+                    memory_receipts=[],
+                    model_use_receipt={},
+                    policy_provenance={
+                        "answer_source": "brain_policy",
+                        "policy_source": "answer_contract",
+                        "brain_answer_source": brain_answer_source,
+                        "request_id": str(uuid4()),
+                        "session_id": str(session_id),
+                        "runtime_model_inference_proven": False,
+                    },
+                    warnings=[],
+                    action_history_refs=action_history_refs,
+                )
+
+                updated_state = await memory_manager.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    raw_text=visible_text,
+                    message_metadata=assistant_payload,
+                )
+                assistant_message = updated_state.messages[-1]
+                vector_memory_receipt = await persist_vector_memory_round_trip(
+                    vector_store,
+                    session_id=str(session_id),
+                    user_role=user_role,
+                    user_content=user_visible_content,
+                    assistant_role=assistant_message.role,
+                    assistant_content=assistant_message.content,
+                )
+                updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+                updated_state.metadata["vector_memory"] = vector_memory_receipt
+                updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+                updated_state.metadata["last_assistant_payload"] = assistant_payload
+                await memory_manager.update_session(updated_state)
+                return updated_state
+            raise
+
+        if artifact_response is not None:
+            visible_text = str(artifact_response.get("visible_text", "")).strip()
+            artifact_provenance = artifact_response.get("provenance", {})
+            if not isinstance(artifact_provenance, dict):
+                artifact_provenance = {}
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=artifact_response.get("context_receipt"),
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "answer_contract",
+                    "brain_answer_source": "code_artifact_request",
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                    **artifact_provenance,
+                },
+                warnings=[],
+                action_history_refs=action_history_refs,
+                code_artifact=artifact_response.get("code_artifact"),
+                artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
+            )
+
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
 
     if intent_class == "implementation_task" and not is_artifact_patch_lane_prompt:
         visible_text = _build_task_guard_answer()
