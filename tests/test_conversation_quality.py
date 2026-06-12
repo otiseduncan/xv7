@@ -1069,8 +1069,10 @@ def test_generation_validation_failure_returns_clear_answer(monkeypatch, tmp_pat
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
     provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
-    assert "artifact generation failed validation" in answer
-    assert provenance.get("brain_answer_source") == "artifact_generation_error"
+    assert "could not generate a safe artifact draft" in answer
+    assert "content_length_out_of_bounds" not in answer
+    assert provenance.get("artifact_generation") == "artifact_generation_failed"
+    assert provenance.get("failure_reason") == "fallback_validation_failed"
 
 
 def test_industry_outputs_do_not_collapse_to_same_hero(monkeypatch, tmp_path: Path) -> None:
@@ -1377,6 +1379,211 @@ def test_refinement_without_active_artifact_requests_context(monkeypatch, tmp_pa
     answer = payload["messages"][-1]["content"].lower()
     assert "active artifact" in answer
     assert "sms connector" not in answer
+
+
+def test_typography_blackletter_refinement_is_deterministic_and_preserves_identity(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (
+            "<!doctype html><html><head><style>:root{--bg:white;--accent:pink;--accent-2:purple;} body{background:white;color:#111;} .eyebrow{color:purple;} h1{font-family:Georgia,serif;}</style></head><body><div class='eyebrow'>Tony's Tavern</div><h1>Tony's Tavern</h1><h2>Neighborhood biker bar</h2><p>Cold pours, loud guitars, and late-night bar food.</p></body></html>",
+            "fake-code-model:test",
+        )
+
+    async def _should_not_run_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+        raise AssertionError("typography-only refinement should not call local model revision")
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model",
+        _should_not_run_revise,
+    )
+
+    create = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar using white pink and purple."},
+    )
+    assert create.status_code == 200
+
+    refine = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Please change the heading font to old English blackletter gothic, keep everything else exactly the same."},
+    )
+    assert refine.status_code == 200
+    payload = refine.json()
+    message = payload["messages"][-1]
+    content = message["metadata"]["code_artifact"]["content"]
+    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    typography = provenance.get("typography_refinement", {})
+
+    assert "Tony's Tavern" in content
+    assert "biker bar" in content.lower()
+    assert "blackletter-heading" in content
+    assert "xv7-typography-refinement" in content
+    assert "content_length_out_of_bounds" not in message["content"].lower()
+    assert provenance.get("artifact_generation") == "deterministic_typography_refinement"
+    assert typography.get("requested_style") == "blackletter/gothic"
+    assert typography.get("status") == "passed"
+
+
+def test_typography_script_refinement_applies_script_style(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (
+            "<!doctype html><html><head><style>body{background:black;color:#fef3c7;} h1{font-family:Georgia,serif;} .eyebrow{color:#f59e0b;}</style></head><body><div class='eyebrow'>Tony's Tavern</div><h1>Tony's Tavern</h1><h2>Neighborhood biker bar</h2></body></html>",
+            "fake-code-model:test",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    create = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar."},
+    )
+    assert create.status_code == 200
+
+    refine = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the heading font to script"},
+    )
+    assert refine.status_code == 200
+    payload = refine.json()
+    content = payload["messages"][-1]["metadata"]["code_artifact"]["content"]
+    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    typography = provenance.get("typography_refinement", {})
+
+    assert "script-heading" in content
+    assert "Brush Script MT" in content or "cursive" in content
+    assert typography.get("requested_style") == "script/cursive"
+    assert typography.get("status") == "passed"
+
+
+def test_typography_refinement_without_active_artifact_returns_guidance(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the heading font to old English blackletter"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+
+    assert "active artifact" in answer
+    assert provenance.get("artifact_generation") == "artifact_refinement_unavailable"
+
+
+def test_typography_refinement_failure_is_sanitized_and_previous_artifact_stays_active(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (
+            "<!doctype html><html><head><style>body{background:black;color:#fef3c7;} h1{font-family:Georgia,serif;}</style></head><body><h1>Tony's Tavern</h1><p>Neighborhood biker bar live music and food.</p></body></html>",
+            "fake-code-model:test",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._deterministic_typography_refinement_content",
+        classmethod(
+            lambda cls, *, source_artifact, requested_style: (
+                "short",
+                {
+                    "requested_style": requested_style,
+                    "applied_to": [],
+                    "deterministic_fallback_used": True,
+                    "status": "failed",
+                },
+                False,
+                "content_length_out_of_bounds",
+            )
+        ),
+    )
+
+    create = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar."},
+    )
+    assert create.status_code == 200
+
+    failed = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the heading font to old English blackletter"},
+    )
+    assert failed.status_code == 200
+    payload = failed.json()
+    answer = payload["messages"][-1]["content"].lower()
+    metadata = payload["messages"][-1]["metadata"]
+
+    assert "content_length_out_of_bounds" not in answer
+    assert "could not safely apply the typography refinement" in answer
+    assert metadata.get("code_artifact", {}) == {}
+
+    patch = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert patch.status_code == 200
+    proposal = patch.json()["messages"][-1]["metadata"].get("artifact_patch_proposal", {})
+    target_path = str(proposal.get("target_path") or "")
+    assert target_path.startswith("generated-sites/")
+    assert target_path.endswith("/index.html")
 
 
 def test_revision_retry_prompt_includes_missing_requirements(monkeypatch) -> None:

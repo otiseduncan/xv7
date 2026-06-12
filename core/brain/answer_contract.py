@@ -89,6 +89,16 @@ class AnswerContract:
     ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN = re.compile(
         r"\b(run full tests|run pytest|run npm test|run full validation|run the full validation suite)\b"
     )
+    TYPOGRAPHY_BLACKLETTER_PATTERN = re.compile(
+        r"\b(old english font|blackletter|gothic font|fraktur|medieval font|biker-bar style font|biker bar style font)\b"
+    )
+    TYPOGRAPHY_BLACKLETTER_DETAIL_PATTERN = re.compile(
+        r"\b(major section titles|heavier strokes|shadowing|letter spacing|decorative styling|gothic biker-bar style font|gothic biker bar style font)\b"
+    )
+    TYPOGRAPHY_SCRIPT_PATTERN = re.compile(
+        r"\b(script font|cursive font|change the font|change the text font|change the heading font|change the font to a script)\b"
+    )
+    COLOR_CHANGE_REQUEST_PATTERN = re.compile(r"\b(color|colors|palette|background|theme)\b")
     COMMIT_PROPOSAL_PATTERN = re.compile(
         r"\b(prepare (?:a )?commit|propose (?:a )?commit|commit proposal|create commit proposal|"
         r"draft commit|show commit proposal|summarize changes for commit|summarise changes for commit|"
@@ -1378,6 +1388,7 @@ if __name__ == \"__main__\":
         if AnswerContract._artifact_refinement_mode(normalized_question) in {
             "undo",
             "explain",
+            "typography_only",
             "style_only",
             "content_only",
             "targeted_revision",
@@ -2559,6 +2570,11 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _artifact_refinement_mode(cls, normalized_question: str) -> str | None:
+        typography_style = cls._typography_style_request(normalized_question)
+        asks_for_color_change = bool(cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_question))
+        if typography_style is not None and not asks_for_color_change:
+            return "typography_only"
+
         if cls.ARTIFACT_UNDO_PATTERN.search(normalized_question):
             return "undo"
         if cls.ARTIFACT_EXPLAIN_PATTERN.search(normalized_question):
@@ -2710,6 +2726,157 @@ if __name__ == \"__main__\":
         if any(token in lowered for token in ("black", "gold", "white", "purple", "green", "red", "silver")):
             constraints.append("Make the requested colors visibly present in CSS variables or style declarations.")
         return constraints
+
+    @classmethod
+    def _typography_style_request(cls, normalized_question: str) -> str | None:
+        if cls.TYPOGRAPHY_BLACKLETTER_PATTERN.search(normalized_question):
+            return "blackletter/gothic"
+        if (
+            "gothic" in normalized_question
+            and cls.TYPOGRAPHY_BLACKLETTER_DETAIL_PATTERN.search(normalized_question)
+        ):
+            return "blackletter/gothic"
+        if cls.TYPOGRAPHY_SCRIPT_PATTERN.search(normalized_question):
+            return "script/cursive"
+        return None
+
+    @staticmethod
+    def _add_class_to_tag_openings(content: str, tag: str, class_name: str, *, first_only: bool = False) -> str:
+        pattern = re.compile(rf"<{tag}([^>]*)>", flags=re.IGNORECASE)
+
+        def _repl(match: re.Match[str]) -> str:
+            attrs = match.group(1) or ""
+            class_match = re.search(r"class\s*=\s*([\"'])(.*?)\1", attrs, flags=re.IGNORECASE | re.DOTALL)
+            if class_match:
+                quote = class_match.group(1)
+                class_value = class_match.group(2)
+                classes = [token for token in re.split(r"\s+", class_value.strip()) if token]
+                if class_name not in classes:
+                    classes.append(class_name)
+                new_attr = f'class={quote}{" ".join(classes)}{quote}'
+                attrs = attrs[: class_match.start()] + new_attr + attrs[class_match.end() :]
+            else:
+                attrs = f'{attrs} class="{class_name}"'
+            return f"<{tag}{attrs}>"
+
+        return pattern.sub(_repl, content, count=1 if first_only else 0)
+
+    @classmethod
+    def _add_class_to_eyebrow_labels(cls, content: str, class_name: str) -> str:
+        pattern = re.compile(
+            r"<(div|span)([^>]*)>",
+            flags=re.IGNORECASE,
+        )
+
+        def _repl(match: re.Match[str]) -> str:
+            tag = match.group(1)
+            attrs = match.group(2) or ""
+            class_match = re.search(r"class\s*=\s*([\"'])(.*?)\1", attrs, flags=re.IGNORECASE | re.DOTALL)
+            if not class_match:
+                return match.group(0)
+            class_value = class_match.group(2)
+            classes = [token for token in re.split(r"\s+", class_value.strip()) if token]
+            if "eyebrow" not in classes:
+                return match.group(0)
+            if class_name not in classes:
+                classes.append(class_name)
+            quote = class_match.group(1)
+            new_attr = f'class={quote}{" ".join(classes)}{quote}'
+            attrs = attrs[: class_match.start()] + new_attr + attrs[class_match.end() :]
+            return f"<{tag}{attrs}>"
+
+        return pattern.sub(_repl, content)
+
+    @classmethod
+    def _deterministic_typography_refinement_content(
+        cls,
+        *,
+        source_artifact: dict[str, Any],
+        requested_style: str,
+    ) -> tuple[str, dict[str, Any], bool, str]:
+        source_content = str(source_artifact.get("content") or "")
+        language = str(source_artifact.get("language") or "html").lower()
+        if not source_content.strip() or language != "html":
+            return source_content, {
+                "requested_style": requested_style,
+                "applied_to": [],
+                "deterministic_fallback_used": True,
+                "status": "failed",
+            }, False, "unsupported_typography_refinement_target"
+
+        if requested_style == "blackletter/gothic":
+            class_name = "blackletter-heading"
+            style_block = (
+                "<style id=\"xv7-typography-refinement\">"
+                ".blackletter-heading,"
+                "h1.blackletter-heading,"
+                "h2.blackletter-heading,"
+                ".section-title.blackletter-heading {"
+                "font-family: \"Old English Text MT\", \"UnifrakturCook\", \"UnifrakturMaguntia\", \"Cloister Black\", \"Lucida Blackletter\", fantasy, Georgia, serif;"
+                "font-weight: 900;"
+                "letter-spacing: 0.045em;"
+                "text-shadow: 0 2px 0 rgba(0,0,0,0.45), 0 0 18px rgba(255,255,255,0.18);"
+                "-webkit-text-stroke: 0.35px rgba(0,0,0,0.45);"
+                "text-transform: none;"
+                "line-height: 1.05;"
+                "}"
+                "h2.blackletter-heading {"
+                "display: inline-block;"
+                "padding-bottom: 0.24rem;"
+                "border-bottom: 2px solid color-mix(in srgb, currentColor 60%, transparent);"
+                "margin-bottom: 0.7rem;"
+                "}"
+                ".eyebrow.blackletter-heading {"
+                "font-size: 0.86rem;"
+                "letter-spacing: 0.09em;"
+                "text-shadow: 0 1px 0 rgba(0,0,0,0.5), 0 0 10px rgba(255,255,255,0.22);"
+                "}"
+                "</style>"
+            )
+        else:
+            class_name = "script-heading"
+            style_block = (
+                "<style id=\"xv7-typography-refinement\">"
+                ".script-heading {"
+                "font-family: \"Brush Script MT\", \"Segoe Script\", \"Lucida Handwriting\", cursive;"
+                "font-weight: 700;"
+                "letter-spacing: 0.02em;"
+                "text-shadow: 0 1px 0 rgba(0,0,0,0.32), 0 0 10px rgba(255,255,255,0.14);"
+                "line-height: 1.1;"
+                "}"
+                "h2.script-heading {"
+                "display: inline-block;"
+                "padding-bottom: 0.2rem;"
+                "border-bottom: 1px solid color-mix(in srgb, currentColor 52%, transparent);"
+                "}"
+                ".eyebrow.script-heading {"
+                "font-weight: 700;"
+                "letter-spacing: 0.08em;"
+                "}"
+                "</style>"
+            )
+
+        revised = source_content
+        revised = re.sub(
+            r"<style\s+id=[\"']xv7-typography-refinement[\"'][^>]*>.*?</style>",
+            "",
+            revised,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        revised = cls._insert_before_tag(revised, "head", style_block)
+        revised = cls._add_class_to_tag_openings(revised, "h1", class_name, first_only=True)
+        revised = cls._add_class_to_tag_openings(revised, "h2", class_name)
+        revised = cls._add_class_to_tag_openings(revised, "h3", class_name)
+        revised = cls._add_class_to_tag_openings(revised, "h4", class_name)
+        revised = cls._add_class_to_eyebrow_labels(revised, class_name)
+
+        metadata = {
+            "requested_style": requested_style,
+            "applied_to": ["main_heading", "section_titles", "display_labels"],
+            "deterministic_fallback_used": True,
+            "status": "passed",
+        }
+        return revised, metadata, True, "passed"
 
     @classmethod
     def _build_local_artifact_revision_prompt(
@@ -3232,17 +3399,22 @@ if __name__ == \"__main__\":
         latest_artifact = artifact_history[-1]["artifact"] if artifact_history else None
         source_artifact_label = "latest session artifact" if latest_artifact is not None else None
         is_generation = self.is_code_artifact_request(normalized)
+        has_artifact_edit_intent = self._looks_like_artifact_edit(normalized)
+        has_explicit_artifact_generation_language = bool(self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized))
+        if (
+            latest_artifact is not None
+            and has_artifact_edit_intent
+            and not has_explicit_artifact_generation_language
+        ):
+            # Active-artifact edit prompts may still mention "html"/"css" but should stay in revision flow.
+            is_generation = False
         is_patch_proposal_request = self._is_patch_proposal_request(normalized)
         is_patch_apply_request = self._is_patch_apply_request(normalized)
         is_post_apply_verify_request = self._is_post_apply_verify_request(normalized)
         is_post_apply_preview_request = self._is_post_apply_preview_request(normalized)
         is_post_apply_targeted_validation_request = self._is_post_apply_targeted_validation_request(normalized)
         is_post_apply_full_test_guard_request = self._is_post_apply_full_test_guard_request(normalized)
-        refinement_mode = (
-            self._artifact_refinement_mode(normalized)
-            if (not is_patch_proposal_request and self._looks_like_artifact_edit(normalized))
-            else None
-        )
+        refinement_mode = self._artifact_refinement_mode(normalized) if (not is_patch_proposal_request and has_artifact_edit_intent) else None
         is_refinement_request = latest_artifact is not None and refinement_mode is not None and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized) and not is_generation
         is_commit_proposal_request = self._is_commit_proposal_request(normalized)
         is_commit_approval_request = self._is_commit_approval_request(normalized)
@@ -3789,47 +3961,119 @@ if __name__ == \"__main__\":
 
         content: str
         provenance: dict[str, Any]
+        typography_refinement_payload: dict[str, Any] | None = None
         if is_refinement_request and latest_artifact is not None:
-            try:
-                revision_source_artifact = dict(latest_artifact)
-                revision_source_artifact["_revision_mode"] = refinement_mode or "full_revision"
-                content, model_used, model_endpoint = await self._revise_artifact_with_local_model(
-                    question=question,
-                    source_artifact=revision_source_artifact,
+            typography_style = self._typography_style_request(normalized) if refinement_mode == "typography_only" else None
+            if typography_style:
+                content, typography_refinement_payload, typ_ok, typ_reason = self._deterministic_typography_refinement_content(
+                    source_artifact=latest_artifact,
+                    requested_style=typography_style,
                 )
+                typography_business_name = self._extract_business_name_from_html(str(latest_artifact.get("content") or "")) or ""
+                valid, reason = self._validate_artifact_content(
+                    content=content,
+                    language=str(latest_artifact.get("language") or "html"),
+                    business_name=typography_business_name,
+                    style_hints={"colors": [], "styles": []},
+                    requested_question="",
+                )
+                if not typ_ok or not valid:
+                    return {
+                        "visible_text": (
+                            "I could not safely apply the typography refinement, so I preserved the current artifact unchanged."
+                        ),
+                        "code_artifact": {},
+                        "artifact_patch_proposal": {},
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_generation": "typography_refinement_failed",
+                            "artifact_validation": "failed",
+                            "source_artifact": source_artifact_label or "latest session artifact",
+                            "source_artifact_key": "latest_session_artifact",
+                            "revision_mode": "typography_only",
+                            "failure_reason": typ_reason if not typ_ok else reason,
+                            "typography_refinement": {
+                                **(typography_refinement_payload or {}),
+                                "status": "failed",
+                            },
+                        },
+                    }
                 provenance = {
-                    "artifact_generation": "local_model_revision",
-                    "model_used": model_used,
-                    "model_endpoint": model_endpoint,
+                    "artifact_generation": "deterministic_typography_refinement",
                     "artifact_validation": "passed",
                     "source_artifact": source_artifact_label or "latest session artifact",
                     "source_artifact_key": "latest_session_artifact",
-                    "revision_mode": refinement_mode or "full_revision",
+                    "revision_mode": "typography_only",
                     "revision_number": next_revision_number,
+                    "typography_refinement": typography_refinement_payload,
                 }
-            except Exception as exc:
-                fallback_reason = str(exc).strip() or "artifact_revision_failed"
-                content = self._deterministic_revision_fallback_content(
-                    question=question,
-                    source_artifact=latest_artifact,
-                    revision_mode=refinement_mode or "full_revision",
-                )
-                valid, reason = self._validate_revision_candidate(
-                    content=content,
-                    source_artifact=latest_artifact,
-                    requested_question=question,
-                )
-                model_resolution = resolve_model_for_runtime_role("code")
-                provenance = {
-                    "artifact_generation": "deterministic_prompt_template_fallback",
-                    "model_used": model_resolution.model_tag or "unknown",
-                    "fallback_reason": f"artifact revision fallback: {fallback_reason}",
-                    "fallback_prevalidation": "passed" if valid else f"failed:{reason}",
-                    "source_artifact": source_artifact_label or "latest session artifact",
-                    "source_artifact_key": "latest_session_artifact",
-                    "revision_mode": refinement_mode or "full_revision",
-                    "revision_number": next_revision_number,
-                }
+            else:
+                try:
+                    revision_source_artifact = dict(latest_artifact)
+                    revision_source_artifact["_revision_mode"] = refinement_mode or "full_revision"
+                    content, model_used, model_endpoint = await self._revise_artifact_with_local_model(
+                        question=question,
+                        source_artifact=revision_source_artifact,
+                    )
+                    provenance = {
+                        "artifact_generation": "local_model_revision",
+                        "model_used": model_used,
+                        "model_endpoint": model_endpoint,
+                        "artifact_validation": "passed",
+                        "source_artifact": source_artifact_label or "latest session artifact",
+                        "source_artifact_key": "latest_session_artifact",
+                        "revision_mode": refinement_mode or "full_revision",
+                        "revision_number": next_revision_number,
+                    }
+                except Exception as exc:
+                    fallback_reason = str(exc).strip() or "artifact_revision_failed"
+                    content = self._deterministic_revision_fallback_content(
+                        question=question,
+                        source_artifact=latest_artifact,
+                        revision_mode=refinement_mode or "full_revision",
+                    )
+                    valid, reason = self._validate_revision_candidate(
+                        content=content,
+                        source_artifact=latest_artifact,
+                        requested_question=question,
+                    )
+                    model_resolution = resolve_model_for_runtime_role("code")
+                    if not valid:
+                        return {
+                            "visible_text": (
+                                "I could not complete the requested artifact revision safely, so I preserved the current artifact unchanged. "
+                                "The requested edit failed validation."
+                            ),
+                            "code_artifact": {},
+                            "artifact_patch_proposal": {},
+                            "context_receipt": {
+                                "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                                "context_receipts": [],
+                                "record_ids": [],
+                            },
+                            "provenance": {
+                                "artifact_generation": "artifact_refinement_failed",
+                                "artifact_validation": "failed",
+                                "source_artifact": source_artifact_label or "latest session artifact",
+                                "source_artifact_key": "latest_session_artifact",
+                                "revision_mode": refinement_mode or "full_revision",
+                                "failure_reason": reason,
+                            },
+                        }
+                    provenance = {
+                        "artifact_generation": "deterministic_prompt_template_fallback",
+                        "model_used": model_resolution.model_tag or "unknown",
+                        "fallback_reason": f"artifact revision fallback: {fallback_reason}",
+                        "fallback_prevalidation": "passed" if valid else f"failed:{reason}",
+                        "source_artifact": source_artifact_label or "latest session artifact",
+                        "source_artifact_key": "latest_session_artifact",
+                        "revision_mode": refinement_mode or "full_revision",
+                        "revision_number": next_revision_number,
+                    }
         else:
             try:
                 generation_result = await self._generate_artifact_with_local_model(
@@ -3865,7 +4109,25 @@ if __name__ == \"__main__\":
                     requested_question=question,
                 )
                 if not valid:
-                    raise RuntimeError(f"artifact generation failed validation: {fallback_reason}; fallback invalid: {reason}")
+                    return {
+                        "visible_text": (
+                            "I could not generate a safe artifact draft right now. "
+                            "Please try again with a slightly simpler prompt and I will keep the requested business identity intact."
+                        ),
+                        "code_artifact": {},
+                        "artifact_patch_proposal": {},
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_generation": "artifact_generation_failed",
+                            "artifact_validation": "failed",
+                            "failure_reason": "fallback_validation_failed",
+                            "revision_number": next_revision_number,
+                        },
+                    }
                 model_resolution = resolve_model_for_runtime_role("code")
                 provenance = {
                     "artifact_generation": "deterministic_prompt_template_fallback",
@@ -3886,8 +4148,12 @@ if __name__ == \"__main__\":
                 fidelity_source_prompt,
                 business_name,
             )
+        fidelity_prompt = question
+        if refinement_mode == "typography_only" and latest_artifact is not None:
+            fidelity_prompt = str(latest_artifact.get("source_prompt") or question)
+
         prompt_fidelity = self.validate_artifact_prompt_fidelity(
-            question,
+            fidelity_prompt,
             content,
             fidelity_context,
         )
@@ -3911,7 +4177,7 @@ if __name__ == \"__main__\":
                 fidelity_report=prompt_fidelity,
             )
             repaired_fidelity = self.validate_artifact_prompt_fidelity(
-                question,
+                fidelity_prompt,
                 repaired_content,
                 fidelity_context,
             )
@@ -3958,6 +4224,8 @@ if __name__ == \"__main__\":
 
         provenance["prompt_fidelity"] = prompt_fidelity_payload
         provenance["artifact_validation"] = prompt_fidelity_payload.get("status", "passed")
+        if typography_refinement_payload is not None:
+            provenance["typography_refinement"] = typography_refinement_payload
 
         return {
             "visible_text": (
@@ -3977,6 +4245,7 @@ if __name__ == \"__main__\":
                 "revision_number": next_revision_number,
                 "source_prompt": question.strip(),
                 "prompt_fidelity": prompt_fidelity_payload,
+                "typography_refinement": typography_refinement_payload or {},
             },
             "artifact_patch_proposal": {},
             "context_receipt": {
