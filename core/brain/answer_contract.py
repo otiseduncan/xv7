@@ -5,6 +5,7 @@ import html
 import re
 import difflib
 import hashlib
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,15 @@ class AnswerContract:
     )
     ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN = re.compile(
         r"\b(run full tests|run pytest|run npm test|run full validation|run the full validation suite)\b"
+    )
+    COMMIT_PROPOSAL_PATTERN = re.compile(
+        r"\b(prepare (?:a )?commit|propose (?:a )?commit|commit proposal|create commit proposal|"
+        r"draft commit|show commit proposal|summarize changes for commit|summarise changes for commit|"
+        r"what would the commit be|what should i commit|prepare this commit|stage this for commit)\b"
+    )
+    COMMIT_APPROVAL_PATTERN = re.compile(
+        r"\b(commit it|commit the proposal|approve commit|confirm commit|make the commit|"
+        r"create the commit|go ahead and commit|commit these changes)\b"
     )
     EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
     EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
@@ -1150,6 +1160,14 @@ if __name__ == \"__main__\":
         return bool(cls.ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN.search(normalized_question))
 
     @classmethod
+    def _is_commit_proposal_request(cls, normalized_question: str) -> bool:
+        return bool(cls.COMMIT_PROPOSAL_PATTERN.search(normalized_question))
+
+    @classmethod
+    def _is_commit_approval_request(cls, normalized_question: str) -> bool:
+        return bool(cls.COMMIT_APPROVAL_PATTERN.search(normalized_question))
+
+    @classmethod
     def _is_post_apply_intent_request(cls, normalized_question: str) -> bool:
         return any(
             (
@@ -1196,6 +1214,33 @@ if __name__ == \"__main__\":
             candidate = os.path.splitext(candidate)[0] + expected_ext
         return candidate
 
+    @staticmethod
+    def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                ["git", *args],
+                cwd=str(repo_root),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=8,
+            )
+        except FileNotFoundError:
+            return subprocess.CompletedProcess(
+                args=["git", *args],
+                returncode=127,
+                stdout="",
+                stderr="git executable not found",
+            )
+        except subprocess.TimeoutExpired:
+            command = "git " + " ".join(args)
+            return subprocess.CompletedProcess(
+                args=["git", *args],
+                returncode=124,
+                stdout="",
+                stderr=f"git command timed out after 8s while running {command}",
+            )
+
     @classmethod
     def _proposed_patch_target_path(
         cls,
@@ -1226,6 +1271,32 @@ if __name__ == \"__main__\":
             "data/brain",
             "memories/",
         )
+        return any(segment in lowered for segment in blocked_segments)
+
+    @staticmethod
+    def _is_blocked_commit_target(path_text: str) -> bool:
+        lowered = path_text.lower().replace("\\", "/")
+        path_parts = [part for part in Path(lowered).parts if part not in {"/", "\\"}]
+        blocked_top_level = {
+            ".git",
+            ".env",
+            ".pytest_cache",
+            "__pycache__",
+            "brain_runtime_records",
+            "brain_seed_records",
+            "data",
+            "memories",
+            "memory_records",
+            "node_modules",
+            "runtime",
+        }
+        blocked_segments = (
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+        )
+        if path_parts and path_parts[0] in blocked_top_level:
+            return True
         return any(segment in lowered for segment in blocked_segments)
 
     @classmethod
@@ -1498,6 +1569,440 @@ if __name__ == \"__main__\":
                 if proposal is not None and proposal.get("applied") is True:
                     return proposal
         return None
+
+    @classmethod
+    def _extract_commit_proposal_from_metadata(cls, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(metadata, dict):
+            return None
+        proposal = metadata.get("commit_proposal")
+        if not isinstance(proposal, dict):
+            return None
+        if str(proposal.get("type") or "") != "commit_proposal":
+            return None
+        proposal_id = str(proposal.get("proposal_id") or "").strip()
+        if not proposal_id:
+            return None
+        return proposal
+
+    @classmethod
+    def _latest_pending_commit_proposal(
+        cls,
+        session_messages: list[Any] | None,
+        session_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if isinstance(session_messages, list):
+            for message in reversed(session_messages):
+                if not isinstance(message, dict):
+                    continue
+                if str(message.get("role") or "").lower() != "assistant":
+                    continue
+                metadata = message.get("metadata")
+                if not isinstance(metadata, dict):
+                    continue
+                proposal = cls._extract_commit_proposal_from_metadata(metadata)
+                if proposal is None:
+                    continue
+                if proposal.get("committed") is True:
+                    continue
+                return proposal
+
+        if isinstance(session_metadata, dict):
+            payload = session_metadata.get("last_assistant_payload")
+            if isinstance(payload, dict):
+                proposal = cls._extract_commit_proposal_from_metadata(payload)
+                if proposal is not None and proposal.get("committed") is not True:
+                    return proposal
+        return None
+
+    @classmethod
+    def _build_commit_proposal(
+        cls,
+        *,
+        question: str,
+        session_messages: list[Any] | None = None,
+        session_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        root = cls._workspace_root()
+        proposal_id = f"commit-{uuid4().hex[:12]}"
+
+        # Check git availability using --git-dir which works on repos with no commits.
+        # (rev-parse --abbrev-ref HEAD fails with exit 128 on a fresh unborn repo.)
+        git_dir_proc = cls._run_git(root, ["rev-parse", "--git-dir"])
+        git_available = git_dir_proc.returncode == 0
+
+        if git_available:
+            # symbolic-ref works on fresh repos; rev-parse --abbrev-ref HEAD doesn't.
+            sym_proc = cls._run_git(root, ["symbolic-ref", "--short", "HEAD"])
+            if sym_proc.returncode == 0:
+                branch = sym_proc.stdout.strip()
+            else:
+                abbrev_proc = cls._run_git(root, ["rev-parse", "--abbrev-ref", "HEAD"])
+                branch = abbrev_proc.stdout.strip() if abbrev_proc.returncode == 0 else "unknown"
+        else:
+            branch = "unknown"
+
+        # Applied-patch-aware path: prefer the applied patch from session state over
+        # generic git-status scan so that container/host path issues are diagnosed
+        # precisely rather than silently returning an empty proposal.
+        applied_patch = cls._latest_applied_patch_proposal(session_messages, session_metadata)
+        if applied_patch is not None:
+            target_path = str(applied_patch.get("target_path") or "").replace("\\", "/")
+            if target_path:
+                target_abs = (root / Path(target_path)).resolve()
+                file_exists = target_abs.exists()
+
+                if not git_available:
+                    # Running inside a container with no .git — clear diagnostic
+                    if file_exists:
+                        return {
+                            "type": "commit_proposal",
+                            "proposal_id": proposal_id,
+                            "question": question,
+                            "branch": "unknown",
+                            "applied": False,
+                            "committed": False,
+                            "push_performed": False,
+                            "requires_confirmation": True,
+                            "included_files": [],
+                            "excluded_files": [],
+                            "status_lines": [],
+                            "change_lines": [],
+                            "diff_stat": "",
+                            "proposed_commit_message": "",
+                            "source_applied_patch": target_path,
+                            "git_available": False,
+                            "container_path_mismatch": True,
+                            "visible_text": (
+                                f"The applied patch target {target_path} exists in the runtime container, "
+                                "but Git is not available in this environment. "
+                                "I cannot prepare a host commit from inside the container. "
+                                "The file was written correctly but committing must be done from the host workspace."
+                            ),
+                        }
+                    return {
+                        "type": "commit_proposal",
+                        "proposal_id": proposal_id,
+                        "question": question,
+                        "branch": "unknown",
+                        "applied": False,
+                        "committed": False,
+                        "push_performed": False,
+                        "requires_confirmation": True,
+                        "included_files": [],
+                        "excluded_files": [],
+                        "status_lines": [],
+                        "change_lines": [],
+                        "diff_stat": "",
+                        "proposed_commit_message": "",
+                        "source_applied_patch": target_path,
+                        "git_available": False,
+                        "visible_text": (
+                            f"The applied patch target {target_path} does not exist on disk "
+                            "and Git is not available in this environment. "
+                            "No commit was created and no push was performed."
+                        ),
+                    }
+
+                # Git is available — check file presence
+                if not file_exists:
+                    return {
+                        "type": "commit_proposal",
+                        "proposal_id": proposal_id,
+                        "question": question,
+                        "branch": branch,
+                        "applied": False,
+                        "committed": False,
+                        "push_performed": False,
+                        "requires_confirmation": True,
+                        "included_files": [],
+                        "excluded_files": [],
+                        "status_lines": [],
+                        "change_lines": [],
+                        "diff_stat": "",
+                        "proposed_commit_message": "",
+                        "source_applied_patch": target_path,
+                        "visible_text": (
+                            f"The applied patch target {target_path} does not exist on disk. "
+                            "No commit was created and no push was performed."
+                        ),
+                    }
+
+                # Check whether this specific path is gitignored
+                ignore_proc = cls._run_git(root, ["check-ignore", "-v", "--", target_path])
+                if ignore_proc.returncode == 0:
+                    return {
+                        "type": "commit_proposal",
+                        "proposal_id": proposal_id,
+                        "question": question,
+                        "branch": branch,
+                        "applied": False,
+                        "committed": False,
+                        "push_performed": False,
+                        "requires_confirmation": True,
+                        "included_files": [],
+                        "excluded_files": [],
+                        "status_lines": [],
+                        "change_lines": [],
+                        "diff_stat": "",
+                        "proposed_commit_message": "",
+                        "source_applied_patch": target_path,
+                        "ignored_paths": [target_path],
+                        "visible_text": (
+                            f"The applied patch target {target_path} is excluded by .gitignore. "
+                            "I cannot prepare a commit for an ignored path. "
+                            "No commit was created and no push was performed."
+                        ),
+                    }
+
+                # Check git status for this specific file
+                status_proc = cls._run_git(root, ["status", "--porcelain", "--", target_path])
+                status_line = status_proc.stdout.strip()
+                if not status_line:
+                    return {
+                        "type": "commit_proposal",
+                        "proposal_id": proposal_id,
+                        "question": question,
+                        "branch": branch,
+                        "applied": False,
+                        "committed": False,
+                        "push_performed": False,
+                        "requires_confirmation": True,
+                        "included_files": [],
+                        "excluded_files": [],
+                        "status_lines": [],
+                        "change_lines": [],
+                        "diff_stat": "",
+                        "proposed_commit_message": "",
+                        "source_applied_patch": target_path,
+                        "no_diff": True,
+                        "visible_text": (
+                            f"The applied patch target exists, but Git does not show a diff for {target_path}, "
+                            "so there is nothing to commit."
+                        ),
+                    }
+
+                # File is untracked or modified — build proposal from it
+                applied_target_stem = Path(target_path).stem
+                proposed_message = f"feat: add {applied_target_stem} generated site"
+                return {
+                    "type": "commit_proposal",
+                    "proposal_id": proposal_id,
+                    "question": question,
+                    "branch": branch,
+                    "applied": False,
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                    "included_files": [target_path],
+                    "excluded_files": [],
+                    "status_lines": [status_line],
+                    "change_lines": [f"{status_line[:2].rstrip()} {target_path}"],
+                    "diff_stat": "",
+                    "proposed_commit_message": proposed_message,
+                    "source_applied_patch": target_path,
+                    "visible_text": (
+                        f"I prepared a commit proposal for {target_path} on branch {branch}. "
+                        "No files were changed, no commit was created, and no push was performed."
+                    ),
+                }
+
+        # No applied patch in session — fall back to generic git status scan
+        if not git_available:
+            return {
+                "type": "commit_proposal",
+                "proposal_id": proposal_id,
+                "question": question,
+                "branch": "unknown",
+                "applied": False,
+                "committed": False,
+                "push_performed": False,
+                "requires_confirmation": True,
+                "included_files": [],
+                "excluded_files": [],
+                "status_lines": [],
+                "change_lines": [],
+                "diff_stat": "",
+                "proposed_commit_message": "",
+                "git_available": False,
+                "visible_text": (
+                    "Git is not available in this environment. "
+                    "I cannot prepare a commit proposal without a Git workspace. "
+                    "No commit was created and no push was performed."
+                ),
+            }
+
+        status_proc = cls._run_git(root, ["status", "--porcelain", "--untracked-files=all"])
+        diff_stat_proc = cls._run_git(root, ["diff", "--stat"])
+
+        raw_status_lines = [line.strip() for line in status_proc.stdout.splitlines() if line.strip()]
+        included_files: list[str] = []
+        excluded_files: list[str] = []
+        change_lines: list[str] = []
+        for line in raw_status_lines:
+            if len(line) < 4:
+                continue
+            path_text = line[3:].strip()
+            if " -> " in path_text:
+                path_text = path_text.split(" -> ", 1)[-1].strip()
+            normalized_path = path_text.replace("\\", "/")
+            if cls._is_blocked_commit_target(normalized_path):
+                excluded_files.append(normalized_path)
+                continue
+            included_files.append(normalized_path)
+            change_lines.append(f"{line[:2]} {normalized_path}")
+
+        proposed_commit_message = (
+            f"chore: update {Path(included_files[0]).stem}" if len(included_files) == 1 else "chore: local repository changes"
+        )
+        visible_lines = []
+        if included_files:
+            visible_lines.append(
+                f"I prepared a commit proposal for {len(included_files)} file(s) on branch {branch}. No files were changed, no commit was created, and no push was performed."
+            )
+        else:
+            visible_lines.append(
+                "I checked the repository and did not find any safe changes to include in a commit proposal. No files were changed and no commit was created."
+            )
+        if excluded_files:
+            visible_lines.append(
+                f"Excluded blocked paths: {', '.join(excluded_files[:5])}."
+            )
+
+        return {
+            "type": "commit_proposal",
+            "proposal_id": proposal_id,
+            "question": question,
+            "branch": branch,
+            "applied": False,
+            "committed": False,
+            "push_performed": False,
+            "requires_confirmation": True,
+            "included_files": included_files,
+            "excluded_files": excluded_files,
+            "status_lines": raw_status_lines,
+            "change_lines": change_lines,
+            "diff_stat": diff_stat_proc.stdout.strip() if diff_stat_proc.returncode == 0 else "",
+            "proposed_commit_message": proposed_commit_message,
+            "visible_text": " ".join(visible_lines),
+        }
+
+    @classmethod
+    def _apply_commit_proposal(
+        cls,
+        *,
+        proposal: dict[str, Any],
+    ) -> dict[str, Any]:
+        root = cls._workspace_root()
+        included_files = [
+            str(path).replace("\\", "/")
+            for path in proposal.get("included_files") or []
+            if str(path).strip()
+        ]
+        if not included_files:
+            return {
+                "visible_text": "I cannot commit this proposal because there are no safe files to stage.",
+                "commit_proposal": {
+                    **proposal,
+                    "applied": False,
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                },
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: commit-proposal-apply",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "commit_proposal": "apply_blocked",
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                    "failure_reason": "no_safe_files",
+                },
+            }
+
+        add_proc = cls._run_git(root, ["add", "-A", "--", *included_files])
+        if add_proc.returncode != 0:
+            return {
+                "visible_text": "I could not stage the proposed files for commit.",
+                "commit_proposal": {
+                    **proposal,
+                    "applied": False,
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                },
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: commit-proposal-apply",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "commit_proposal": "stage_failed",
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                    "failure_reason": add_proc.stderr.strip() or "git add failed",
+                },
+            }
+
+        commit_message = str(proposal.get("proposed_commit_message") or "chore: local repository changes")
+        commit_proc = cls._run_git(root, ["commit", "-m", commit_message])
+        if commit_proc.returncode != 0:
+            return {
+                "visible_text": commit_proc.stderr.strip() or "I could not create the local commit.",
+                "commit_proposal": {
+                    **proposal,
+                    "applied": False,
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                },
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: commit-proposal-apply",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "commit_proposal": "commit_failed",
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                    "failure_reason": commit_proc.stderr.strip() or "git commit failed",
+                },
+            }
+
+        sha_proc = cls._run_git(root, ["rev-parse", "--short", "HEAD"])
+        commit_sha = sha_proc.stdout.strip() if sha_proc.returncode == 0 else "unknown"
+        committed_proposal = {
+            **proposal,
+            "applied": True,
+            "committed": True,
+            "committed_at": cls._utc_now_iso(),
+            "commit_sha": commit_sha,
+            "push_performed": False,
+            "requires_confirmation": True,
+        }
+        return {
+            "visible_text": (
+                f"Committed the approved local changes on branch {committed_proposal.get('branch', 'unknown')} as {commit_sha}. "
+                "No push was performed."
+            ),
+            "commit_proposal": committed_proposal,
+            "context_receipt": {
+                "compact": "Memory: -; Knowledge: -; Focus: -; Proof: commit-proposal-apply",
+                "context_receipts": [],
+                "record_ids": [],
+            },
+            "provenance": {
+                "commit_proposal": "committed",
+                "committed": True,
+                "push_performed": False,
+                "requires_confirmation": True,
+                "commit_sha": commit_sha,
+            },
+        }
 
     @classmethod
     def _build_patch_proposal_from_artifact(
@@ -2295,6 +2800,11 @@ if __name__ == \"__main__\":
             else None
         )
         is_refinement_request = latest_artifact is not None and refinement_mode is not None and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized) and not is_generation
+        is_commit_proposal_request = self._is_commit_proposal_request(normalized)
+        is_commit_approval_request = self._is_commit_approval_request(normalized)
+        allow_commit_lane = (is_commit_proposal_request or is_commit_approval_request) and not (
+            is_generation or is_refinement_request or self._looks_like_artifact_edit(normalized)
+        )
 
         if is_patch_proposal_request:
             if latest_artifact is None:
@@ -2669,6 +3179,63 @@ if __name__ == \"__main__\":
                         "push_performed": False,
                     },
                 }
+
+        if allow_commit_lane and is_commit_proposal_request:
+            proposal = self._build_commit_proposal(
+                question=question,
+                session_messages=session_messages,
+                session_metadata=session_metadata,
+            )
+            return {
+                "visible_text": str(proposal.get("visible_text") or "I prepared a commit proposal. No files were changed, no commit was created, and no push was performed."),
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "commit_proposal": proposal,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: commit-proposal",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "commit_proposal": "proposed",
+                    "committed": False,
+                    "push_performed": False,
+                    "requires_confirmation": True,
+                    "branch": proposal.get("branch"),
+                    "proposal_id": proposal.get("proposal_id"),
+                },
+            }
+
+        if allow_commit_lane and is_commit_approval_request:
+            pending_commit = self._latest_pending_commit_proposal(session_messages, session_metadata)
+            if pending_commit is None:
+                return {
+                    "visible_text": "I do not have a pending commit proposal to approve in this session.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "commit_proposal": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: commit-proposal",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "commit_proposal": "approval_refused",
+                        "committed": False,
+                        "push_performed": False,
+                        "requires_confirmation": True,
+                        "failure_reason": "no_pending_commit_proposal",
+                    },
+                }
+            applied_commit = self._apply_commit_proposal(proposal=pending_commit)
+            return {
+                "visible_text": str(applied_commit.get("visible_text") or "Committed the approved local changes. No push was performed."),
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "commit_proposal": applied_commit.get("commit_proposal", {}),
+                "context_receipt": applied_commit.get("context_receipt"),
+                "provenance": applied_commit.get("provenance", {}),
+            }
 
         if not is_generation and refinement_mode is not None and latest_artifact is None:
             return {

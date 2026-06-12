@@ -1421,6 +1421,32 @@ class OperatorManager:
     def _is_non_mutation_writing_request(normalized: str) -> bool:
         return any(token in normalized for token in NON_MUTATION_WRITING_PATTERNS)
 
+    @staticmethod
+    def _is_commit_proposal_or_approval_request(normalized: str) -> bool:
+        return any(
+            token in normalized
+            for token in (
+                "prepare commit",
+                "prepare a commit",
+                "propose commit",
+                "propose a commit",
+                "commit proposal",
+                "create commit proposal",
+                "draft commit",
+                "show commit proposal",
+                "what would the commit be",
+                "what should i commit",
+                "commit it",
+                "commit the proposal",
+                "approve commit",
+                "confirm commit",
+                "make the commit",
+                "create the commit",
+                "go ahead and commit",
+                "commit these changes",
+            )
+        )
+
     def _match_action(
         self, question: str, normalized: str
     ) -> tuple[str, str | None] | None:
@@ -1880,6 +1906,8 @@ class OperatorManager:
         if any(
             token in normalized for token in MUTATION_PATTERNS
         ) and not self._is_non_mutation_writing_request(normalized):
+            if self._is_commit_proposal_or_approval_request(normalized):
+                return None
             denied = self._denied_result(
                 question,
                 "Mutation requires Operator Mode plus a staged slash command confirmation flow.",

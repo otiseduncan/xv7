@@ -228,6 +228,7 @@ def build_assistant_payload(
     action_history_refs: list[str] | None = None,
     code_artifact: dict[str, Any] | None = None,
     artifact_patch_proposal: dict[str, Any] | None = None,
+    commit_proposal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_memory_receipts: list[str] = []
     seen_memory_receipts: set[str] = set()
@@ -249,6 +250,7 @@ def build_assistant_payload(
         "action_history_refs": action_history_refs or [],
         "code_artifact": code_artifact or {},
         "artifact_patch_proposal": artifact_patch_proposal or {},
+        "commit_proposal": commit_proposal or {},
     }
 
 
@@ -2587,6 +2589,11 @@ async def add_session_message(
             artifact_provenance = artifact_response.get("provenance", {})
             if not isinstance(artifact_provenance, dict):
                 artifact_provenance = {}
+            brain_answer_source = (
+                "commit_proposal_request"
+                if "commit_proposal" in (artifact_provenance or {})
+                else "code_artifact_request"
+            )
             assistant_payload = build_assistant_payload(
                 visible_text=visible_text,
                 context_receipt=artifact_response.get("context_receipt"),
@@ -2596,7 +2603,7 @@ async def add_session_message(
                 policy_provenance={
                     "answer_source": "brain_policy",
                     "policy_source": "answer_contract",
-                    "brain_answer_source": "code_artifact_request",
+                    "brain_answer_source": brain_answer_source,
                     "request_id": str(uuid4()),
                     "session_id": str(session_id),
                     "runtime_model_inference_proven": False,
@@ -2606,6 +2613,7 @@ async def add_session_message(
                 action_history_refs=action_history_refs,
                 code_artifact=artifact_response.get("code_artifact"),
                 artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
+                commit_proposal=artifact_response.get("commit_proposal"),
             )
 
             updated_state = await memory_manager.add_message(
@@ -3228,9 +3236,17 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
+    pending_commit_proposal = brain_context_manager.answer_contract._latest_pending_commit_proposal(
+        session_state.messages,
+        session_state.metadata,
+    )
+    normalized_for_commit_check = _normalize_intent_text(payload.raw_text)
+    is_explicit_commit_approval = brain_context_manager.answer_contract._is_commit_approval_request(
+        normalized_for_commit_check
+    )
     if _is_build_follow_up_prompt(payload.raw_text) and _lacks_verified_operator_success(
         session_state.metadata
-    ):
+    ) and not is_explicit_commit_approval:
         visible_text = (
             "I cannot report implementation completion from this turn because the last relevant operator action is not verified as successful. "
             "No files were changed. No tests were run. No commit or push occurred."
@@ -3405,6 +3421,11 @@ async def add_session_message(
         artifact_provenance = artifact_response.get("provenance", {})
         if not isinstance(artifact_provenance, dict):
             artifact_provenance = {}
+        brain_answer_source = (
+            "commit_proposal_request"
+            if "commit_proposal" in (artifact_provenance or {})
+            else "code_artifact_request"
+        )
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=artifact_response.get("context_receipt"),
@@ -3414,7 +3435,7 @@ async def add_session_message(
             policy_provenance={
                 "answer_source": "brain_policy",
                 "policy_source": "answer_contract",
-                "brain_answer_source": "code_artifact_request",
+                "brain_answer_source": brain_answer_source,
                 "request_id": str(uuid4()),
                 "session_id": str(session_id),
                 "runtime_model_inference_proven": False,
@@ -3428,6 +3449,7 @@ async def add_session_message(
             ],
             code_artifact=artifact_response.get("code_artifact"),
             artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
+            commit_proposal=artifact_response.get("commit_proposal"),
         )
 
         updated_state = await memory_manager.add_message(

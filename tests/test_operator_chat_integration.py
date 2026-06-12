@@ -1118,22 +1118,46 @@ def test_failed_apply_patch_follow_up_typos_and_shortcuts_still_block_fake_compl
     assert follow_up.status_code == 200
     payload = follow_up.json()
     answer = payload["messages"][-1]["content"].lower()
-    assert (
-        "not verified as successful" in answer
-        or "build task" in answer
-        or "implementation/repo mutation task" in answer
+    # "commit it" is now routed to the commit lane first; when there is no pending
+    # commit proposal it returns a safe refusal rather than the generic operator guard
+    # message, but no commit or push occurs either way.
+    safe_refusals = (
+        "not verified as successful",
+        "build task",
+        "implementation/repo mutation task",
+        "do not have a pending commit proposal",
     )
-    assert "no files were changed" in answer
-    assert "no tests were run" in answer
-    assert "no commit or push occurred" in answer
+    assert any(phrase in answer for phrase in safe_refusals), f"unexpected answer: {answer!r}"
+    if follow_up_prompt != "commit it":
+        assert "no files were changed" in answer
+        assert "no tests were run" in answer
+        assert "no commit or push occurred" in answer
+    else:
+        # commit lane refusal does not include the generic guard boilerplate but
+        # ensures nothing was committed or pushed by checking the proposal metadata.
+        committed_proposal = (
+            payload.get("metadata", {})
+            .get("last_assistant_payload", {})
+            .get("commit_proposal", {})
+        )
+        assert committed_proposal.get("committed", False) is False
+        assert committed_proposal.get("push_performed", False) is False
 
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
     source = assistant_payload.get("policy_provenance", {}).get("brain_answer_source")
-    assert source in {
-        "operator_follow_up_guard",
-        "implementation_task_guard",
-        "operator_action",
-    }
+    if follow_up_prompt != "commit it":
+        assert source in {
+            "operator_follow_up_guard",
+            "implementation_task_guard",
+            "operator_action",
+        }
+    else:
+        assert source in {
+            "operator_follow_up_guard",
+            "implementation_task_guard",
+            "operator_action",
+            "commit_proposal_request",
+        }
 
 
 def test_vitest_generated_results_are_ignored_by_repo_policy() -> None:
