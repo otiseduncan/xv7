@@ -131,9 +131,7 @@ def test_test_runner_command_unavailable(
     assert "Command unavailable" in result.data["stderr_summary"]
 
 
-def test_test_runner_timeout(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_test_runner_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def fake_run(_command: list[str], **_kwargs: object) -> FakeCompletedProcess:
         raise subprocess.TimeoutExpired(cmd="pytest", timeout=1, output="", stderr="")
 
