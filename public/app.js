@@ -1380,15 +1380,7 @@ class Xv7UI {
   }
 
   appendCodeArtifacts(article, messageMetadata) {
-    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
-    const artifacts = [];
-
-    if (Array.isArray(meta.code_artifacts)) {
-      artifacts.push(...meta.code_artifacts);
-    }
-    if (meta.code_artifact && typeof meta.code_artifact === 'object') {
-      artifacts.push(meta.code_artifact);
-    }
+    const artifacts = this.collectCodeArtifacts(messageMetadata);
 
     if (!artifacts.length) return;
 
@@ -1521,18 +1513,7 @@ class Xv7UI {
 
     const codeViewport = document.createElement('div');
     codeViewport.className = 'code-artifact-codeview';
-
-    const lineNumbers = document.createElement('div');
-    lineNumbers.className = 'code-artifact-line-numbers';
-
-    const codeContent = document.createElement('pre');
-    codeContent.className = `code-artifact-code language-${language}`;
-    codeContent.textContent = content;
-
-    const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
-    lineNumbers.innerHTML = lines.map((_, idx) => `<span>${idx + 1}</span>`).join('');
-
-    codeViewport.append(lineNumbers, codeContent);
+    codeViewport.append(this.renderArtifactCodeRows(content, language));
     codePane.append(codeViewport);
 
     const previewPane = document.createElement('div');
@@ -1593,6 +1574,313 @@ class Xv7UI {
     }
 
     return card;
+  }
+
+  renderArtifactCodeRows(content, language) {
+    const fragment = document.createDocumentFragment();
+    const source = String(content || '');
+    const lines = source.endsWith('\n') ? source.slice(0, -1).split('\n') : source.split('\n');
+    const highlightState = this.createArtifactHighlightState(language);
+
+    lines.forEach((line, index) => {
+      const row = document.createElement('div');
+      row.className = `code-artifact-line ${index % 2 === 0 ? 'is-odd' : 'is-even'}`;
+
+      const lineNumber = document.createElement('span');
+      lineNumber.className = 'code-artifact-line-number';
+      lineNumber.textContent = String(index + 1);
+
+      const lineCode = document.createElement('span');
+      lineCode.className = 'code-artifact-line-code';
+      this.appendArtifactHighlightedLine(lineCode, line, language, highlightState);
+
+      row.append(lineNumber, lineCode);
+      fragment.append(row);
+    });
+
+    return fragment;
+  }
+
+  createArtifactHighlightState(language) {
+    const normalized = this.normalizeArtifactLanguage(language);
+    return {
+      language: normalized,
+      inHtmlComment: false,
+      inCssComment: false,
+      inStyleBlock: false,
+      inScriptBlock: false,
+    };
+  }
+
+  appendArtifactHighlightedLine(container, line, language, state) {
+    const normalized = this.normalizeArtifactLanguage(language || state?.language || 'text');
+    if (normalized === 'html') {
+      this.appendHtmlArtifactLine(container, line, state);
+      return;
+    }
+    if (normalized === 'css') {
+      this.appendCssArtifactLine(container, line, state);
+      return;
+    }
+    if (normalized === 'python') {
+      this.appendPythonArtifactLine(container, line);
+      return;
+    }
+    this.appendPlainArtifactLine(container, line);
+  }
+
+  appendPlainArtifactLine(container, line) {
+    const text = document.createElement('span');
+    text.className = 'code-token-plain';
+    text.textContent = line;
+    container.append(text);
+  }
+
+  appendHtmlArtifactLine(container, line, state) {
+    if (state.inStyleBlock) {
+      const closingIndex = line.toLowerCase().indexOf('</style');
+      if (closingIndex === -1) {
+        this.appendCssArtifactLine(container, line, state);
+        return;
+      }
+      this.appendCssArtifactLine(container, line.slice(0, closingIndex), state);
+      state.inStyleBlock = false;
+      this.appendHtmlArtifactLine(container, line.slice(closingIndex), state);
+      return;
+    }
+
+    const commentOpen = '<!--';
+    const commentClose = '-->';
+    let index = 0;
+
+    while (index < line.length) {
+      if (state.inHtmlComment) {
+        const commentEnd = line.indexOf(commentClose, index);
+        if (commentEnd === -1) {
+          this.appendArtifactToken(container, 'code-token-html-comment', line.slice(index));
+          return;
+        }
+        this.appendArtifactToken(container, 'code-token-html-comment', line.slice(index, commentEnd + commentClose.length));
+        state.inHtmlComment = false;
+        index = commentEnd + commentClose.length;
+        continue;
+      }
+
+      const commentStart = line.indexOf(commentOpen, index);
+      const tagStart = line.indexOf('<', index);
+
+      if (commentStart !== -1 && (tagStart === -1 || commentStart <= tagStart)) {
+        if (commentStart > index) {
+          this.appendArtifactToken(container, 'code-token-html-text', line.slice(index, commentStart));
+        }
+        const commentEnd = line.indexOf(commentClose, commentStart + commentOpen.length);
+        if (commentEnd === -1) {
+          this.appendArtifactToken(container, 'code-token-html-comment', line.slice(commentStart));
+          state.inHtmlComment = true;
+          return;
+        }
+        this.appendArtifactToken(container, 'code-token-html-comment', line.slice(commentStart, commentEnd + commentClose.length));
+        index = commentEnd + commentClose.length;
+        continue;
+      }
+
+      if (tagStart === -1) {
+        this.appendArtifactToken(container, 'code-token-html-text', line.slice(index));
+        return;
+      }
+
+      if (tagStart > index) {
+        this.appendArtifactToken(container, 'code-token-html-text', line.slice(index, tagStart));
+      }
+
+      const tagEnd = line.indexOf('>', tagStart + 1);
+      const rawTag = tagEnd === -1 ? line.slice(tagStart) : line.slice(tagStart, tagEnd + 1);
+      this.appendHtmlTagTokens(container, rawTag, state);
+      index = tagEnd === -1 ? line.length : tagEnd + 1;
+    }
+  }
+
+  appendHtmlTagTokens(container, rawTag, state) {
+    if (!rawTag) return;
+
+    const isClosingTag = rawTag.startsWith('</');
+    const isSelfClosing = /\/>\s*$/.test(rawTag);
+    const tagMatch = rawTag.match(/^<\/?\s*([A-Za-z][\w:-]*)/);
+    let index = 0;
+
+    if (isClosingTag) {
+      this.appendArtifactToken(container, 'code-token-html-bracket', '</');
+      index = 2;
+    } else {
+      this.appendArtifactToken(container, 'code-token-html-bracket', '<');
+      index = 1;
+    }
+
+    if (tagMatch) {
+      const tagName = tagMatch[1];
+      this.appendArtifactToken(container, 'code-token-html-tag', tagName);
+      index = rawTag.indexOf(tagName, index) + tagName.length;
+      if (tagName.toLowerCase() === 'style') {
+        state.inStyleBlock = !isClosingTag;
+      }
+      if (tagName.toLowerCase() === 'script') {
+        state.inScriptBlock = !isClosingTag;
+      }
+    }
+
+    while (index < rawTag.length) {
+      const ch = rawTag[index];
+      if (ch === '>' ) {
+        this.appendArtifactToken(container, 'code-token-html-bracket', '>');
+        return;
+      }
+      if (ch === '/' && rawTag[index + 1] === '>') {
+        this.appendArtifactToken(container, 'code-token-html-bracket', '/>');
+        return;
+      }
+      if (/\s/.test(ch)) {
+        this.appendArtifactToken(container, 'code-token-html-text', ch);
+        index += 1;
+        continue;
+      }
+      if (ch === '=' ) {
+        this.appendArtifactToken(container, 'code-token-html-bracket', '=');
+        index += 1;
+        continue;
+      }
+      if (ch === '"' || ch === '\'') {
+        const quote = ch;
+        let end = index + 1;
+        while (end < rawTag.length && rawTag[end] !== quote) end += 1;
+        const text = rawTag.slice(index, end < rawTag.length ? end + 1 : rawTag.length);
+        this.appendArtifactToken(container, 'code-token-html-string', text);
+        index = end < rawTag.length ? end + 1 : rawTag.length;
+        continue;
+      }
+
+      const attrMatch = rawTag.slice(index).match(/^[A-Za-z_:][\w:.-]*/);
+      if (attrMatch) {
+        this.appendArtifactToken(container, 'code-token-html-attr', attrMatch[0]);
+        index += attrMatch[0].length;
+        continue;
+      }
+
+      this.appendArtifactToken(container, 'code-token-html-text', ch);
+      index += 1;
+    }
+
+    if (isSelfClosing) {
+      state.inStyleBlock = false;
+      state.inScriptBlock = false;
+    }
+  }
+
+  appendCssArtifactLine(container, line, state) {
+    const commentOpen = '/*';
+    const commentClose = '*/';
+    let index = 0;
+
+    while (index < line.length) {
+      if (state.inCssComment) {
+        const commentEnd = line.indexOf(commentClose, index);
+        if (commentEnd === -1) {
+          this.appendArtifactToken(container, 'code-token-css-comment', line.slice(index));
+          return;
+        }
+        this.appendArtifactToken(container, 'code-token-css-comment', line.slice(index, commentEnd + commentClose.length));
+        state.inCssComment = false;
+        index = commentEnd + commentClose.length;
+        continue;
+      }
+
+      const commentStart = line.indexOf(commentOpen, index);
+      if (commentStart !== -1 && commentStart >= index) {
+        if (commentStart > index) {
+          this.appendCssValueTokens(container, line.slice(index, commentStart));
+        }
+        const commentEnd = line.indexOf(commentClose, commentStart + commentOpen.length);
+        if (commentEnd === -1) {
+          this.appendArtifactToken(container, 'code-token-css-comment', line.slice(commentStart));
+          state.inCssComment = true;
+          return;
+        }
+        this.appendArtifactToken(container, 'code-token-css-comment', line.slice(commentStart, commentEnd + commentClose.length));
+        index = commentEnd + commentClose.length;
+        continue;
+      }
+
+      this.appendCssTokenizedLine(container, line.slice(index));
+      return;
+    }
+  }
+
+  appendCssTokenizedLine(container, text) {
+    if (!text) return;
+    const pattern = /(\/\*[\s\S]*?\*\/)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?(?:px|rem|em|%|vh|vw|deg|ms|s)?\b)|(#[0-9a-fA-F]{3,8}\b)|(\b[A-Za-z_-][\w-]*\b)(?=\s*:)|([{}();:,])/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        this.appendArtifactToken(container, 'code-token-css-text', text.slice(lastIndex, match.index));
+      }
+      const token = match[0];
+      if (match[1]) {
+        this.appendArtifactToken(container, 'code-token-css-comment', token);
+      } else if (match[2]) {
+        this.appendArtifactToken(container, 'code-token-css-string', token);
+      } else if (match[3] || match[4]) {
+        this.appendArtifactToken(container, 'code-token-css-number', token);
+      } else if (match[5]) {
+        this.appendArtifactToken(container, 'code-token-css-property', token);
+      } else {
+        this.appendArtifactToken(container, 'code-token-css-bracket', token);
+      }
+      lastIndex = match.index + token.length;
+    }
+
+    if (lastIndex < text.length) {
+      this.appendArtifactToken(container, 'code-token-css-text', text.slice(lastIndex));
+    }
+  }
+
+  appendPythonArtifactLine(container, line) {
+    const keywordPattern = /\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|not|or|pass|raise|return|True|try|while|with|yield)\b/g;
+    const tokenPattern = /(#[^\n]*|'''[\s\S]*?'''|"""[\s\S]*?"""|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b\d+(?:\.\d+)?\b|\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|not|or|pass|raise|return|True|try|while|with|yield)\b)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = tokenPattern.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        this.appendArtifactToken(container, 'code-token-plain', line.slice(lastIndex, match.index));
+      }
+      const token = match[0];
+      if (token.startsWith('#')) {
+        this.appendArtifactToken(container, 'code-token-python-comment', token);
+      } else if (token.startsWith('"') || token.startsWith("'") || token.startsWith('"""') || token.startsWith("'''")) {
+        this.appendArtifactToken(container, 'code-token-python-string', token);
+      } else if (/^\d/.test(token)) {
+        this.appendArtifactToken(container, 'code-token-python-number', token);
+      } else if (keywordPattern.test(token)) {
+        keywordPattern.lastIndex = 0;
+        this.appendArtifactToken(container, 'code-token-python-keyword', token);
+      } else {
+        this.appendArtifactToken(container, 'code-token-plain', token);
+      }
+      lastIndex = match.index + token.length;
+    }
+
+    if (lastIndex < line.length) {
+      this.appendArtifactToken(container, 'code-token-plain', line.slice(lastIndex));
+    }
+  }
+
+  appendArtifactToken(container, className, text) {
+    if (!text) return;
+    const span = document.createElement('span');
+    span.className = className;
+    span.textContent = text;
+    container.append(span);
   }
 
   switchArtifactTab(card, tabName) {
@@ -2971,25 +3259,51 @@ class Xv7UI {
     const source = message && typeof message === 'object' ? message : {};
     const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : source;
     const artifacts = [];
+    const seen = new Set();
+
+    const addArtifact = (artifact) => {
+      const normalized = this.normalizeCodeArtifact(artifact);
+      if (!normalized) return;
+      const key = this.codeArtifactKey(normalized);
+      if (seen.has(key)) return;
+      seen.add(key);
+      artifacts.push(normalized);
+    };
 
     if (Array.isArray(metadata.code_artifacts)) {
-      artifacts.push(...metadata.code_artifacts);
+      metadata.code_artifacts.forEach(addArtifact);
     }
 
     if (metadata.code_artifact && typeof metadata.code_artifact === 'object') {
-      artifacts.push(metadata.code_artifact);
+      addArtifact(metadata.code_artifact);
     }
 
-    return artifacts
-      .filter((artifact) => artifact && typeof artifact === 'object')
-      .map((artifact) => ({
-        filename: typeof artifact.filename === 'string' ? artifact.filename : '',
-        content: typeof artifact.content === 'string' ? artifact.content : '',
-        language: typeof artifact.language === 'string' ? artifact.language : '',
-        applied: artifact.applied === true,
-        previewable: artifact.previewable === true,
-      }))
-      .filter((artifact) => artifact.filename.trim() && artifact.content);
+    return artifacts;
+  }
+
+  normalizeCodeArtifact(artifact) {
+    if (!artifact || typeof artifact !== 'object') return null;
+    const filename = typeof artifact.filename === 'string' ? artifact.filename.trim() : '';
+    const content = typeof artifact.content === 'string' ? artifact.content : '';
+    if (!filename || !content) return null;
+    return {
+      ...artifact,
+      filename,
+      content,
+      language: typeof artifact.language === 'string' ? artifact.language : '',
+      applied: artifact.applied === true,
+      previewable: artifact.previewable === true,
+    };
+  }
+
+  codeArtifactKey(artifact) {
+    return [
+      artifact.filename,
+      artifact.language,
+      artifact.content,
+      artifact.applied ? '1' : '0',
+      artifact.previewable ? '1' : '0',
+    ].join('\u001f');
   }
 
   debugArtifactReceipt(message, metadata) {

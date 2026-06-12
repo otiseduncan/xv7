@@ -539,41 +539,93 @@ details[open] > .diag-section-title::before {
 }
 
 .code-artifact-codeview {
-  display: grid;
-  grid-template-columns: auto 1fr;
   min-height: 480px;
   border: 1px solid rgba(0, 163, 255, 0.14);
   border-radius: 0.7rem;
   background: rgba(2, 6, 14, 0.96);
-  overflow: hidden;
+  overflow: auto;
 }
 
-.code-artifact-line-numbers {
-  padding: 0.85rem 0.55rem;
-  border-right: 1px solid rgba(0, 163, 255, 0.12);
-  background: rgba(7, 15, 29, 0.92);
-  color: rgba(148, 163, 184, 0.82);
+.code-artifact-code-rows {
+  display: block;
+  min-width: 100%;
+}
+
+.code-artifact-line {
+  display: grid;
+  grid-template-columns: 4.2rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 0.8rem;
+  padding: 0.32rem 0.85rem 0.32rem 0;
+  min-height: 1.7rem;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.68rem;
-  line-height: 1.5;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+.code-artifact-line.is-odd {
+  background: rgba(5, 17, 32, 0.78);
+}
+
+.code-artifact-line.is-even {
+  background: rgba(8, 27, 48, 0.92);
+}
+
+.code-artifact-line:hover {
+  background: rgba(10, 46, 72, 0.98);
+}
+
+.code-artifact-line-number {
+  padding-left: 0.7rem;
+  color: rgba(148, 163, 184, 0.82);
   text-align: right;
   user-select: none;
 }
 
-.code-artifact-line-numbers span,
-.code-artifact-code {
-  display: block;
+.code-artifact-line-code {
+  min-width: 0;
+  overflow: hidden;
+  color: #d7f3ff;
 }
 
-.code-artifact-code {
-  margin: 0;
-  padding: 0.85rem 0.9rem;
-  overflow: auto;
-  white-space: pre;
-  color: #d7f3ff;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.78rem;
-  line-height: 1.5;
+.code-token-plain,
+.code-token-html-text,
+.code-token-css-text {
+  color: inherit;
+}
+
+.code-token-html-tag,
+.code-token-html-bracket {
+  color: #4cc9f0;
+}
+
+.code-token-html-attr,
+.code-token-css-property,
+.code-token-python-keyword {
+  color: #facc15;
+}
+
+.code-token-html-string,
+.code-token-css-string,
+.code-token-python-string {
+  color: #22c55e;
+}
+
+.code-token-html-comment,
+.code-token-css-comment,
+.code-token-python-comment {
+  color: rgba(148, 163, 184, 0.78);
+}
+
+.code-token-css-number,
+.code-token-python-number {
+  color: #fb923c;
+}
+
+.code-token-punctuation,
+.code-token-css-bracket {
+  color: #67e8f9;
 }
 
 .code-artifact-preview-note,

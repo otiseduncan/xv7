@@ -1275,6 +1275,54 @@ describe('ModelProfileControl', () => {
     expect(timelineCards[2].textContent || '').toContain('After artifact');
   });
 
+  it('dedupes duplicate artifact metadata and fallback payloads into one card', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        const sharedArtifact = {
+          filename: 'index.html',
+          language: 'html',
+          previewable: true,
+          applied: false,
+          content: '<!doctype html><html><body><main>Draft</main></body></html>',
+        };
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            last_assistant_payload: {
+              visible_text: 'Here is a draft HTML artifact for index.html.',
+              code_artifact: sharedArtifact,
+            },
+          },
+          messages: [
+            { role: 'user', content: 'Before artifact', metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Here is a draft HTML artifact for index.html.',
+              metadata: {
+                code_artifacts: [sharedArtifact],
+              },
+            },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Generate a small HTML code artifact for a one-page website.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
+    expect(document.querySelectorAll('.code-artifact-header')).toHaveLength(1);
+    expect(document.querySelectorAll('.code-artifact-footer')).toHaveLength(1);
+  });
+
   it('enables preview for HTML artifacts and swaps to the preview pane', async () => {
     global.fetch = createRuntimeFetchMock();
 
@@ -1332,6 +1380,74 @@ describe('ModelProfileControl', () => {
     expect(artifactCard.querySelector('.code-artifact-code-panel')?.hidden).toBe(false);
     expect(artifactCard.querySelector('.code-artifact-preview-panel')?.hidden).toBe(true);
     expect(artifactCard.querySelector('.code-artifact-tab.is-active')?.textContent).toBe('Code');
+  });
+
+  it('renders row-based highlighted HTML source without executing raw source', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const htmlSource = [
+      '<!doctype html>',
+      '<html lang="en">',
+      '<head>',
+      '  <style>',
+      '    body { margin: 0; color: #fff; font-family: "IBM Plex Mono"; }',
+      '  </style>',
+      '</head>',
+      '<body>',
+      '  <!-- cart hero -->',
+      '  <main class="cart">Hot dogs</main>',
+      '</body>',
+      '</html>',
+    ].join('\n');
+
+    ui.appendMessageCard(
+      'assistant',
+      'HTML source ready.',
+      null,
+      {
+        code_artifacts: [
+          {
+            filename: 'index.html',
+            language: 'html',
+            previewable: true,
+            content: htmlSource,
+          },
+        ],
+      },
+      '2026-06-11T00:00:04Z',
+    );
+
+    const artifactCard = document.querySelector('.code-artifact-card');
+    expect(artifactCard).toBeTruthy();
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
+
+    const rows = [...artifactCard.querySelectorAll('.code-artifact-line')];
+    expect(rows).toHaveLength(htmlSource.split('\n').length);
+    expect(rows[0].querySelector('.code-artifact-line-number')?.textContent).toBe('1');
+    expect(rows[0].querySelector('.code-artifact-line-code')).toBeTruthy();
+    expect(rows.every((row) => row.querySelector('.code-artifact-line-number'))).toBe(true);
+    expect(rows.every((row) => row.querySelector('.code-artifact-line-code'))).toBe(true);
+    expect(rows.some((row) => row.classList.contains('is-odd'))).toBe(true);
+    expect(rows.some((row) => row.classList.contains('is-even'))).toBe(true);
+    expect(artifactCard.querySelectorAll('.code-token-html-tag').length).toBeGreaterThan(0);
+    expect(artifactCard.querySelectorAll('.code-token-html-attr').length).toBeGreaterThan(0);
+    expect(artifactCard.querySelectorAll('.code-token-html-string').length).toBeGreaterThan(0);
+    expect(artifactCard.querySelectorAll('.code-token-css-property').length).toBeGreaterThan(0);
+    expect(artifactCard.querySelectorAll('.code-token-css-string').length).toBeGreaterThan(0);
+    expect(artifactCard.querySelectorAll('.code-token-html-comment').length).toBeGreaterThan(0);
+    expect((artifactCard.textContent || '')).toContain('<main class="cart">');
+    expect(artifactCard.querySelector('main')).toBe(null);
+
+    const previewButton = [...artifactCard.querySelectorAll('.code-artifact-button')].find((node) =>
+      (node.textContent || '').includes('Preview'),
+    );
+    previewButton?.click();
+    await flushAsync();
+
+    expect(document.querySelectorAll('.code-artifact-card')).toHaveLength(1);
   });
 
   it('renders a singular code_artifact payload inline in the assistant chat flow', async () => {
