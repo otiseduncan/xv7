@@ -972,7 +972,7 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    assert "implementation task" in answer
+    assert "build task" in answer
     assert "operator mode" in answer
     assert "no files were changed" in answer
     assert "no tests were run" in answer
@@ -1010,17 +1010,9 @@ def test_failed_apply_patch_follow_up_cannot_claim_fake_completion(
     )
     assert staged.status_code == 200
     staged_payload = staged.json()
-    action_id = staged_payload.get("pending_action", {}).get("action_id")
-    assert action_id
-
-    confirmed = client.post(
-        "/operator/confirm",
-        headers={"X-XV7-API-Key": "test-secret"},
-        json={"session_id": session_id, "action_id": action_id},
-    )
-    assert confirmed.status_code == 200
-    confirm_payload = confirmed.json()
-    assert confirm_payload.get("receipt", {}).get("status") == "failed"
+    assert staged_payload.get("executed") is True
+    assert staged_payload.get("pending_action") is None
+    assert staged_payload.get("receipt", {}).get("status") == "failed"
 
     follow_up = client.post(
         f"/sessions/{session_id}/messages",
@@ -1042,6 +1034,67 @@ def test_failed_apply_patch_follow_up_cannot_claim_fake_completion(
         "operator_follow_up_guard"
     )
     assert assistant_payload.get("memory_receipts", []) == []
+
+
+@pytest.mark.parametrize(
+    "follow_up_prompt",
+    [
+        "implemente patch",
+        "do it",
+        "finish it",
+        "commit it",
+        "push it",
+        "run it",
+        "make it happen",
+    ],
+)
+def test_failed_apply_patch_follow_up_typos_and_shortcuts_still_block_fake_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    follow_up_prompt: str,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    staged = client.post(
+        "/operator/stage",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "session_id": session_id,
+            "command_text": "/apply-patch not-json",
+            "operator_mode": True,
+        },
+    )
+    assert staged.status_code == 200
+    staged_payload = staged.json()
+    assert staged_payload.get("executed") is True
+    assert staged_payload.get("pending_action") is None
+    assert staged_payload.get("receipt", {}).get("status") == "failed"
+
+    follow_up = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": follow_up_prompt},
+    )
+    assert follow_up.status_code == 200
+    payload = follow_up.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assert (
+        "not verified as successful" in answer
+        or "build task" in answer
+        or "implementation/repo mutation task" in answer
+    )
+    assert "no files were changed" in answer
+    assert "no tests were run" in answer
+    assert "no commit or push occurred" in answer
+
+    assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
+    source = assistant_payload.get("policy_provenance", {}).get("brain_answer_source")
+    assert source in {
+        "operator_follow_up_guard",
+        "implementation_task_guard",
+        "operator_action",
+    }
 
 
 def test_vitest_generated_results_are_ignored_by_repo_policy() -> None:

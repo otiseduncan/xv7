@@ -421,6 +421,95 @@ class OperatorManager:
             raise ValueError("Command is empty.")
         return parts[0].lower(), parts[1:]
 
+    @staticmethod
+    def _looks_like_natural_language_request(text: str) -> bool:
+        lowered = text.lower().strip()
+        return any(
+            token in lowered
+            for token in (
+                "we are in",
+                "build this feature",
+                "code 9",
+                "code builder",
+                "add tests",
+                "pytest",
+                "git commit",
+                "git push",
+                "feature request",
+            )
+        )
+
+    def _validate_apply_patch_stage_payload(
+        self, command_preview: str, args: list[str]
+    ) -> OperatorActionResult | None:
+        payload_text = " ".join(args).strip()
+        invalid_payload_message = (
+            "Invalid patch payload. /apply-patch requires a valid approved patch payload, "
+            "not a natural-language build request."
+        )
+
+        if not payload_text:
+            return self._build_result(
+                action_name="apply_patch",
+                status="failed",
+                command_preview=command_preview,
+                target=str(self.repo_root),
+                stderr=invalid_payload_message,
+                mutates_files=True,
+                requires_approval=True,
+            )
+
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            if self._looks_like_natural_language_request(payload_text):
+                return self._build_result(
+                    action_name="apply_patch",
+                    status="failed",
+                    command_preview=command_preview,
+                    target=str(self.repo_root),
+                    stderr=invalid_payload_message,
+                    mutates_files=True,
+                    requires_approval=True,
+                )
+            return self._build_result(
+                action_name="apply_patch",
+                status="failed",
+                command_preview=command_preview,
+                target=str(self.repo_root),
+                stderr=invalid_payload_message,
+                mutates_files=True,
+                requires_approval=True,
+            )
+
+        if not isinstance(payload, dict):
+            return self._build_result(
+                action_name="apply_patch",
+                status="failed",
+                command_preview=command_preview,
+                target=str(self.repo_root),
+                stderr=invalid_payload_message,
+                mutates_files=True,
+                requires_approval=True,
+            )
+
+        has_change_shape = (
+            isinstance(payload.get("changes"), list)
+            or isinstance(payload.get("path"), str)
+        )
+        if not has_change_shape:
+            return self._build_result(
+                action_name="apply_patch",
+                status="failed",
+                command_preview=command_preview,
+                target=str(self.repo_root),
+                stderr=invalid_payload_message,
+                mutates_files=True,
+                requires_approval=True,
+            )
+
+        return None
+
     def _build_result(
         self,
         *,
@@ -911,6 +1000,16 @@ class OperatorManager:
                 "pending_action": None,
                 "executed": True,
             }
+
+        if slash == "/apply-patch":
+            invalid = self._validate_apply_patch_stage_payload(normalized, args)
+            if invalid is not None:
+                return {
+                    "answer": self._build_answer(invalid.action_name, invalid),
+                    "result": invalid,
+                    "pending_action": None,
+                    "executed": True,
+                }
 
         action_id = self._next_action_id()
         now = datetime.now(UTC)

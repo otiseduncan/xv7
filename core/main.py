@@ -864,7 +864,9 @@ def _classify_speech_act(question: str) -> str:
 
 def _build_task_guard_answer() -> str:
     return (
-        "This is an implementation task. Repo mutations require Operator Mode with staged slash command confirmation. "
+        "This is a build task. Xoduz cannot execute natural-language build tasks directly yet. "
+        "Use VS Code/Copilot or provide a valid patch payload through /apply-patch. "
+        "Repo mutations require Operator Mode with staged slash command confirmation. "
         "No files were changed. No tests were run. No commit or push occurred."
     )
 
@@ -873,9 +875,13 @@ def _is_build_follow_up_prompt(question: str) -> bool:
     normalized = _normalize_intent_text(question)
     return normalized in {
         "implement patch",
+        "implemente patch",
         "do it",
         "finish it",
         "commit it",
+        "push it",
+        "run it",
+        "make it happen",
     }
 
 

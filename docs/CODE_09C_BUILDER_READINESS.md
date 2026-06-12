@@ -21,6 +21,14 @@ Define the minimum safe and truthful operator build loop before retrying Code 9 
    - Push result from git output.
 8. If verified evidence is missing, no completion claim is allowed.
 
+## Code 9D Build-Task Gate
+
+1. `/apply-patch` is only for valid approved patch payloads.
+2. Natural-language feature requests are not valid patch payloads.
+3. If `/apply-patch` receives a natural-language build request, it must fail safely with an invalid payload receipt and no pending confirmation stage.
+4. Xoduz may inspect and plan, but must not claim implementation success without verified operator metadata.
+5. Do not retry Code 9 endpoint work until Code 9D tests are green and the app has been restarted on latest code.
+
 ## Repo Hygiene Rule
 
 Generated test artifacts must not be source-controlled. In particular:

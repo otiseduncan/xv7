@@ -307,21 +307,34 @@ def test_apply_patch_invalid_payload_fails_safely_after_confirmation(
     session_id = _new_session(client)
 
     staged = _stage(client, session_id, "/apply-patch not-json", operator_mode=True)
-    assert staged["pending_action"] is not None
-
-    confirm = client.post(
-        "/operator/confirm",
-        headers={"X-XV7-API-Key": "test-secret"},
-        json={
-            "session_id": session_id,
-            "action_id": staged["pending_action"]["action_id"],
-        },
-    )
-    assert confirm.status_code == 200
-    payload = confirm.json()
+    assert staged["executed"] is True
+    assert staged["pending_action"] is None
+    payload = staged
     assert payload["receipt"]["status"] == "failed"
     summary = str(payload["receipt"].get("summary", "")).lower()
-    assert "valid json" in summary or "json payload" in summary
+    assert "invalid patch payload" in summary
+
+
+def test_apply_patch_natural_language_is_rejected_at_stage_without_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    stage_payload = _stage(
+        client,
+        session_id,
+        "/apply-patch Enter Operator Mode and build Code 9 endpoint with tests and git push",
+        operator_mode=True,
+    )
+
+    assert stage_payload["executed"] is True
+    assert stage_payload["pending_action"] is None
+    assert stage_payload["receipt"]["status"] == "failed"
+    summary = str(stage_payload["receipt"].get("summary", ""))
+    assert "Invalid patch payload" in summary
+    assert "not_implemented" not in str(stage_payload["receipt"]).lower()
 
 
 def test_run_tests_slash_routes_to_test_runner_read_only(
