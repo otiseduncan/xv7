@@ -16,6 +16,7 @@ EXPECTED_ACTIONS = {
     "patch_plan",
     "apply_approved_patch",
     "test_runner",
+    "diff_report",
     "list_project_files",
     "read_project_file",
     "runtime_health",
@@ -189,3 +190,15 @@ def test_run_action_test_runner_rejects_non_object_json(tmp_path: Path) -> None:
             repo_root=tmp_path,
             target=json.dumps(["ci_core"]),
         )
+
+
+def test_run_action_diff_report(tmp_path: Path) -> None:
+    result = run_action(
+        "diff_report",
+        action_id="OP-20260611-0011",
+        repo_root=tmp_path,
+    )
+
+    assert result.status == "failed"
+    assert result.action_name == "diff_report"
+    assert result.safety.read_only is True
