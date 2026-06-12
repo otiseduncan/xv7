@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from core.operator.actions.apply_patch import apply_approved_patch
+from core.operator.actions.diff_report import diff_report
 from core.operator.actions.environment import operator_environment
 from core.operator.actions.files import list_project_files, read_project_file
 from core.operator.actions.host_scan import (
@@ -54,6 +55,7 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
             "apply_approved_patch", "operator", apply_approved_patch
         ),
         "test_runner": OperatorActionSpec("test_runner", "read_only", test_runner),
+        "diff_report": OperatorActionSpec("diff_report", "read_only", diff_report),
         "list_project_files": OperatorActionSpec(
             "list_project_files", "read_only", list_project_files
         ),
