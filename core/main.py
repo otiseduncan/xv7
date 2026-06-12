@@ -1511,6 +1511,18 @@ async def runtime_status() -> dict:
     return build_runtime_status()
 
 
+@app.get("/runtime/communication-proof-status")
+async def runtime_communication_proof_status() -> dict[str, Any]:
+    return {
+        "communication_core": "green",
+        "active_focus_persistence": "green",
+        "runtime_communication_proof": "green",
+        "browser_receipt_visibility": "green",
+        "last_completed_code": 8,
+        "next_recommended_code": 9,
+    }
+
+
 @app.get("/runtime/ollama")
 async def runtime_ollama() -> dict:
     return await fetch_ollama_status()

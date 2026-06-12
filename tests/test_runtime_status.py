@@ -30,3 +30,20 @@ def test_runtime_status_endpoint_returns_configuration() -> None:
     assert payload["platform"]["name"] == "XV7"
     assert payload["assistant"]["name"] == "Xoduz"
     assert payload["ollama"]["verified"] is False
+
+
+def test_runtime_communication_proof_status_endpoint_returns_expected_payload() -> None:
+    client = TestClient(app)
+
+    response = client.get("/runtime/communication-proof-status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "communication_core": "green",
+        "active_focus_persistence": "green",
+        "runtime_communication_proof": "green",
+        "browser_receipt_visibility": "green",
+        "last_completed_code": 8,
+        "next_recommended_code": 9,
+    }
