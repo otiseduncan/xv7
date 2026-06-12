@@ -1683,8 +1683,10 @@ class OperatorManager:
             return OperatorExecution(
                 result=denied,
                 answer=(
-                    "Only through Operator Mode using a specific slash command, staged confirmation, and your explicit approval. "
-                    "I do not run mutation actions from normal chat."
+                    "This is an implementation/repo mutation task. "
+                    "Only through Operator Mode using a specific slash command, staged slash command confirmation, and explicit approval. "
+                    "Repo mutations require Operator Mode with staged slash command confirmation and explicit approval. "
+                    "No files were changed. No tests were run. No commit or push occurred."
                 ),
                 record_history=True,
             )

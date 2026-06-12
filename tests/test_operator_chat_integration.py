@@ -972,13 +972,17 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
+    assert "implementation task" in answer
     assert "operator mode" in answer
+    assert "no files were changed" in answer
+    assert "no tests were run" in answer
+    assert "no commit or push occurred" in answer
 
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
-    operator_receipts = assistant_payload.get("operator_receipts", [])
-    assert operator_receipts
-    assert operator_receipts[0].get("action_name") == "read_only_guard"
-    assert operator_receipts[0].get("status") == "denied"
+    assert assistant_payload.get("policy_provenance", {}).get("brain_answer_source") == (
+        "implementation_task_guard"
+    )
+    assert assistant_payload.get("operator_receipts", []) == []
     assert not assistant_payload.get("memory_receipts")
     assert "learned_record_id" not in assistant_payload
 
@@ -986,3 +990,55 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     memory_after = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
     assert knowledge_after == knowledge_before
     assert memory_after == memory_before
+
+
+def test_failed_apply_patch_follow_up_cannot_claim_fake_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    staged = client.post(
+        "/operator/stage",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "session_id": session_id,
+            "command_text": "/apply-patch not-json",
+            "operator_mode": True,
+        },
+    )
+    assert staged.status_code == 200
+    staged_payload = staged.json()
+    action_id = staged_payload.get("pending_action", {}).get("action_id")
+    assert action_id
+
+    confirmed = client.post(
+        "/operator/confirm",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"session_id": session_id, "action_id": action_id},
+    )
+    assert confirmed.status_code == 200
+    confirm_payload = confirmed.json()
+    assert confirm_payload.get("receipt", {}).get("status") == "failed"
+
+    follow_up = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "do it"},
+    )
+    assert follow_up.status_code == 200
+    follow_payload = follow_up.json()
+    answer = follow_payload["messages"][-1]["content"].lower()
+    assert "not verified as successful" in answer
+    assert "no files were changed" in answer
+    assert "no tests were run" in answer
+    assert "no commit or push occurred" in answer
+
+    assistant_payload = (
+        follow_payload.get("metadata", {}).get("last_assistant_payload", {})
+    )
+    assert assistant_payload.get("policy_provenance", {}).get("brain_answer_source") == (
+        "operator_follow_up_guard"
+    )
+    assert assistant_payload.get("memory_receipts", []) == []

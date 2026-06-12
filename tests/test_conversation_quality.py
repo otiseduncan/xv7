@@ -619,6 +619,8 @@ def test_normal_preference_prompts_still_save_with_unique_memory_ids(
     first_id = str(first_payload.get("learned_record_id", ""))
     assert first_id.startswith("XV7-MEMORY-")
     assert first_payload.get("learning_layer") == "memory"
+    first_receipts = list(first_payload.get("memory_receipts", []))
+    assert len(first_receipts) == len(set(first_receipts))
 
     second = client.post(
         f"/sessions/{session_id}/messages",
@@ -632,5 +634,7 @@ def test_normal_preference_prompts_still_save_with_unique_memory_ids(
     second_id = str(second_payload.get("learned_record_id", ""))
     assert second_id.startswith("XV7-MEMORY-")
     assert second_payload.get("learning_layer") == "memory"
+    second_receipts = list(second_payload.get("memory_receipts", []))
+    assert len(second_receipts) == len(set(second_receipts))
 
     assert first_id != second_id

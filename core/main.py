@@ -227,11 +227,20 @@ def build_assistant_payload(
     warnings: list[str] | None = None,
     action_history_refs: list[str] | None = None,
 ) -> dict[str, Any]:
+    deduped_memory_receipts: list[str] = []
+    seen_memory_receipts: set[str] = set()
+    for receipt in memory_receipts or []:
+        key = str(receipt).strip()
+        if not key or key in seen_memory_receipts:
+            continue
+        seen_memory_receipts.add(key)
+        deduped_memory_receipts.append(key)
+
     return {
         "visible_text": visible_text,
         "context_receipt": context_receipt or {},
         "operator_receipts": operator_receipts or [],
-        "memory_receipts": memory_receipts or [],
+        "memory_receipts": deduped_memory_receipts,
         "model_use_receipt": model_use_receipt or {},
         "policy_provenance": policy_provenance or {},
         "warnings": warnings or [],
@@ -780,11 +789,17 @@ def _classify_speech_act(question: str) -> str:
     is_repo_build_task = (
         (
             "build this feature" in normalized
+            or "code 9" in normalized
+            or "code builder" in normalized
+            or "code builder smoke test" in normalized
             or "add tests" in normalized
+            or "add or update tests" in normalized
             or "run pytest" in normalized
+            or "pytest" in normalized
             or "code builder smoke test" in normalized
             or "git commit" in normalized
             or "git push" in normalized
+            or "implement patch" in normalized
         )
         and (
             "we are in" in normalized
@@ -845,6 +860,40 @@ def _classify_speech_act(question: str) -> str:
         return "implementation_task"
 
     return "normal_question"
+
+
+def _build_task_guard_answer() -> str:
+    return (
+        "This is an implementation task. Repo mutations require Operator Mode with staged slash command confirmation. "
+        "No files were changed. No tests were run. No commit or push occurred."
+    )
+
+
+def _is_build_follow_up_prompt(question: str) -> bool:
+    normalized = _normalize_intent_text(question)
+    return normalized in {
+        "implement patch",
+        "do it",
+        "finish it",
+        "commit it",
+    }
+
+
+def _lacks_verified_operator_success(session_metadata: dict[str, Any]) -> bool:
+    last = session_metadata.get("operator_last_action")
+    if not isinstance(last, dict):
+        return True
+
+    status = str(last.get("status", "")).strip().lower()
+    if status in {"failed", "denied", "not_implemented", "cancelled", "pending"}:
+        return True
+    if status != "success":
+        return True
+
+    data = last.get("data")
+    if not isinstance(data, dict):
+        return True
+    return not bool(data)
 
 
 def _extract_correction_text(question: str) -> str:
@@ -2418,6 +2467,50 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
+    if intent_class == "implementation_task":
+        visible_text = _build_task_guard_answer()
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "operator_guard",
+                "brain_answer_source": "implementation_task_guard",
+                "intent_class": intent_class,
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     active_focus_instruction = _extract_active_focus_instruction(payload.raw_text)
     if (
         _is_active_focus_candidate(payload.raw_text)
@@ -2968,6 +3061,54 @@ async def add_session_message(
             updated_state.metadata["tool_results"] = current_tool_results
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    if _is_build_follow_up_prompt(payload.raw_text) and _lacks_verified_operator_success(
+        session_state.metadata
+    ):
+        visible_text = (
+            "I cannot report implementation completion from this turn because the last relevant operator action is not verified as successful. "
+            "No files were changed. No tests were run. No commit or push occurred."
+        )
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "operator_truth_guard",
+                "brain_answer_source": "operator_follow_up_guard",
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
         await memory_manager.update_session(updated_state)
         return updated_state
 
