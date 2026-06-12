@@ -55,7 +55,8 @@ def test_single_pytest_allows_safe_test_selector() -> None:
 
 
 def test_test_runner_single_pytest_success(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     calls: list[list[str]] = []
 
@@ -84,7 +85,8 @@ def test_test_runner_single_pytest_success(
 
 
 def test_test_runner_stops_on_failed_command(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     calls: list[list[str]] = []
 
