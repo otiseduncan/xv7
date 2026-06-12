@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ EXPECTED_ACTIONS = {
     "repo_recent_commits",
     "workspace_map",
     "patch_plan",
+    "apply_approved_patch",
     "list_project_files",
     "read_project_file",
     "runtime_health",
@@ -32,11 +34,16 @@ EXPECTED_ACTIONS = {
 }
 
 
-def test_operator_registry_contains_expected_read_only_actions() -> None:
+def test_operator_registry_contains_expected_actions() -> None:
     registry = build_operator_registry()
 
     assert set(registry.keys()) == EXPECTED_ACTIONS
-    assert all(spec.mode == "read_only" for spec in registry.values())
+    assert registry["apply_approved_patch"].mode == "operator"
+    assert all(
+        spec.mode == "read_only"
+        for name, spec in registry.items()
+        if name != "apply_approved_patch"
+    )
 
 
 def test_run_action_rejects_unknown_action() -> None:
@@ -76,4 +83,45 @@ def test_run_action_patch_plan_requires_target() -> None:
             action_id="OP-20260611-0004",
             repo_root=Path.cwd(),
             target=None,
+        )
+
+
+def test_run_action_apply_approved_patch_with_json_payload(tmp_path: Path) -> None:
+    payload = {
+        "approval": {"approved": True, "approval_id": "APP-1"},
+        "source_plan_id": "PLAN-1",
+        "risk": "low",
+        "changes": [{"path": "docs/example.md", "content": "hello\n"}],
+    }
+
+    result = run_action(
+        "apply_approved_patch",
+        action_id="OP-20260611-0005",
+        repo_root=tmp_path,
+        target=json.dumps(payload),
+    )
+
+    assert result.status == "success"
+    assert result.action_name == "apply_approved_patch"
+    assert result.data["changed_files"] == ["docs/example.md"]
+    assert (tmp_path / "docs" / "example.md").read_text(encoding="utf-8") == "hello\n"
+
+
+def test_run_action_apply_approved_patch_requires_json_target(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="requires a target JSON payload"):
+        run_action(
+            "apply_approved_patch",
+            action_id="OP-20260611-0006",
+            repo_root=tmp_path,
+            target=None,
+        )
+
+
+def test_run_action_apply_approved_patch_rejects_invalid_json(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="target must be valid JSON"):
+        run_action(
+            "apply_approved_patch",
+            action_id="OP-20260611-0007",
+            repo_root=tmp_path,
+            target="not-json",
         )
