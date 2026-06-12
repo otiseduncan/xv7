@@ -25,7 +25,9 @@ class AnswerContract:
 
     ROADMAP_NOT_WIRED = "That module is not wired yet and remains on the XV7 roadmap."
 
-    CODE_ARTIFACT_PATTERN = re.compile(r"\b(generate|create|build|draft|write|return|make)\b")
+    CODE_ARTIFACT_PATTERN = re.compile(
+        r"\b(generate|create|build|draft|write|return|make)\b"
+    )
     CODE_ARTIFACT_HINT_PATTERN = re.compile(
         r"\b(code artifact|filename|previewable|do not apply it to the repo|do not apply to the repo|"
         r"one-page website|landing page|html|css|javascript|typescript|python)\b"
@@ -58,15 +60,21 @@ class AnswerContract:
     SMS_EXPLICIT_SEND_PATTERN = re.compile(
         r"\b(send a text|send text|send this as a text message|text my|message\s+[a-z0-9]+|sms this)\b"
     )
-    ARTIFACT_UNDO_PATTERN = re.compile(r"\b(undo the last change|undo|revert that|go back|restore previous)\b")
-    ARTIFACT_EXPLAIN_PATTERN = re.compile(r"\b(what changed|show me what changed|summarize the changes|summarise the changes|explain the changes)\b")
+    ARTIFACT_UNDO_PATTERN = re.compile(
+        r"\b(undo the last change|undo|revert that|go back|restore previous)\b"
+    )
+    ARTIFACT_EXPLAIN_PATTERN = re.compile(
+        r"\b(what changed|show me what changed|summarize the changes|summarise the changes|explain the changes)\b"
+    )
     ARTIFACT_STYLE_PATTERN = re.compile(
         r"\b(color|colors|palette|background|font|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|easier to read|black|gold|white)\b"
     )
     ARTIFACT_CONTENT_PATTERN = re.compile(
         r"\b(headline|cta|button text|buttons|copy|wording|services section|main headline|rewrite|say)\b"
     )
-    ARTIFACT_TARGETED_PATTERN = re.compile(r"\b(only|keep the layout|keep the content|preserve)\b")
+    ARTIFACT_TARGETED_PATTERN = re.compile(
+        r"\b(only|keep the layout|keep the content|preserve)\b"
+    )
     ARTIFACT_PATCH_PROPOSAL_PATTERN = re.compile(
         r"\b(generate(?:\s+a)?\s+patch|create\s+a\s+patch\s+from\s+the\s+artifact|turn\s+this\s+into\s+a\s+patch|"
         r"make\s+a\s+patch\s+for\s+this\s+website|prepare\s+this\s+for\s+vs\s*code|save\s+this\s+as\s+a\s+patch|"
@@ -98,7 +106,9 @@ class AnswerContract:
     TYPOGRAPHY_SCRIPT_PATTERN = re.compile(
         r"\b(script font|cursive font|change the font|change the text font|change the heading font|change the font to a script)\b"
     )
-    COLOR_CHANGE_REQUEST_PATTERN = re.compile(r"\b(color|colors|palette|background|theme)\b")
+    COLOR_CHANGE_REQUEST_PATTERN = re.compile(
+        r"\b(color|colors|palette|background|theme)\b"
+    )
     COMMIT_PROPOSAL_PATTERN = re.compile(
         r"\b(prepare (?:a )?commit|propose (?:a )?commit|commit proposal|create commit proposal|"
         r"draft commit|show commit proposal|summarize changes for commit|summarise changes for commit|"
@@ -108,14 +118,24 @@ class AnswerContract:
         r"\b(commit it|commit the proposal|approve commit|confirm commit|make the commit|"
         r"create the commit|go ahead and commit|commit these changes)\b"
     )
-    EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
+    EMAIL_SEND_PATTERN = re.compile(
+        r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b"
+    )
     EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
-    WEATHER_PATTERN = re.compile(r"\b(weather|forecast|temperature|rain|snow|humidity)\b")
+    WEATHER_PATTERN = re.compile(
+        r"\b(weather|forecast|temperature|rain|snow|humidity)\b"
+    )
     BIRTHDAY_PATTERN = re.compile(r"\b(birthday|birth day|bday)\b")
     CONTACT_PATTERN = re.compile(r"\b(contact|call|phone number|reach out)\b")
-    FAMILY_PATTERN = re.compile(r"\b(family|mom|mother|dad|father|sister|brother|spouse|partner|child|children)\b")
-    MEDICAL_PATTERN = re.compile(r"\b(medical|health|history|condition|diagnosis|medication)\b")
-    WEB_LOOKUP_PATTERN = re.compile(r"\b(look up|lookup|search|find|browse|official website|website)\b")
+    FAMILY_PATTERN = re.compile(
+        r"\b(family|mom|mother|dad|father|sister|brother|spouse|partner|child|children)\b"
+    )
+    MEDICAL_PATTERN = re.compile(
+        r"\b(medical|health|history|condition|diagnosis|medication)\b"
+    )
+    WEB_LOOKUP_PATTERN = re.compile(
+        r"\b(look up|lookup|search|find|browse|official website|website)\b"
+    )
     CALENDAR_PATTERN = re.compile(r"\b(calendar|schedule|meeting|appointment|event)\b")
     APPOINTMENT_PATTERN = re.compile(
         r"\b(appointment|meeting|event|doctor visit|doctor appointment)\b"
@@ -247,15 +267,23 @@ class AnswerContract:
 
     @staticmethod
     def is_code_artifact_request(normalized_question: str) -> bool:
-        has_hint = bool(AnswerContract.CODE_ARTIFACT_HINT_PATTERN.search(normalized_question))
-        has_action = bool(AnswerContract.CODE_ARTIFACT_PATTERN.search(normalized_question))
+        has_hint = bool(
+            AnswerContract.CODE_ARTIFACT_HINT_PATTERN.search(normalized_question)
+        )
+        has_action = bool(
+            AnswerContract.CODE_ARTIFACT_PATTERN.search(normalized_question)
+        )
         return has_hint and has_action
 
     @staticmethod
     def _code_artifact_language(normalized_question: str) -> str:
-        if "typescript" in normalized_question or re.search(r"\bts\b", normalized_question):
+        if "typescript" in normalized_question or re.search(
+            r"\bts\b", normalized_question
+        ):
             return "typescript"
-        if "javascript" in normalized_question or re.search(r"\bjs\b", normalized_question):
+        if "javascript" in normalized_question or re.search(
+            r"\bjs\b", normalized_question
+        ):
             return "javascript"
         if "css" in normalized_question:
             return "css"
@@ -298,11 +326,20 @@ class AnswerContract:
         patterns = [
             (r"one-page\s+([^,.]+?)\s+website", False),
             (r"for\s+([^,.]+?)\s+website", False),
-            (r"for\s+([^,.]+?)\s+(?:grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b", True),
+            (
+                r"for\s+([^,.]+?)\s+(?:grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b",
+                True,
+            ),
             (r"for\s+([^,.]+?)\s+using\b", True),
-            (r"(?:html\s+)?artifact\s+([^,.]+?)\s+and\s+(?:a\s+)?(?:biker\s+bar|bar|grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b", True),
+            (
+                r"(?:html\s+)?artifact\s+([^,.]+?)\s+and\s+(?:a\s+)?(?:biker\s+bar|bar|grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b",
+                True,
+            ),
             (r"(?:html\s+)?artifact\s+([^,.]+?)\s+using\b", True),
-            (r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)", False),
+            (
+                r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)",
+                False,
+            ),
         ]
 
         suffixes = (
@@ -362,7 +399,14 @@ class AnswerContract:
         text = f"{question} {name or ''}".lower()
         if any(
             token in text
-            for token in ("locksmith", "lockout", "rekey", "deadbolt", "key", "security lock")
+            for token in (
+                "locksmith",
+                "lockout",
+                "rekey",
+                "deadbolt",
+                "key",
+                "security lock",
+            )
         ):
             return "locksmith"
         if any(
@@ -383,15 +427,59 @@ class AnswerContract:
             )
         ):
             return "grooming"
-        if any(token in text for token in ("hot dog", "hotdog", "cart", "food truck", "food cart", "concession")):
+        if any(
+            token in text
+            for token in (
+                "hot dog",
+                "hotdog",
+                "cart",
+                "food truck",
+                "food cart",
+                "concession",
+            )
+        ):
             return "hot_dog_cart"
-        if any(token in text for token in ("flower", "florist", "bouquet", "bouquets", "blossom", "bloom", "petal")):
+        if any(
+            token in text
+            for token in (
+                "flower",
+                "florist",
+                "bouquet",
+                "bouquets",
+                "blossom",
+                "bloom",
+                "petal",
+            )
+        ):
             return "florist"
-        if any(token in text for token in ("detail", "detailing", "car wash", "auto detail", "mobile detailing", "vehicle")):
+        if any(
+            token in text
+            for token in (
+                "detail",
+                "detailing",
+                "car wash",
+                "auto detail",
+                "mobile detailing",
+                "vehicle",
+            )
+        ):
             return "detailing"
-        if any(token in text for token in ("arcade", "gaming", "game", "retro", "neon byte", "pixel", "high score")):
+        if any(
+            token in text
+            for token in (
+                "arcade",
+                "gaming",
+                "game",
+                "retro",
+                "neon byte",
+                "pixel",
+                "high score",
+            )
+        ):
             return "arcade"
-        if any(token in text for token in ("biker bar", "bar", "tavern", "pub", "alehouse")):
+        if any(
+            token in text for token in ("biker bar", "bar", "tavern", "pub", "alehouse")
+        ):
             return "biker_bar"
         return "generic"
 
@@ -411,7 +499,13 @@ class AnswerContract:
         }
 
         if category == "locksmith":
-            style.update({"accent": "#dc2626", "accent_2": "#9ca3af", "font_stack": '"Segoe UI", system-ui, sans-serif'})
+            style.update(
+                {
+                    "accent": "#dc2626",
+                    "accent_2": "#9ca3af",
+                    "font_stack": '"Segoe UI", system-ui, sans-serif',
+                }
+            )
         elif category == "grooming":
             style.update(
                 {
@@ -426,13 +520,38 @@ class AnswerContract:
                 }
             )
         elif category == "hot_dog_cart":
-            style.update({"accent": "#fbbf24", "accent_2": "#fb7185", "font_stack": '"Segoe UI", system-ui, sans-serif'})
+            style.update(
+                {
+                    "accent": "#fbbf24",
+                    "accent_2": "#fb7185",
+                    "font_stack": '"Segoe UI", system-ui, sans-serif',
+                }
+            )
         elif category == "florist":
-            style.update({"accent": "#f59e0b", "accent_2": "#ec4899", "font_stack": 'Georgia, "Times New Roman", serif'})
+            style.update(
+                {
+                    "accent": "#f59e0b",
+                    "accent_2": "#ec4899",
+                    "font_stack": 'Georgia, "Times New Roman", serif',
+                }
+            )
         elif category == "detailing":
-            style.update({"accent": "#38bdf8", "accent_2": "#22d3ee", "font_stack": '"Segoe UI", system-ui, sans-serif'})
+            style.update(
+                {
+                    "accent": "#38bdf8",
+                    "accent_2": "#22d3ee",
+                    "font_stack": '"Segoe UI", system-ui, sans-serif',
+                }
+            )
         elif category == "arcade":
-            style.update({"accent": "#a855f7", "accent_2": "#22d3ee", "font_stack": '"Trebuchet MS", "Arial Black", sans-serif', "hero_transform": "uppercase"})
+            style.update(
+                {
+                    "accent": "#a855f7",
+                    "accent_2": "#22d3ee",
+                    "font_stack": '"Trebuchet MS", "Arial Black", sans-serif',
+                    "hero_transform": "uppercase",
+                }
+            )
         elif category == "biker_bar":
             style.update(
                 {
@@ -490,10 +609,15 @@ class AnswerContract:
             style["font_stack"] = 'Georgia, "Times New Roman", serif'
         if any(token in text for token in ("retro", "futuristic")):
             style["font_stack"] = '"Trebuchet MS", "Arial Black", sans-serif'
-        if any(token in text for token in ("clean", "playful")) and category != "arcade":
+        if (
+            any(token in text for token in ("clean", "playful"))
+            and category != "arcade"
+        ):
             style["font_stack"] = '"Segoe UI", system-ui, sans-serif'
 
-        if any(token in text for token in ("white", "cream")) and any(token in text for token in ("black", "dark")):
+        if any(token in text for token in ("white", "cream")) and any(
+            token in text for token in ("black", "dark")
+        ):
             style["text"] = "#111827"
             style["panel"] = "rgba(255, 255, 255, 0.94)"
 
@@ -508,7 +632,9 @@ class AnswerContract:
     def _build_business_site_template(cls, question: str) -> dict[str, Any]:
         business_name = cls._extract_artifact_name(question)
         category = cls._artifact_business_category(question, business_name)
-        display_name = cls._format_business_name(business_name, "Local Business Website")
+        display_name = cls._format_business_name(
+            business_name, "Local Business Website"
+        )
         style = cls._artifact_style_profile(question, category)
 
         if category == "locksmith":
@@ -521,9 +647,18 @@ class AnswerContract:
                 "secondary_cta": "View security services",
                 "highlight_title": "Emergency & Security Services",
                 "highlights": [
-                    ("24/7 Emergency Lockout", "Rapid dispatch for home, office, and vehicle lockouts"),
-                    ("Rekey & Key Duplication", "Secure key control without full lock replacement"),
-                    ("Deadbolt & Entry Security", "Reinforced hardware and break-in response"),
+                    (
+                        "24/7 Emergency Lockout",
+                        "Rapid dispatch for home, office, and vehicle lockouts",
+                    ),
+                    (
+                        "Rekey & Key Duplication",
+                        "Secure key control without full lock replacement",
+                    ),
+                    (
+                        "Deadbolt & Entry Security",
+                        "Reinforced hardware and break-in response",
+                    ),
                 ],
                 "info_title": "Why Residents Trust Us",
                 "info_lines": [
@@ -537,7 +672,9 @@ class AnswerContract:
             }
 
         if category == "grooming":
-            palette = ", ".join(AnswerContract._extract_style_hints(question).get("colors", []))
+            palette = ", ".join(
+                AnswerContract._extract_style_hints(question).get("colors", [])
+            )
             palette_line = (
                 f"Requested palette applied across grooming stations and CTA accents: {palette}."
                 if palette
@@ -552,9 +689,18 @@ class AnswerContract:
                 "secondary_cta": "See bath & trim services",
                 "highlight_title": "Dog & Pet Grooming Services",
                 "highlights": [
-                    ("Bath & Wash", "Deep clean wash with pet-safe shampoo and careful rinse"),
-                    ("Trim & Paw Care", "Breed-aware trim, nail touch-up, and paw tidy service"),
-                    ("Coat & Fur Care", "Deshed, brush-out, and coat conditioning for comfort"),
+                    (
+                        "Bath & Wash",
+                        "Deep clean wash with pet-safe shampoo and careful rinse",
+                    ),
+                    (
+                        "Trim & Paw Care",
+                        "Breed-aware trim, nail touch-up, and paw tidy service",
+                    ),
+                    (
+                        "Coat & Fur Care",
+                        "Deshed, brush-out, and coat conditioning for comfort",
+                    ),
                 ],
                 "info_title": "Why Pet Parents Choose Us",
                 "info_lines": [
@@ -677,9 +823,18 @@ class AnswerContract:
                 "secondary_cta": "View tap list",
                 "highlight_title": "Biker Bar Highlights",
                 "highlights": [
-                    ("Live Music Nights", "Weekly sets with local hard rock and blues bands"),
-                    ("House Tap Picks", "Rotating drafts, whiskey pours, and rider specials"),
-                    ("Road Crew Events", "Bike meetups, poker runs, and weekend rally starts"),
+                    (
+                        "Live Music Nights",
+                        "Weekly sets with local hard rock and blues bands",
+                    ),
+                    (
+                        "House Tap Picks",
+                        "Rotating drafts, whiskey pours, and rider specials",
+                    ),
+                    (
+                        "Road Crew Events",
+                        "Bike meetups, poker runs, and weekend rally starts",
+                    ),
                 ],
                 "info_title": "The Tavern Vibe",
                 "info_lines": [
@@ -717,7 +872,9 @@ class AnswerContract:
         }
 
     @staticmethod
-    def _default_code_artifact_content(filename: str, language: str, question: str) -> str:
+    def _default_code_artifact_content(
+        filename: str, language: str, question: str
+    ) -> str:
         if language == "html":
             template = AnswerContract._build_business_site_template(question)
             display_name = html.escape(str(template["display_name"]), quote=False)
@@ -735,7 +892,8 @@ class AnswerContract:
                 for left, right in template["highlights"]
             )
             info_lines = "".join(
-                f'<p class="muted">{html.escape(str(line), quote=False)}</p>' for line in template["info_lines"]
+                f'<p class="muted">{html.escape(str(line), quote=False)}</p>'
+                for line in template["info_lines"]
             )
             style = template["style"]
             accent = str(style["accent"])
@@ -953,7 +1111,9 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_requested_previewable(question: str, language: str) -> bool:
-        match = re.search(r"\bpreviewable\s*[=:]?\s*(true|false)\b", question, flags=re.IGNORECASE)
+        match = re.search(
+            r"\bpreviewable\s*[=:]?\s*(true|false)\b", question, flags=re.IGNORECASE
+        )
         if match:
             return match.group(1).lower() == "true"
         return language == "html"
@@ -987,7 +1147,11 @@ if __name__ == \"__main__\":
             "teal",
             "magenta",
         )
-        colors = [color for color in known_colors if re.search(rf"\b{re.escape(color)}\b", lowered)]
+        colors = [
+            color
+            for color in known_colors
+            if re.search(rf"\b{re.escape(color)}\b", lowered)
+        ]
         colors.extend(re.findall(r"#[0-9a-f]{3,8}\b", lowered))
 
         style_keywords = (
@@ -1005,7 +1169,11 @@ if __name__ == \"__main__\":
             "minimal",
             "neon",
         )
-        styles = [token for token in style_keywords if re.search(rf"\b{re.escape(token)}\b", lowered)]
+        styles = [
+            token
+            for token in style_keywords
+            if re.search(rf"\b{re.escape(token)}\b", lowered)
+        ]
         return {
             "colors": list(dict.fromkeys(colors)),
             "styles": list(dict.fromkeys(styles)),
@@ -1038,8 +1206,12 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _extract_prompt_fidelity_contract(cls, question: str) -> dict[str, Any]:
-        requested_business_name = cls._clean_artifact_label(str(cls._extract_artifact_name(question) or ""))
-        requested_business_type = cls._artifact_business_category(question, requested_business_name)
+        requested_business_name = cls._clean_artifact_label(
+            str(cls._extract_artifact_name(question) or "")
+        )
+        requested_business_type = cls._artifact_business_category(
+            question, requested_business_name
+        )
         requested_colors = cls._extract_style_hints(question).get("colors", [])
         return {
             "requested_business_name": requested_business_name,
@@ -1074,7 +1246,14 @@ if __name__ == \"__main__\":
             "grooming": ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw"),
             "locksmith": ("locksmith", "security", "key", "lock", "lockout", "rekey"),
             "florist": ("floral", "flower", "bouquet", "bloom"),
-            "detailing": ("detail", "detailing", "wash", "vehicle", "interior", "exterior"),
+            "detailing": (
+                "detail",
+                "detailing",
+                "wash",
+                "vehicle",
+                "interior",
+                "exterior",
+            ),
             "arcade": ("arcade", "game", "gaming", "score", "retro"),
             "hot_dog_cart": ("hot dog", "cart", "menu", "street", "order"),
         }
@@ -1087,7 +1266,9 @@ if __name__ == \"__main__\":
         contract: dict[str, Any],
         metadata: dict[str, Any] | None,
     ) -> list[str]:
-        requested_name = str(contract.get("requested_business_name") or "").strip().lower()
+        requested_name = (
+            str(contract.get("requested_business_name") or "").strip().lower()
+        )
         requested_colors = {
             str(color).strip().lower()
             for color in (contract.get("requested_colors") or [])
@@ -1133,8 +1314,12 @@ if __name__ == \"__main__\":
     ) -> dict[str, Any]:
         contract = cls._extract_prompt_fidelity_contract(prompt)
         if isinstance(metadata, dict):
-            override_name = str(metadata.get("requested_business_name_override") or "").strip()
-            override_type = str(metadata.get("requested_business_type_override") or "").strip()
+            override_name = str(
+                metadata.get("requested_business_name_override") or ""
+            ).strip()
+            override_type = str(
+                metadata.get("requested_business_type_override") or ""
+            ).strip()
             if override_name:
                 contract["requested_business_name"] = override_name
             if override_type:
@@ -1149,7 +1334,9 @@ if __name__ == \"__main__\":
         ]
         content = str(artifact_content or "")
         lowered = content.lower()
-        style_blocks = re.findall(r"<style[^>]*>(.*?)</style>", content, flags=re.IGNORECASE | re.DOTALL)
+        style_blocks = re.findall(
+            r"<style[^>]*>(.*?)</style>", content, flags=re.IGNORECASE | re.DOTALL
+        )
         style_text = "\n".join(style_blocks).lower()
 
         failures: list[str] = []
@@ -1157,7 +1344,9 @@ if __name__ == \"__main__\":
             failures.append("no_markdown_fences")
         if re.search(r"<script[^>]+src\s*=", lowered):
             failures.append("no_remote_scripts")
-        if re.search(r"https?://|//cdn\.|fonts\.googleapis|unpkg\.com|jsdelivr", lowered):
+        if re.search(
+            r"https?://|//cdn\.|fonts\.googleapis|unpkg\.com|jsdelivr", lowered
+        ):
             failures.append("no_remote_assets")
 
         if business_name and business_name.lower() not in lowered:
@@ -1166,11 +1355,17 @@ if __name__ == \"__main__\":
         if business_name:
             title_text = cls._extract_first_tag_text(content, "title") or ""
             h1_text = cls._extract_first_tag_text(content, "h1") or ""
-            if business_name.lower() not in title_text.lower() and business_name.lower() not in h1_text.lower() and business_name.lower() not in lowered:
+            if (
+                business_name.lower() not in title_text.lower()
+                and business_name.lower() not in h1_text.lower()
+                and business_name.lower() not in lowered
+            ):
                 failures.append("business_identity_misaligned")
 
         service_terms = cls._service_terms_for_business_type(business_type)
-        if service_terms and not any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in service_terms):
+        if service_terms and not any(
+            re.search(rf"\b{re.escape(term)}\b", lowered) for term in service_terms
+        ):
             failures.append("requested_business_type_missing")
 
         color_hex = cls._color_hex_map()
@@ -1178,7 +1373,9 @@ if __name__ == \"__main__\":
         for color in requested_colors:
             has_word = bool(re.search(rf"\b{re.escape(color)}\b", lowered))
             has_hex = any(token in lowered for token in color_hex.get(color, []))
-            has_css = bool(re.search(rf"\b{re.escape(color)}\b", style_text)) or any(token in style_text for token in color_hex.get(color, []))
+            has_css = bool(re.search(rf"\b{re.escape(color)}\b", style_text)) or any(
+                token in style_text for token in color_hex.get(color, [])
+            )
             if not (has_word or has_hex):
                 failures.append(f"requested_color_missing:{color}")
             if has_css:
@@ -1187,7 +1384,9 @@ if __name__ == \"__main__\":
         if requested_colors and css_color_hits < min(2, len(requested_colors)):
             failures.append("requested_palette_not_applied_to_css")
 
-        forbidden_terms = cls._prompt_fidelity_forbidden_terms(contract=contract, metadata=metadata)
+        forbidden_terms = cls._prompt_fidelity_forbidden_terms(
+            contract=contract, metadata=metadata
+        )
         for token in forbidden_terms:
             needle = str(token).strip()
             if not needle:
@@ -1217,9 +1416,17 @@ if __name__ == \"__main__\":
         fidelity_report: dict[str, Any],
     ) -> str:
         repaired = cls._strip_markdown_fences(str(artifact_content or ""))
-        requested_name = str(fidelity_report.get("requested_business_name") or "").strip()
-        requested_type = str(fidelity_report.get("requested_business_type") or "").strip()
-        requested_colors = [str(color).strip().lower() for color in (fidelity_report.get("requested_colors") or []) if str(color).strip()]
+        requested_name = str(
+            fidelity_report.get("requested_business_name") or ""
+        ).strip()
+        requested_type = str(
+            fidelity_report.get("requested_business_type") or ""
+        ).strip()
+        requested_colors = [
+            str(color).strip().lower()
+            for color in (fidelity_report.get("requested_colors") or [])
+            if str(color).strip()
+        ]
 
         repaired = re.sub(
             r"White,\s*purple,\s*and\s*green\s+studio\s+style\s+with\s+clean\s+grooming\s+stations\.",
@@ -1231,39 +1438,71 @@ if __name__ == \"__main__\":
         if requested_name:
             title_text = cls._extract_first_tag_text(repaired, "title")
             if not title_text:
-                repaired = cls._insert_before_tag(repaired, "head", f"<title>{html.escape(requested_name, quote=False)}</title>")
+                repaired = cls._insert_before_tag(
+                    repaired,
+                    "head",
+                    f"<title>{html.escape(requested_name, quote=False)}</title>",
+                )
             elif requested_name.lower() not in title_text.lower():
-                repaired = cls._replace_first_tag_text(repaired, "title", requested_name)
+                repaired = cls._replace_first_tag_text(
+                    repaired, "title", requested_name
+                )
 
             h1_text = cls._extract_first_tag_text(repaired, "h1")
             if not h1_text:
-                repaired = cls._insert_before_tag(repaired, "body", f"<h1>{html.escape(requested_name, quote=False)}</h1>")
+                repaired = cls._insert_before_tag(
+                    repaired,
+                    "body",
+                    f"<h1>{html.escape(requested_name, quote=False)}</h1>",
+                )
             elif requested_name.lower() not in h1_text.lower():
                 repaired = cls._replace_first_tag_text(repaired, "h1", requested_name)
 
-            for token in ("Soggy Doggy", "Harry's Hot Dog Cart", "Flow Flowers", "Rico's Mobile Detailing", "Neon Byte Arcade", "Crimson Turtle Locksmiths"):
+            for token in (
+                "Soggy Doggy",
+                "Harry's Hot Dog Cart",
+                "Flow Flowers",
+                "Rico's Mobile Detailing",
+                "Neon Byte Arcade",
+                "Crimson Turtle Locksmiths",
+            ):
                 if token.lower() == requested_name.lower():
                     continue
-                repaired = re.sub(rf"\b{re.escape(token)}\b", requested_name, repaired, flags=re.IGNORECASE)
+                repaired = re.sub(
+                    rf"\b{re.escape(token)}\b",
+                    requested_name,
+                    repaired,
+                    flags=re.IGNORECASE,
+                )
 
-        if requested_type == "grooming" and not re.search(r"\b(groom|pet|dog|bath|wash|trim|fur|paw)\b", repaired, flags=re.IGNORECASE):
+        if requested_type == "grooming" and not re.search(
+            r"\b(groom|pet|dog|bath|wash|trim|fur|paw)\b", repaired, flags=re.IGNORECASE
+        ):
             repaired = cls._insert_before_tag(
                 repaired,
                 "body",
-                "<p class=\"muted\">Professional pet grooming services including bath, trim, fur care, and paw tidy appointments.</p>",
+                '<p class="muted">Professional pet grooming services including bath, trim, fur care, and paw tidy appointments.</p>',
             )
 
         if requested_colors:
             palette = cls._color_hex_map()
             primary = requested_colors[0]
-            secondary = requested_colors[1] if len(requested_colors) > 1 else requested_colors[0]
-            tertiary = requested_colors[2] if len(requested_colors) > 2 else requested_colors[-1]
+            secondary = (
+                requested_colors[1]
+                if len(requested_colors) > 1
+                else requested_colors[0]
+            )
+            tertiary = (
+                requested_colors[2]
+                if len(requested_colors) > 2
+                else requested_colors[-1]
+            )
             primary_hex = palette.get(primary, ["#2563eb"])[0]
             secondary_hex = palette.get(secondary, ["#22c55e"])[0]
             tertiary_hex = palette.get(tertiary, ["#f3f4f6"])[0]
             palette_comment = " ".join(requested_colors)
             style_patch = (
-                "<style id=\"xv7-fidelity-repair\">"
+                '<style id="xv7-fidelity-repair">'
                 f"/* requested palette: {palette_comment} */"
                 f":root{{--accent:{primary_hex};--accent-2:{secondary_hex};--accent-3:{tertiary_hex};}}"
                 "body{background:linear-gradient(135deg,var(--accent),var(--accent-2));}"
@@ -1290,7 +1529,12 @@ if __name__ == \"__main__\":
             } - set(requested_colors)
             replacement = requested_colors[0]
             for color in sorted(non_requested_colors):
-                repaired = re.sub(rf"\b{re.escape(color)}\b", replacement, repaired, flags=re.IGNORECASE)
+                repaired = re.sub(
+                    rf"\b{re.escape(color)}\b",
+                    replacement,
+                    repaired,
+                    flags=re.IGNORECASE,
+                )
 
         return repaired
 
@@ -1312,11 +1556,11 @@ if __name__ == \"__main__\":
         retry_requirements = retry_requirements or []
         retry_line = "Output only source code that satisfies all constraints below."
         if strict_retry:
-            retry_line = (
-                "This is a retry because the first draft failed validation. Be stricter and fix every missing requirement explicitly."
-            )
+            retry_line = "This is a retry because the first draft failed validation. Be stricter and fix every missing requirement explicitly."
             if retry_requirements:
-                retry_line += " Missing requirements: " + "; ".join(retry_requirements) + "."
+                retry_line += (
+                    " Missing requirements: " + "; ".join(retry_requirements) + "."
+                )
 
         category = cls._artifact_business_category(question, business_name)
         category_brief = {
@@ -1326,7 +1570,10 @@ if __name__ == \"__main__\":
             "arcade": "Arcade direction: neon retro atmosphere with game-grid energy and high-score language.",
             "hot_dog_cart": "Hot dog cart direction: street-food clarity with menu highlights and quick-order focus.",
             "generic": "Direction: adapt visual language to the specific business request.",
-        }.get(category, "Direction: adapt visual language to the specific business request.")
+        }.get(
+            category,
+            "Direction: adapt visual language to the specific business request.",
+        )
         colors = ", ".join(style_hints.get("colors", [])) or "none specified"
         styles = ", ".join(style_hints.get("styles", [])) or "none specified"
         layout = "; ".join(layout_hints) or "none specified"
@@ -1395,8 +1642,12 @@ if __name__ == \"__main__\":
             "full_revision",
         }:
             return True
-        has_action = bool(AnswerContract.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question))
-        has_target = bool(AnswerContract.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question))
+        has_action = bool(
+            AnswerContract.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question)
+        )
+        has_target = bool(
+            AnswerContract.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question)
+        )
         explicit = any(
             phrase in normalized_question
             for phrase in (
@@ -1412,12 +1663,16 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_business_name_from_html(content: str) -> str | None:
-        title_match = re.search(r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL)
+        title_match = re.search(
+            r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL
+        )
         if title_match:
             value = html.unescape(re.sub(r"\s+", " ", title_match.group(1))).strip()
             if value:
                 return value
-        h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL)
+        h1_match = re.search(
+            r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL
+        )
         if h1_match:
             raw = re.sub(r"<[^>]+>", "", h1_match.group(1))
             value = html.unescape(re.sub(r"\s+", " ", raw)).strip()
@@ -1426,7 +1681,9 @@ if __name__ == \"__main__\":
         return None
 
     @staticmethod
-    def _extract_artifact_from_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    def _extract_artifact_from_metadata(
+        metadata: dict[str, Any],
+    ) -> dict[str, Any] | None:
         if not isinstance(metadata, dict):
             return None
 
@@ -1448,7 +1705,8 @@ if __name__ == \"__main__\":
                 return {
                     "type": "code_artifact",
                     "filename": filename,
-                    "language": str(artifact.get("language") or "html").strip() or "html",
+                    "language": str(artifact.get("language") or "html").strip()
+                    or "html",
                     "previewable": bool(artifact.get("previewable", True)),
                     "applied": bool(artifact.get("applied", False)),
                     "content": content,
@@ -1557,12 +1815,20 @@ if __name__ == \"__main__\":
         return bool(cls.ARTIFACT_POST_APPLY_PREVIEW_PATTERN.search(normalized_question))
 
     @classmethod
-    def _is_post_apply_targeted_validation_request(cls, normalized_question: str) -> bool:
-        return bool(cls.ARTIFACT_POST_APPLY_TARGETED_VALIDATION_PATTERN.search(normalized_question))
+    def _is_post_apply_targeted_validation_request(
+        cls, normalized_question: str
+    ) -> bool:
+        return bool(
+            cls.ARTIFACT_POST_APPLY_TARGETED_VALIDATION_PATTERN.search(
+                normalized_question
+            )
+        )
 
     @classmethod
     def _is_post_apply_full_test_guard_request(cls, normalized_question: str) -> bool:
-        return bool(cls.ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN.search(normalized_question))
+        return bool(
+            cls.ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN.search(normalized_question)
+        )
 
     @classmethod
     def _is_commit_proposal_request(cls, normalized_question: str) -> bool:
@@ -1595,9 +1861,11 @@ if __name__ == \"__main__\":
         if cls.ARTIFACT_REPO_MUTATION_PATTERN.search(normalized_question):
             return True
 
-        if (
-            any(marker in normalized_question for marker in (" in the repo", " into the repo", " to the repo"))
-            and not re.search(r"\b(do not|don't)\s+(apply|write|save)\b", normalized_question)
+        if any(
+            marker in normalized_question
+            for marker in (" in the repo", " into the repo", " to the repo")
+        ) and not re.search(
+            r"\b(do not|don't)\s+(apply|write|save)\b", normalized_question
         ):
             return True
 
@@ -1605,9 +1873,9 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
-        return cls._has_explicit_artifact_intent(normalized_question) and not cls._is_repo_mutation_build_prompt(
+        return cls._has_explicit_artifact_intent(
             normalized_question
-        )
+        ) and not cls._is_repo_mutation_build_prompt(normalized_question)
 
     @staticmethod
     def _workspace_root() -> Path:
@@ -1680,7 +1948,9 @@ if __name__ == \"__main__\":
     ) -> str:
         language = str(artifact.get("language") or "html").lower()
         filename = cls._sanitize_filename(str(artifact.get("filename") or ""), language)
-        business_name = cls._extract_business_name_from_html(str(artifact.get("content") or ""))
+        business_name = cls._extract_business_name_from_html(
+            str(artifact.get("content") or "")
+        )
         artifact_id = str(artifact.get("artifact_id") or "artifact")
         suffix = cls._slugify_artifact_name(artifact_id)[-6:] or "draft"
         slug = cls._safe_slug(business_name, fallback=f"artifact-{suffix}")
@@ -1745,24 +2015,58 @@ if __name__ == \"__main__\":
         failures: list[str] = []
 
         def _add_check(name: str, passed: bool, detail: str) -> None:
-            checks.append({"name": name, "status": "passed" if passed else "failed", "detail": detail})
+            checks.append(
+                {
+                    "name": name,
+                    "status": "passed" if passed else "failed",
+                    "detail": detail,
+                }
+            )
             if not passed:
                 failures.append(f"{name}: {detail}")
 
         target = Path(target_path)
         target_text = target_path.replace("\\", "/")
-        _add_check("operation_allowed", operation in {"create", "update"}, "operation must be create or update")
-        _add_check("target_path_prefix", target_text.startswith("generated-sites/"), "target path must stay under generated-sites/")
-        _add_check("target_path_relative", not target.is_absolute(), "target path must be relative")
-        _add_check("target_path_no_traversal", ".." not in target.parts, "target path cannot include traversal")
-        _add_check("target_path_not_blocked", not cls._is_blocked_patch_target(target_text), "target path cannot target protected files or folders")
+        _add_check(
+            "operation_allowed",
+            operation in {"create", "update"},
+            "operation must be create or update",
+        )
+        _add_check(
+            "target_path_prefix",
+            target_text.startswith("generated-sites/"),
+            "target path must stay under generated-sites/",
+        )
+        _add_check(
+            "target_path_relative",
+            not target.is_absolute(),
+            "target path must be relative",
+        )
+        _add_check(
+            "target_path_no_traversal",
+            ".." not in target.parts,
+            "target path cannot include traversal",
+        )
+        _add_check(
+            "target_path_not_blocked",
+            not cls._is_blocked_patch_target(target_text),
+            "target path cannot target protected files or folders",
+        )
 
         try:
             resolved = (root / target).resolve()
             root_resolved = root.resolve()
-            _add_check("target_path_inside_repo", str(resolved).startswith(str(root_resolved)), "target path must resolve inside repo root")
+            _add_check(
+                "target_path_inside_repo",
+                str(resolved).startswith(str(root_resolved)),
+                "target path must resolve inside repo root",
+            )
         except Exception:
-            _add_check("target_path_inside_repo", False, "target path failed canonical resolution")
+            _add_check(
+                "target_path_inside_repo",
+                False,
+                "target path failed canonical resolution",
+            )
 
         language = language.lower()
         expected_ext = {
@@ -1773,21 +2077,67 @@ if __name__ == \"__main__\":
             "python": ".py",
         }.get(language)
         ext = os.path.splitext(target_path)[1].lower()
-        _add_check("target_extension", expected_ext is None or ext == expected_ext, "target file extension must match artifact language")
+        _add_check(
+            "target_extension",
+            expected_ext is None or ext == expected_ext,
+            "target file extension must match artifact language",
+        )
 
-        _add_check("content_non_empty", bool(content.strip()), "content cannot be empty")
-        _add_check("content_no_markdown_fence", "```" not in content, "content cannot contain markdown fences")
-        _add_check("content_no_shell_commands", not re.search(r"\b(rm\s+-rf|git\s+reset|powershell\s+-|bash\s+-|curl\s+|wget\s+)\b", content.lower()), "content cannot contain shell automation commands")
-        _add_check("content_no_repo_automation", not re.search(r"\b(git\s+add|git\s+commit|git\s+push|npm\s+test|pytest)\b", content.lower()), "content cannot include repo automation directives")
-        _add_check("content_no_external_script", not re.search(r"<script[^>]+src\s*=\s*['\"]https?://", content, flags=re.IGNORECASE), "content cannot include external script src URLs")
-        _add_check("content_no_remote_urls", not re.search(r"https?://", content, flags=re.IGNORECASE), "content cannot include remote URLs")
+        _add_check(
+            "content_non_empty", bool(content.strip()), "content cannot be empty"
+        )
+        _add_check(
+            "content_no_markdown_fence",
+            "```" not in content,
+            "content cannot contain markdown fences",
+        )
+        _add_check(
+            "content_no_shell_commands",
+            not re.search(
+                r"\b(rm\s+-rf|git\s+reset|powershell\s+-|bash\s+-|curl\s+|wget\s+)\b",
+                content.lower(),
+            ),
+            "content cannot contain shell automation commands",
+        )
+        _add_check(
+            "content_no_repo_automation",
+            not re.search(
+                r"\b(git\s+add|git\s+commit|git\s+push|npm\s+test|pytest)\b",
+                content.lower(),
+            ),
+            "content cannot include repo automation directives",
+        )
+        _add_check(
+            "content_no_external_script",
+            not re.search(
+                r"<script[^>]+src\s*=\s*['\"]https?://", content, flags=re.IGNORECASE
+            ),
+            "content cannot include external script src URLs",
+        )
+        _add_check(
+            "content_no_remote_urls",
+            not re.search(r"https?://", content, flags=re.IGNORECASE),
+            "content cannot include remote URLs",
+        )
 
         if language == "html":
-            _add_check("html_shell", "<!doctype html" in content.lower() or "<html" in content.lower(), "html artifacts need a full html document shell")
-            _add_check("html_inline_css", "<style" in content.lower(), "html artifacts must include inline style content")
+            _add_check(
+                "html_shell",
+                "<!doctype html" in content.lower() or "<html" in content.lower(),
+                "html artifacts need a full html document shell",
+            )
+            _add_check(
+                "html_inline_css",
+                "<style" in content.lower(),
+                "html artifacts must include inline style content",
+            )
 
         if business_name:
-            _add_check("business_name_present", business_name.lower() in content.lower(), "artifact business name should remain in content")
+            _add_check(
+                "business_name_present",
+                business_name.lower() in content.lower(),
+                "artifact business name should remain in content",
+            )
 
         status = "failed" if failures else "passed"
         return status, checks, failures
@@ -1839,35 +2189,81 @@ if __name__ == \"__main__\":
         failures: list[str] = []
 
         def _add(name: str, passed: bool, detail: str) -> None:
-            checks.append({"name": name, "status": "passed" if passed else "failed", "detail": detail})
+            checks.append(
+                {
+                    "name": name,
+                    "status": "passed" if passed else "failed",
+                    "detail": detail,
+                }
+            )
             if not passed:
                 failures.append(f"{name}: {detail}")
 
-        resolved, resolve_error = cls._resolve_safe_patch_target(root=root, target_path=target_path)
-        _add("safe_target_path", resolve_error is None and resolved is not None, resolve_error or "target path resolved safely")
+        resolved, resolve_error = cls._resolve_safe_patch_target(
+            root=root, target_path=target_path
+        )
+        _add(
+            "safe_target_path",
+            resolve_error is None and resolved is not None,
+            resolve_error or "target path resolved safely",
+        )
 
         actual_content = ""
         if resolved is not None:
             exists = resolved.exists()
-            _add("file_exists", exists, "file exists on disk" if exists else "file is missing on disk")
+            _add(
+                "file_exists",
+                exists,
+                "file exists on disk" if exists else "file is missing on disk",
+            )
             if exists:
                 actual_content = resolved.read_text(encoding="utf-8")
-                _add("content_non_empty", bool(actual_content.strip()), "file content is non-empty")
-                _add("content_matches_applied_proposal", actual_content == expected_content, "file content matches applied proposal")
-                _add("content_no_markdown_fence", "```" not in actual_content, "content has no markdown fences")
+                _add(
+                    "content_non_empty",
+                    bool(actual_content.strip()),
+                    "file content is non-empty",
+                )
+                _add(
+                    "content_matches_applied_proposal",
+                    actual_content == expected_content,
+                    "file content matches applied proposal",
+                )
+                _add(
+                    "content_no_markdown_fence",
+                    "```" not in actual_content,
+                    "content has no markdown fences",
+                )
                 _add(
                     "content_no_remote_scripts_assets",
-                    not re.search(r"<script[^>]+src\s*=\s*['\"]https?://", actual_content, flags=re.IGNORECASE)
-                    and not re.search(r"<(img|link|source)[^>]+(src|href)\s*=\s*['\"]https?://", actual_content, flags=re.IGNORECASE),
+                    not re.search(
+                        r"<script[^>]+src\s*=\s*['\"]https?://",
+                        actual_content,
+                        flags=re.IGNORECASE,
+                    )
+                    and not re.search(
+                        r"<(img|link|source)[^>]+(src|href)\s*=\s*['\"]https?://",
+                        actual_content,
+                        flags=re.IGNORECASE,
+                    ),
                     "content has no remote script or asset URLs",
                 )
                 if language == "html":
                     lowered = actual_content.lower()
-                    _add("html_shell", "<!doctype html" in lowered or "<html" in lowered, "html shell markers are present")
+                    _add(
+                        "html_shell",
+                        "<!doctype html" in lowered or "<html" in lowered,
+                        "html shell markers are present",
+                    )
                 if include_business_name:
-                    business_name = cls._extract_business_name_from_html(expected_content) or ""
+                    business_name = (
+                        cls._extract_business_name_from_html(expected_content) or ""
+                    )
                     if business_name:
-                        _add("business_name_present", business_name.lower() in actual_content.lower(), "business name remains present")
+                        _add(
+                            "business_name_present",
+                            business_name.lower() in actual_content.lower(),
+                            "business name remains present",
+                        )
 
         status = "failed" if failures else "passed"
         verification = {
@@ -1877,9 +2273,14 @@ if __name__ == \"__main__\":
             "failures": failures,
             "verified_at": cls._utc_now_iso(),
             "content_length": len(actual_content) if actual_content else 0,
-            "content_sha256": cls._content_sha256(actual_content) if actual_content else "",
+            "content_sha256": cls._content_sha256(actual_content)
+            if actual_content
+            else "",
         }
-        return verification, {"actual_content": actual_content, "target_path": target_path}
+        return verification, {
+            "actual_content": actual_content,
+            "target_path": target_path,
+        }
 
     @classmethod
     def _applied_patch_with_runtime_fields(
@@ -1898,7 +2299,9 @@ if __name__ == \"__main__\":
             "content_length": len(content),
             "content_sha256": cls._content_sha256(content) if content else "",
             "source_artifact_id": str(proposal.get("source_artifact_id") or ""),
-            "validation_status": str((proposal.get("validation") or {}).get("status") or "failed"),
+            "validation_status": str(
+                (proposal.get("validation") or {}).get("status") or "failed"
+            ),
             "tests_run": bool(proposal.get("tests_run", False)),
             "commit_created": bool(proposal.get("commit_created", False)),
             "push_performed": bool(proposal.get("push_performed", False)),
@@ -1919,16 +2322,22 @@ if __name__ == \"__main__\":
         before_content: str | None,
         after_content: str,
     ) -> str:
-        before_lines = [] if before_content is None else before_content.splitlines(keepends=True)
+        before_lines = (
+            [] if before_content is None else before_content.splitlines(keepends=True)
+        )
         after_lines = after_content.splitlines(keepends=True)
         from_file = "/dev/null" if before_content is None else f"a/{target_path}"
         to_file = f"b/{target_path}"
-        diff = difflib.unified_diff(before_lines, after_lines, fromfile=from_file, tofile=to_file, n=3)
+        diff = difflib.unified_diff(
+            before_lines, after_lines, fromfile=from_file, tofile=to_file, n=3
+        )
         text = "".join(diff).strip()
         return text or f"--- {from_file}\n+++ {to_file}\n"
 
     @classmethod
-    def _extract_patch_proposal_from_metadata(cls, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    def _extract_patch_proposal_from_metadata(
+        cls, metadata: dict[str, Any]
+    ) -> dict[str, Any] | None:
         if not isinstance(metadata, dict):
             return None
         proposal = metadata.get("artifact_patch_proposal")
@@ -2002,7 +2411,9 @@ if __name__ == \"__main__\":
         return None
 
     @classmethod
-    def _extract_commit_proposal_from_metadata(cls, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    def _extract_commit_proposal_from_metadata(
+        cls, metadata: dict[str, Any]
+    ) -> dict[str, Any] | None:
         if not isinstance(metadata, dict):
             return None
         proposal = metadata.get("commit_proposal")
@@ -2068,14 +2479,20 @@ if __name__ == \"__main__\":
                 branch = sym_proc.stdout.strip()
             else:
                 abbrev_proc = cls._run_git(root, ["rev-parse", "--abbrev-ref", "HEAD"])
-                branch = abbrev_proc.stdout.strip() if abbrev_proc.returncode == 0 else "unknown"
+                branch = (
+                    abbrev_proc.stdout.strip()
+                    if abbrev_proc.returncode == 0
+                    else "unknown"
+                )
         else:
             branch = "unknown"
 
         # Applied-patch-aware path: prefer the applied patch from session state over
         # generic git-status scan so that container/host path issues are diagnosed
         # precisely rather than silently returning an empty proposal.
-        applied_patch = cls._latest_applied_patch_proposal(session_messages, session_metadata)
+        applied_patch = cls._latest_applied_patch_proposal(
+            session_messages, session_metadata
+        )
         if applied_patch is not None:
             target_path = str(applied_patch.get("target_path") or "").replace("\\", "/")
             if target_path:
@@ -2159,7 +2576,9 @@ if __name__ == \"__main__\":
                     }
 
                 # Check whether this specific path is gitignored
-                ignore_proc = cls._run_git(root, ["check-ignore", "-v", "--", target_path])
+                ignore_proc = cls._run_git(
+                    root, ["check-ignore", "-v", "--", target_path]
+                )
                 if ignore_proc.returncode == 0:
                     return {
                         "type": "commit_proposal",
@@ -2186,7 +2605,9 @@ if __name__ == \"__main__\":
                     }
 
                 # Check git status for this specific file
-                status_proc = cls._run_git(root, ["status", "--porcelain", "--", target_path])
+                status_proc = cls._run_git(
+                    root, ["status", "--porcelain", "--", target_path]
+                )
                 status_line = status_proc.stdout.strip()
                 if not status_line:
                     return {
@@ -2262,10 +2683,14 @@ if __name__ == \"__main__\":
                 ),
             }
 
-        status_proc = cls._run_git(root, ["status", "--porcelain", "--untracked-files=all"])
+        status_proc = cls._run_git(
+            root, ["status", "--porcelain", "--untracked-files=all"]
+        )
         diff_stat_proc = cls._run_git(root, ["diff", "--stat"])
 
-        raw_status_lines = [line.strip() for line in status_proc.stdout.splitlines() if line.strip()]
+        raw_status_lines = [
+            line.strip() for line in status_proc.stdout.splitlines() if line.strip()
+        ]
         included_files: list[str] = []
         excluded_files: list[str] = []
         change_lines: list[str] = []
@@ -2283,7 +2708,9 @@ if __name__ == \"__main__\":
             change_lines.append(f"{line[:2]} {normalized_path}")
 
         proposed_commit_message = (
-            f"chore: update {Path(included_files[0]).stem}" if len(included_files) == 1 else "chore: local repository changes"
+            f"chore: update {Path(included_files[0]).stem}"
+            if len(included_files) == 1
+            else "chore: local repository changes"
         )
         visible_lines = []
         if included_files:
@@ -2312,7 +2739,9 @@ if __name__ == \"__main__\":
             "excluded_files": excluded_files,
             "status_lines": raw_status_lines,
             "change_lines": change_lines,
-            "diff_stat": diff_stat_proc.stdout.strip() if diff_stat_proc.returncode == 0 else "",
+            "diff_stat": diff_stat_proc.stdout.strip()
+            if diff_stat_proc.returncode == 0
+            else "",
             "proposed_commit_message": proposed_commit_message,
             "visible_text": " ".join(visible_lines),
         }
@@ -2378,11 +2807,14 @@ if __name__ == \"__main__\":
                 },
             }
 
-        commit_message = str(proposal.get("proposed_commit_message") or "chore: local repository changes")
+        commit_message = str(
+            proposal.get("proposed_commit_message") or "chore: local repository changes"
+        )
         commit_proc = cls._run_git(root, ["commit", "-m", commit_message])
         if commit_proc.returncode != 0:
             return {
-                "visible_text": commit_proc.stderr.strip() or "I could not create the local commit.",
+                "visible_text": commit_proc.stderr.strip()
+                or "I could not create the local commit.",
                 "commit_proposal": {
                     **proposal,
                     "applied": False,
@@ -2443,12 +2875,20 @@ if __name__ == \"__main__\":
     ) -> dict[str, Any]:
         root = cls._workspace_root()
         language = str(artifact.get("language") or "html").lower()
-        filename = cls._sanitize_filename(str(artifact.get("filename") or "index.html"), language)
+        filename = cls._sanitize_filename(
+            str(artifact.get("filename") or "index.html"), language
+        )
         target_path = cls._proposed_patch_target_path(artifact=artifact)
         resolved_target = (root / Path(target_path)).resolve()
-        source_artifact_id = str(artifact.get("revision_id") or artifact.get("artifact_id") or "artifact")
+        source_artifact_id = str(
+            artifact.get("revision_id") or artifact.get("artifact_id") or "artifact"
+        )
         current_content = str(artifact.get("content") or "")
-        existing_content = resolved_target.read_text(encoding="utf-8") if resolved_target.exists() else None
+        existing_content = (
+            resolved_target.read_text(encoding="utf-8")
+            if resolved_target.exists()
+            else None
+        )
         operation = "update" if existing_content is not None else "create"
         business_name = cls._extract_business_name_from_html(current_content) or ""
         validation_status, checks, failures = cls._validate_patch_proposal(
@@ -2503,7 +2943,9 @@ if __name__ == \"__main__\":
                 continue
             role = str(message.get("role", "")).lower()
             if role == "user":
-                content = str(message.get("content") or message.get("raw_text") or "").strip()
+                content = str(
+                    message.get("content") or message.get("raw_text") or ""
+                ).strip()
                 if content:
                     pending_user_prompt = content
                 continue
@@ -2517,14 +2959,22 @@ if __name__ == \"__main__\":
             if artifact is None:
                 continue
 
-            policy = metadata.get("policy_provenance") if isinstance(metadata.get("policy_provenance"), dict) else {}
+            policy = (
+                metadata.get("policy_provenance")
+                if isinstance(metadata.get("policy_provenance"), dict)
+                else {}
+            )
             artifact_id = str(
                 artifact.get("artifact_id")
                 or policy.get("artifact_id")
                 or active_artifact_id
                 or f"{cls._slugify_artifact_name(str(artifact.get('filename') or 'artifact'))}-artifact"
             ).strip()
-            revision_number = artifact.get("revision_number") or policy.get("revision_number") or next_revision_number
+            revision_number = (
+                artifact.get("revision_number")
+                or policy.get("revision_number")
+                or next_revision_number
+            )
             try:
                 revision_number = int(revision_number)
             except (TypeError, ValueError):
@@ -2543,7 +2993,9 @@ if __name__ == \"__main__\":
                             or f"{artifact_id}:r{revision_number}"
                         ),
                         "revision_number": revision_number,
-                        "source_prompt": str(artifact.get("source_prompt") or pending_user_prompt or "").strip(),
+                        "source_prompt": str(
+                            artifact.get("source_prompt") or pending_user_prompt or ""
+                        ).strip(),
                         "generation_provenance": dict(policy),
                     },
                     "message_id": message.get("id") or message.get("message_id"),
@@ -2571,7 +3023,9 @@ if __name__ == \"__main__\":
     @classmethod
     def _artifact_refinement_mode(cls, normalized_question: str) -> str | None:
         typography_style = cls._typography_style_request(normalized_question)
-        asks_for_color_change = bool(cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_question))
+        asks_for_color_change = bool(
+            cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_question)
+        )
         if typography_style is not None and not asks_for_color_change:
             return "typography_only"
 
@@ -2594,14 +3048,34 @@ if __name__ == \"__main__\":
             return "style_only"
         if targeted and content and not style:
             return "content_only"
-        if style and not content and any(
-            phrase in normalized_question
-            for phrase in ("change the colors", "background white", "use script font", "make it easier to read", "restyle")
+        if (
+            style
+            and not content
+            and any(
+                phrase in normalized_question
+                for phrase in (
+                    "change the colors",
+                    "background white",
+                    "use script font",
+                    "make it easier to read",
+                    "restyle",
+                )
+            )
         ):
             return "style_only"
-        if content and not style and any(
-            phrase in normalized_question
-            for phrase in ("headline", "cta", "button text", "rewrite", "services section")
+        if (
+            content
+            and not style
+            and any(
+                phrase in normalized_question
+                for phrase in (
+                    "headline",
+                    "cta",
+                    "button text",
+                    "rewrite",
+                    "services section",
+                )
+            )
         ):
             return "content_only"
         if targeted:
@@ -2617,7 +3091,9 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_first_tag_text(content: str, tag: str) -> str | None:
-        match = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", content, flags=re.IGNORECASE | re.DOTALL)
+        match = re.search(
+            rf"<{tag}[^>]*>(.*?)</{tag}>", content, flags=re.IGNORECASE | re.DOTALL
+        )
         if not match:
             return None
         raw = re.sub(r"<[^>]+>", "", match.group(1))
@@ -2627,13 +3103,18 @@ if __name__ == \"__main__\":
     @staticmethod
     def _replace_first_tag_text(content: str, tag: str, replacement: str) -> str:
         escaped = html.escape(replacement, quote=False)
-        pattern = re.compile(rf"(<{tag}[^>]*>)(.*?)(</{tag}>)", flags=re.IGNORECASE | re.DOTALL)
+        pattern = re.compile(
+            rf"(<{tag}[^>]*>)(.*?)(</{tag}>)", flags=re.IGNORECASE | re.DOTALL
+        )
         return pattern.sub(rf"\1{escaped}\3", content, count=1)
 
     @staticmethod
     def _replace_first_button_text(content: str, replacement: str) -> str:
         escaped = html.escape(replacement, quote=False)
-        pattern = re.compile(r"(<a[^>]*class=\"button[^\"]*\"[^>]*>)(.*?)(</a>)", flags=re.IGNORECASE | re.DOTALL)
+        pattern = re.compile(
+            r"(<a[^>]*class=\"button[^\"]*\"[^>]*>)(.*?)(</a>)",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
         return pattern.sub(rf"\1{escaped}\3", content, count=1)
 
     @classmethod
@@ -2643,7 +3124,9 @@ if __name__ == \"__main__\":
         previous_artifact: dict[str, Any] | None,
     ) -> str:
         if previous_artifact is None:
-            return "I do not have an earlier artifact revision to compare in this session."
+            return (
+                "I do not have an earlier artifact revision to compare in this session."
+            )
 
         current_content = str(current_artifact.get("content") or "")
         previous_content = str(previous_artifact.get("content") or "")
@@ -2653,30 +3136,52 @@ if __name__ == \"__main__\":
         current_h1 = cls._extract_first_tag_text(current_content, "h1")
         if previous_h1 and current_h1 and previous_h1 != current_h1:
             changes.append(f'Main headline changed to "{current_h1}".')
-        if "Brush Script MT" in current_content and "Brush Script MT" not in previous_content:
+        if (
+            "Brush Script MT" in current_content
+            and "Brush Script MT" not in previous_content
+        ):
             changes.append("Typography was updated with a script-style font treatment.")
-        if any(token in current_content.lower() for token in ("#d4af37", "gold")) and not any(
+        if any(
+            token in current_content.lower() for token in ("#d4af37", "gold")
+        ) and not any(
             token in previous_content.lower() for token in ("#d4af37", "gold")
         ):
             changes.append("The palette shifted toward black-and-gold styling.")
-        if "premium" in current_content.lower() and "premium" not in previous_content.lower():
+        if (
+            "premium" in current_content.lower()
+            and "premium" not in previous_content.lower()
+        ):
             changes.append("The copy and styling now carry a more premium tone.")
         if not changes:
-            changes.append("I updated the current artifact while keeping the same overall business identity and structure.")
+            changes.append(
+                "I updated the current artifact while keeping the same overall business identity and structure."
+            )
         return " ".join(changes[:3])
 
     @staticmethod
     def _extract_requested_headline(question: str) -> str | None:
-        return AnswerContract._extract_target_text(question, "headline") or AnswerContract._extract_target_text(question, "main headline")
+        return AnswerContract._extract_target_text(
+            question, "headline"
+        ) or AnswerContract._extract_target_text(question, "main headline")
 
     @staticmethod
     def _extract_requested_button_text(question: str) -> str | None:
-        return AnswerContract._extract_target_text(question, "button text") or AnswerContract._extract_target_text(question, "cta")
+        return AnswerContract._extract_target_text(
+            question, "button text"
+        ) or AnswerContract._extract_target_text(question, "cta")
 
     @staticmethod
     def _is_business_rename_request(question: str) -> bool:
         lowered = question.lower()
-        return any(phrase in lowered for phrase in ("rename the business", "rename the site", "change the business name", "change the site name"))
+        return any(
+            phrase in lowered
+            for phrase in (
+                "rename the business",
+                "rename the site",
+                "change the business name",
+                "change the site name",
+            )
+        )
 
     @classmethod
     def _validate_revision_candidate(
@@ -2688,7 +3193,12 @@ if __name__ == \"__main__\":
     ) -> tuple[bool, str]:
         business_name = ""
         if not cls._is_business_rename_request(requested_question):
-            business_name = cls._extract_business_name_from_html(str(source_artifact.get("content") or "")) or ""
+            business_name = (
+                cls._extract_business_name_from_html(
+                    str(source_artifact.get("content") or "")
+                )
+                or ""
+            )
         valid, reason = cls._validate_artifact_content(
             content=content,
             language=str(source_artifact.get("language") or "html"),
@@ -2706,25 +3216,44 @@ if __name__ == \"__main__\":
         return valid, reason
 
     @classmethod
-    def _build_refinement_constraints(cls, revision_mode: str, question: str) -> list[str]:
+    def _build_refinement_constraints(
+        cls, revision_mode: str, question: str
+    ) -> list[str]:
         constraints: list[str] = []
         lowered = question.lower()
         if revision_mode == "style_only":
-            constraints.append("Preserve the existing content and structure as much as possible while changing styling.")
+            constraints.append(
+                "Preserve the existing content and structure as much as possible while changing styling."
+            )
         elif revision_mode == "content_only":
-            constraints.append("Preserve layout and styling as much as possible while changing only the requested copy/content.")
+            constraints.append(
+                "Preserve layout and styling as much as possible while changing only the requested copy/content."
+            )
         elif revision_mode == "targeted_revision":
-            constraints.append("Preserve everything outside the requested scope as much as possible.")
+            constraints.append(
+                "Preserve everything outside the requested scope as much as possible."
+            )
         if "keep the layout" in lowered:
             constraints.append("Keep the layout structure and section order intact.")
         if "keep the content" in lowered:
-            constraints.append("Keep the existing wording and section content intact unless the user explicitly asked to rewrite it.")
+            constraints.append(
+                "Keep the existing wording and section content intact unless the user explicitly asked to rewrite it."
+            )
         if any(token in lowered for token in ("script", "cursive", "handwritten")):
-            constraints.append("Use a visible script-style font cue such as Brush Script MT, Segoe Script, or cursive in CSS.")
+            constraints.append(
+                "Use a visible script-style font cue such as Brush Script MT, Segoe Script, or cursive in CSS."
+            )
         if "easier to read" in lowered:
-            constraints.append("Increase readability with stronger contrast, roomier spacing, and slightly larger text sizing.")
-        if any(token in lowered for token in ("black", "gold", "white", "purple", "green", "red", "silver")):
-            constraints.append("Make the requested colors visibly present in CSS variables or style declarations.")
+            constraints.append(
+                "Increase readability with stronger contrast, roomier spacing, and slightly larger text sizing."
+            )
+        if any(
+            token in lowered
+            for token in ("black", "gold", "white", "purple", "green", "red", "silver")
+        ):
+            constraints.append(
+                "Make the requested colors visibly present in CSS variables or style declarations."
+            )
         return constraints
 
     @classmethod
@@ -2741,20 +3270,28 @@ if __name__ == \"__main__\":
         return None
 
     @staticmethod
-    def _add_class_to_tag_openings(content: str, tag: str, class_name: str, *, first_only: bool = False) -> str:
+    def _add_class_to_tag_openings(
+        content: str, tag: str, class_name: str, *, first_only: bool = False
+    ) -> str:
         pattern = re.compile(rf"<{tag}([^>]*)>", flags=re.IGNORECASE)
 
         def _repl(match: re.Match[str]) -> str:
             attrs = match.group(1) or ""
-            class_match = re.search(r"class\s*=\s*([\"'])(.*?)\1", attrs, flags=re.IGNORECASE | re.DOTALL)
+            class_match = re.search(
+                r"class\s*=\s*([\"'])(.*?)\1", attrs, flags=re.IGNORECASE | re.DOTALL
+            )
             if class_match:
                 quote = class_match.group(1)
                 class_value = class_match.group(2)
-                classes = [token for token in re.split(r"\s+", class_value.strip()) if token]
+                classes = [
+                    token for token in re.split(r"\s+", class_value.strip()) if token
+                ]
                 if class_name not in classes:
                     classes.append(class_name)
-                new_attr = f'class={quote}{" ".join(classes)}{quote}'
-                attrs = attrs[: class_match.start()] + new_attr + attrs[class_match.end() :]
+                new_attr = f"class={quote}{' '.join(classes)}{quote}"
+                attrs = (
+                    attrs[: class_match.start()] + new_attr + attrs[class_match.end() :]
+                )
             else:
                 attrs = f'{attrs} class="{class_name}"'
             return f"<{tag}{attrs}>"
@@ -2771,17 +3308,21 @@ if __name__ == \"__main__\":
         def _repl(match: re.Match[str]) -> str:
             tag = match.group(1)
             attrs = match.group(2) or ""
-            class_match = re.search(r"class\s*=\s*([\"'])(.*?)\1", attrs, flags=re.IGNORECASE | re.DOTALL)
+            class_match = re.search(
+                r"class\s*=\s*([\"'])(.*?)\1", attrs, flags=re.IGNORECASE | re.DOTALL
+            )
             if not class_match:
                 return match.group(0)
             class_value = class_match.group(2)
-            classes = [token for token in re.split(r"\s+", class_value.strip()) if token]
+            classes = [
+                token for token in re.split(r"\s+", class_value.strip()) if token
+            ]
             if "eyebrow" not in classes:
                 return match.group(0)
             if class_name not in classes:
                 classes.append(class_name)
             quote = class_match.group(1)
-            new_attr = f'class={quote}{" ".join(classes)}{quote}'
+            new_attr = f"class={quote}{' '.join(classes)}{quote}"
             attrs = attrs[: class_match.start()] + new_attr + attrs[class_match.end() :]
             return f"<{tag}{attrs}>"
 
@@ -2797,22 +3338,27 @@ if __name__ == \"__main__\":
         source_content = str(source_artifact.get("content") or "")
         language = str(source_artifact.get("language") or "html").lower()
         if not source_content.strip() or language != "html":
-            return source_content, {
-                "requested_style": requested_style,
-                "applied_to": [],
-                "deterministic_fallback_used": True,
-                "status": "failed",
-            }, False, "unsupported_typography_refinement_target"
+            return (
+                source_content,
+                {
+                    "requested_style": requested_style,
+                    "applied_to": [],
+                    "deterministic_fallback_used": True,
+                    "status": "failed",
+                },
+                False,
+                "unsupported_typography_refinement_target",
+            )
 
         if requested_style == "blackletter/gothic":
             class_name = "blackletter-heading"
             style_block = (
-                "<style id=\"xv7-typography-refinement\">"
+                '<style id="xv7-typography-refinement">'
                 ".blackletter-heading,"
                 "h1.blackletter-heading,"
                 "h2.blackletter-heading,"
                 ".section-title.blackletter-heading {"
-                "font-family: \"Old English Text MT\", \"UnifrakturCook\", \"UnifrakturMaguntia\", \"Cloister Black\", \"Lucida Blackletter\", fantasy, Georgia, serif;"
+                'font-family: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Cloister Black", "Lucida Blackletter", fantasy, Georgia, serif;'
                 "font-weight: 900;"
                 "letter-spacing: 0.045em;"
                 "text-shadow: 0 2px 0 rgba(0,0,0,0.45), 0 0 18px rgba(255,255,255,0.18);"
@@ -2836,9 +3382,9 @@ if __name__ == \"__main__\":
         else:
             class_name = "script-heading"
             style_block = (
-                "<style id=\"xv7-typography-refinement\">"
+                '<style id="xv7-typography-refinement">'
                 ".script-heading {"
-                "font-family: \"Brush Script MT\", \"Segoe Script\", \"Lucida Handwriting\", cursive;"
+                'font-family: "Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive;'
                 "font-weight: 700;"
                 "letter-spacing: 0.02em;"
                 "text-shadow: 0 1px 0 rgba(0,0,0,0.32), 0 0 10px rgba(255,255,255,0.14);"
@@ -2864,7 +3410,9 @@ if __name__ == \"__main__\":
             flags=re.IGNORECASE | re.DOTALL,
         )
         revised = cls._insert_before_tag(revised, "head", style_block)
-        revised = cls._add_class_to_tag_openings(revised, "h1", class_name, first_only=True)
+        revised = cls._add_class_to_tag_openings(
+            revised, "h1", class_name, first_only=True
+        )
         revised = cls._add_class_to_tag_openings(revised, "h2", class_name)
         revised = cls._add_class_to_tag_openings(revised, "h3", class_name)
         revised = cls._add_class_to_tag_openings(revised, "h4", class_name)
@@ -2897,7 +3445,9 @@ if __name__ == \"__main__\":
         if strict_retry:
             retry_line = "This is a retry because the first revision failed validation."
             if retry_requirements:
-                retry_line += " Missing requirements: " + "; ".join(retry_requirements) + "."
+                retry_line += (
+                    " Missing requirements: " + "; ".join(retry_requirements) + "."
+                )
 
         constraints = cls._build_refinement_constraints(revision_mode, edit_instruction)
         extra_constraints = "\n".join(f"- {item}" for item in constraints)
@@ -2923,21 +3473,46 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _html_text_diff_summary(previous_content: str, current_content: str) -> str:
-        previous_headline = AnswerContract._extract_business_name_from_html(previous_content) or "the previous artifact"
-        current_headline = AnswerContract._extract_business_name_from_html(current_content) or previous_headline
+        previous_headline = (
+            AnswerContract._extract_business_name_from_html(previous_content)
+            or "the previous artifact"
+        )
+        current_headline = (
+            AnswerContract._extract_business_name_from_html(current_content)
+            or previous_headline
+        )
         changes: list[str] = []
 
         if previous_headline != current_headline:
-            changes.append(f"The primary title changed from \"{previous_headline}\" to \"{current_headline}\".")
+            changes.append(
+                f'The primary title changed from "{previous_headline}" to "{current_headline}".'
+            )
         if previous_content != current_content:
-            if "Brush Script MT" in current_content and "Brush Script MT" not in previous_content:
-                changes.append("Typography was updated with a script-style font treatment.")
-            if any(token in current_content.lower() for token in ("#d4af37", "gold")) and not any(token in previous_content.lower() for token in ("#d4af37", "gold")):
-                changes.append("The palette was shifted toward black-and-gold premium styling.")
-            if any(token in current_content.lower() for token in ("premium", "luxury")) and not any(token in previous_content.lower() for token in ("premium", "luxury")):
+            if (
+                "Brush Script MT" in current_content
+                and "Brush Script MT" not in previous_content
+            ):
+                changes.append(
+                    "Typography was updated with a script-style font treatment."
+                )
+            if any(
+                token in current_content.lower() for token in ("#d4af37", "gold")
+            ) and not any(
+                token in previous_content.lower() for token in ("#d4af37", "gold")
+            ):
+                changes.append(
+                    "The palette was shifted toward black-and-gold premium styling."
+                )
+            if any(
+                token in current_content.lower() for token in ("premium", "luxury")
+            ) and not any(
+                token in previous_content.lower() for token in ("premium", "luxury")
+            ):
                 changes.append("The copy added a more premium tone.")
         if not changes:
-            changes.append("The current artifact matches the previous saved revision closely, with no major visible differences detected.")
+            changes.append(
+                "The current artifact matches the previous saved revision closely, with no major visible differences detected."
+            )
         return " ".join(changes)
 
     @staticmethod
@@ -2990,16 +3565,30 @@ if __name__ == \"__main__\":
             revised = cls._replace_first_button_text(revised, requested_button_text)
 
         if any(token in normalized for token in ("script", "cursive", "handwritten")):
-            style_lines.append("h1, .hero-title { font-family: 'Brush Script MT', cursive; }")
+            style_lines.append(
+                "h1, .hero-title { font-family: 'Brush Script MT', cursive; }"
+            )
         if requested_colors:
             palette = cls._color_hex_map()
             primary = requested_colors[0]
-            secondary = requested_colors[1] if len(requested_colors) > 1 else requested_colors[0]
-            tertiary = requested_colors[2] if len(requested_colors) > 2 else requested_colors[-1]
+            secondary = (
+                requested_colors[1]
+                if len(requested_colors) > 1
+                else requested_colors[0]
+            )
+            tertiary = (
+                requested_colors[2]
+                if len(requested_colors) > 2
+                else requested_colors[-1]
+            )
             primary_hex = palette.get(primary, ["#2563eb"])[0]
             secondary_hex = palette.get(secondary, ["#22c55e"])[0]
             tertiary_hex = palette.get(tertiary, ["#f3f4f6"])[0]
-            text_hex = "#f5f5f5" if primary in {"black", "purple", "blue", "red"} else "#111827"
+            text_hex = (
+                "#f5f5f5"
+                if primary in {"black", "purple", "blue", "red"}
+                else "#111827"
+            )
             style_lines.append(
                 ":root { "
                 f"--xv7-primary: {primary_hex}; "
@@ -3013,26 +3602,48 @@ if __name__ == \"__main__\":
                 "--accent-2: var(--xv7-tertiary); "
                 "}"
             )
-            style_lines.append("body { background: linear-gradient(135deg, var(--xv7-primary), var(--xv7-secondary)); color: var(--text); }")
-            style_lines.append(".button, .cta, .accent, .panel, .hero { border-color: var(--xv7-secondary); }")
-            style_lines.append(f".xv7-palette-note::before {{ content: 'Palette: {' '.join(requested_colors)}'; display: block; color: var(--text); }}")
+            style_lines.append(
+                "body { background: linear-gradient(135deg, var(--xv7-primary), var(--xv7-secondary)); color: var(--text); }"
+            )
+            style_lines.append(
+                ".button, .cta, .accent, .panel, .hero { border-color: var(--xv7-secondary); }"
+            )
+            style_lines.append(
+                f".xv7-palette-note::before {{ content: 'Palette: {' '.join(requested_colors)}'; display: block; color: var(--text); }}"
+            )
         elif "white" in normalized:
-            style_lines.append(":root { --bg: #ffffff; --panel: rgba(255, 255, 255, 0.98); --text: #111827; --muted: #4b5563; }")
+            style_lines.append(
+                ":root { --bg: #ffffff; --panel: rgba(255, 255, 255, 0.98); --text: #111827; --muted: #4b5563; }"
+            )
         if "easier to read" in normalized:
-            style_lines.append("body { line-height: 1.75; } .lead, .muted { font-size: 1.05rem; } h1 { letter-spacing: -0.02em; } .card { box-shadow: 0 20px 36px rgba(0, 0, 0, 0.16); }")
+            style_lines.append(
+                "body { line-height: 1.75; } .lead, .muted { font-size: 1.05rem; } h1 { letter-spacing: -0.02em; } .card { box-shadow: 0 20px 36px rgba(0, 0, 0, 0.16); }"
+            )
         if any(token in normalized for token in ("premium", "luxury")):
-            style_lines.append(".card { box-shadow: 0 36px 90px rgba(0, 0, 0, 0.42); } .eyebrow { letter-spacing: 0.12em; }")
+            style_lines.append(
+                ".card { box-shadow: 0 36px 90px rgba(0, 0, 0, 0.42); } .eyebrow { letter-spacing: 0.12em; }"
+            )
 
         if style_lines:
-            style_block = "<style id=\"xv7-fallback-revision\">" + " ".join(style_lines) + "</style>"
+            style_block = (
+                '<style id="xv7-fallback-revision">'
+                + " ".join(style_lines)
+                + "</style>"
+            )
             revised = cls._insert_before_tag(revised, "head", style_block)
 
         if "premium" in normalized and "premium" not in revised.lower():
-            business_name = cls._extract_business_name_from_html(revised) or "this business"
-            premium_note = f"<p class=\"xv7-premium\">Premium presentation for {html.escape(business_name, quote=False)} with elevated styling and clearer polish.</p>"
+            business_name = (
+                cls._extract_business_name_from_html(revised) or "this business"
+            )
+            premium_note = f'<p class="xv7-premium">Premium presentation for {html.escape(business_name, quote=False)} with elevated styling and clearer polish.</p>'
             revised = cls._insert_before_tag(revised, "body", premium_note)
 
-        if revision_mode == "content_only" and requested_headline and requested_headline not in revised:
+        if (
+            revision_mode == "content_only"
+            and requested_headline
+            and requested_headline not in revised
+        ):
             revised = cls._replace_first_tag_text(revised, "h1", requested_headline)
 
         return revised
@@ -3095,7 +3706,11 @@ if __name__ == \"__main__\":
             if "<style" not in lowered:
                 return False, "inline_css_missing"
 
-        if business_name and business_name.lower() != "local business website" and "local business website" in lowered:
+        if (
+            business_name
+            and business_name.lower() != "local business website"
+            and "local business website" in lowered
+        ):
             return False, "generic_business_name_fallback_detected"
 
         is_crimson_locksmith = (
@@ -3104,8 +3719,18 @@ if __name__ == \"__main__\":
             or "lockout" in requested_lower
         )
         if is_crimson_locksmith:
-            locksmith_keywords = ("locksmith", "security", "key", "lock", "emergency", "lockout")
-            if not any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in locksmith_keywords):
+            locksmith_keywords = (
+                "locksmith",
+                "security",
+                "key",
+                "lock",
+                "emergency",
+                "lockout",
+            )
+            if not any(
+                re.search(rf"\b{re.escape(token)}\b", lowered)
+                for token in locksmith_keywords
+            ):
                 return False, "crimson_locksmith_language_missing"
             if "urgent" not in lowered or "trust" not in lowered:
                 return False, "crimson_urgency_trust_copy_missing"
@@ -3113,7 +3738,10 @@ if __name__ == \"__main__\":
                 return False, "crimson_color_black_missing"
             if not any(token in lowered for token in ("red", "#dc", "#ef", "#b9")):
                 return False, "crimson_color_red_missing"
-            if not any(token in lowered for token in ("silver", "gray", "grey", "metal", "#9ca3af", "#c0c0c0")):
+            if not any(
+                token in lowered
+                for token in ("silver", "gray", "grey", "metal", "#9ca3af", "#c0c0c0")
+            ):
                 return False, "crimson_color_silver_missing"
             irrelevant = (
                 "hot dog",
@@ -3143,13 +3771,45 @@ if __name__ == \"__main__\":
             )
         )
         if is_grooming:
-            grooming_keywords = ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw")
-            if not any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in grooming_keywords):
+            grooming_keywords = (
+                "groom",
+                "pet",
+                "dog",
+                "bath",
+                "wash",
+                "trim",
+                "fur",
+                "paw",
+            )
+            if not any(
+                re.search(rf"\b{re.escape(token)}\b", lowered)
+                for token in grooming_keywords
+            ):
                 return False, "grooming_language_missing"
-            if any(token in lowered for token in ("harry", "flow flowers", "rico", "neon byte", "crimson turtle")) and (business_name.lower() not in lowered if business_name else True):
+            if any(
+                token in lowered
+                for token in (
+                    "harry",
+                    "flow flowers",
+                    "rico",
+                    "neon byte",
+                    "crimson turtle",
+                )
+            ) and (business_name.lower() not in lowered if business_name else True):
                 return False, "grooming_irrelevant_copy_detected"
 
-        if any(token in requested_lower for token in ("locksmith", "florist", "detailing", "arcade", "grooming", "pet grooming", "dog grooming")):
+        if any(
+            token in requested_lower
+            for token in (
+                "locksmith",
+                "florist",
+                "detailing",
+                "arcade",
+                "grooming",
+                "pet grooming",
+                "dog grooming",
+            )
+        ):
             if "a clean one-page website with a clear offer" in lowered:
                 return False, "generic_hero_reuse_detected"
 
@@ -3170,10 +3830,14 @@ if __name__ == \"__main__\":
         model_resolution = resolve_model_for_runtime_role("code")
         model_tag = model_resolution.model_tag
         if not model_tag:
-            raise RuntimeError("No configured code model available for artifact generation")
+            raise RuntimeError(
+                "No configured code model available for artifact generation"
+            )
 
         timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "8"))
-        timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=10.0)
+        timeout = httpx.Timeout(
+            connect=10.0, read=timeout_seconds, write=30.0, pool=10.0
+        )
         endpoint_candidates = configured_ollama_base_url_candidates()
         payload_base = {
             "model": model_tag,
@@ -3216,7 +3880,9 @@ if __name__ == \"__main__\":
 
             for endpoint in endpoint_candidates:
                 try:
-                    async with httpx.AsyncClient(base_url=endpoint, timeout=timeout) as client:
+                    async with httpx.AsyncClient(
+                        base_url=endpoint, timeout=timeout
+                    ) as client:
                         response = await client.post("/api/chat", json=payload)
                         response.raise_for_status()
                     data: dict[str, Any] = response.json()
@@ -3256,10 +3922,14 @@ if __name__ == \"__main__\":
         model_resolution = resolve_model_for_runtime_role("code")
         model_tag = model_resolution.model_tag
         if not model_tag:
-            raise RuntimeError("No configured code model available for artifact revision")
+            raise RuntimeError(
+                "No configured code model available for artifact revision"
+            )
 
         timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "8"))
-        timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=10.0)
+        timeout = httpx.Timeout(
+            connect=10.0, read=timeout_seconds, write=30.0, pool=10.0
+        )
         endpoint_candidates = configured_ollama_base_url_candidates()
         payload_base = {
             "model": model_tag,
@@ -3272,9 +3942,7 @@ if __name__ == \"__main__\":
             },
         }
 
-        system_prompt = (
-            "You are a strict code revision model. Return only complete revised source code with no markdown fences and no prose."
-        )
+        system_prompt = "You are a strict code revision model. Return only complete revised source code with no markdown fences and no prose."
 
         source_content = str(source_artifact.get("content") or "")
         revision_mode = str(source_artifact.get("_revision_mode") or "full_revision")
@@ -3299,7 +3967,9 @@ if __name__ == \"__main__\":
 
             for endpoint in endpoint_candidates:
                 try:
-                    async with httpx.AsyncClient(base_url=endpoint, timeout=timeout) as client:
+                    async with httpx.AsyncClient(
+                        base_url=endpoint, timeout=timeout
+                    ) as client:
                         response = await client.post("/api/chat", json=payload)
                         response.raise_for_status()
                     data: dict[str, Any] = response.json()
@@ -3314,7 +3984,9 @@ if __name__ == \"__main__\":
                     candidate = self._strip_markdown_fences(raw_content)
                     if candidate.strip() == source_content.strip():
                         last_error = "revision_content_unchanged"
-                        remediation = self._remediation_for_validation_reason(last_error)
+                        remediation = self._remediation_for_validation_reason(
+                            last_error
+                        )
                         if remediation not in retry_requirements:
                             retry_requirements.append(remediation)
                         continue
@@ -3339,13 +4011,17 @@ if __name__ == \"__main__\":
         model_tag = model_resolution.model_tag
         endpoint_candidates = configured_ollama_base_url_candidates()
         timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "8"))
-        timeout = httpx.Timeout(connect=5.0, read=min(timeout_seconds, 10.0), write=10.0, pool=5.0)
+        timeout = httpx.Timeout(
+            connect=5.0, read=min(timeout_seconds, 10.0), write=10.0, pool=5.0
+        )
 
         checks: list[dict[str, Any]] = []
         first_reachable: str | None = None
         for endpoint in endpoint_candidates:
             try:
-                async with httpx.AsyncClient(base_url=endpoint, timeout=timeout) as client:
+                async with httpx.AsyncClient(
+                    base_url=endpoint, timeout=timeout
+                ) as client:
                     response = await client.get("/api/tags")
                     response.raise_for_status()
                 payload = response.json()
@@ -3376,7 +4052,9 @@ if __name__ == \"__main__\":
                 first_reachable = endpoint
 
         return {
-            "configured_endpoint": endpoint_candidates[0] if endpoint_candidates else None,
+            "configured_endpoint": endpoint_candidates[0]
+            if endpoint_candidates
+            else None,
             "endpoint_candidates": endpoint_candidates,
             "resolved_model_tag": model_tag,
             "reachable_endpoint": first_reachable,
@@ -3397,10 +4075,14 @@ if __name__ == \"__main__\":
             session_metadata,
         )
         latest_artifact = artifact_history[-1]["artifact"] if artifact_history else None
-        source_artifact_label = "latest session artifact" if latest_artifact is not None else None
+        source_artifact_label = (
+            "latest session artifact" if latest_artifact is not None else None
+        )
         is_generation = self.is_code_artifact_request(normalized)
         has_artifact_edit_intent = self._looks_like_artifact_edit(normalized)
-        has_explicit_artifact_generation_language = bool(self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized))
+        has_explicit_artifact_generation_language = bool(
+            self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized)
+        )
         if (
             latest_artifact is not None
             and has_artifact_edit_intent
@@ -3412,14 +4094,31 @@ if __name__ == \"__main__\":
         is_patch_apply_request = self._is_patch_apply_request(normalized)
         is_post_apply_verify_request = self._is_post_apply_verify_request(normalized)
         is_post_apply_preview_request = self._is_post_apply_preview_request(normalized)
-        is_post_apply_targeted_validation_request = self._is_post_apply_targeted_validation_request(normalized)
-        is_post_apply_full_test_guard_request = self._is_post_apply_full_test_guard_request(normalized)
-        refinement_mode = self._artifact_refinement_mode(normalized) if (not is_patch_proposal_request and has_artifact_edit_intent) else None
-        is_refinement_request = latest_artifact is not None and refinement_mode is not None and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized) and not is_generation
+        is_post_apply_targeted_validation_request = (
+            self._is_post_apply_targeted_validation_request(normalized)
+        )
+        is_post_apply_full_test_guard_request = (
+            self._is_post_apply_full_test_guard_request(normalized)
+        )
+        refinement_mode = (
+            self._artifact_refinement_mode(normalized)
+            if (not is_patch_proposal_request and has_artifact_edit_intent)
+            else None
+        )
+        is_refinement_request = (
+            latest_artifact is not None
+            and refinement_mode is not None
+            and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized)
+            and not is_generation
+        )
         is_commit_proposal_request = self._is_commit_proposal_request(normalized)
         is_commit_approval_request = self._is_commit_approval_request(normalized)
-        allow_commit_lane = (is_commit_proposal_request or is_commit_approval_request) and not (
-            is_generation or is_refinement_request or self._looks_like_artifact_edit(normalized)
+        allow_commit_lane = (
+            is_commit_proposal_request or is_commit_approval_request
+        ) and not (
+            is_generation
+            or is_refinement_request
+            or self._looks_like_artifact_edit(normalized)
         )
 
         if is_patch_proposal_request:
@@ -3441,8 +4140,12 @@ if __name__ == \"__main__\":
                     },
                 }
 
-            proposal = self._build_patch_proposal_from_artifact(artifact=latest_artifact)
-            validation_status = str(proposal.get("validation", {}).get("status") or "failed")
+            proposal = self._build_patch_proposal_from_artifact(
+                artifact=latest_artifact
+            )
+            validation_status = str(
+                proposal.get("validation", {}).get("status") or "failed"
+            )
             return {
                 "visible_text": "I prepared a patch proposal from the active artifact. No files were changed.",
                 "code_artifact": {},
@@ -3458,13 +4161,16 @@ if __name__ == \"__main__\":
                     "requires_confirmation": True,
                     "target_path": proposal.get("target_path"),
                     "validation": validation_status,
-                    "source_artifact": source_artifact_label or "latest session artifact",
+                    "source_artifact": source_artifact_label
+                    or "latest session artifact",
                     "source_artifact_id": proposal.get("source_artifact_id"),
                 },
             }
 
         if is_patch_apply_request:
-            pending = self._latest_pending_patch_proposal(session_messages, session_metadata)
+            pending = self._latest_pending_patch_proposal(
+                session_messages, session_metadata
+            )
             if pending is None:
                 return {
                     "visible_text": "I do not have a pending patch proposal to apply.",
@@ -3483,11 +4189,22 @@ if __name__ == \"__main__\":
                     },
                 }
 
-            validation = pending.get("validation") if isinstance(pending.get("validation"), dict) else {}
+            validation = (
+                pending.get("validation")
+                if isinstance(pending.get("validation"), dict)
+                else {}
+            )
             validation_status = str(validation.get("status") or "failed").lower()
-            failures = validation.get("failures") if isinstance(validation.get("failures"), list) else []
+            failures = (
+                validation.get("failures")
+                if isinstance(validation.get("failures"), list)
+                else []
+            )
             if validation_status != "passed":
-                reason = "; ".join(str(item) for item in failures if str(item).strip()) or "validation did not pass"
+                reason = (
+                    "; ".join(str(item) for item in failures if str(item).strip())
+                    or "validation did not pass"
+                )
                 return {
                     "visible_text": f"I cannot apply this patch because validation failed: {reason}.",
                     "code_artifact": {},
@@ -3531,7 +4248,9 @@ if __name__ == \"__main__\":
                 }
 
             root = self._workspace_root()
-            target, resolve_error = self._resolve_safe_patch_target(root=root, target_path=target_path)
+            target, resolve_error = self._resolve_safe_patch_target(
+                root=root, target_path=target_path
+            )
             if target is None:
                 return {
                     "visible_text": "I cannot apply this patch because validation failed: target path failed safety checks.",
@@ -3586,7 +4305,11 @@ if __name__ == \"__main__\":
                 "status": "passed",
                 "verified": True,
                 "checks": [
-                    {"name": "post_write_content_match", "status": "passed", "detail": "written content matches applied proposal"},
+                    {
+                        "name": "post_write_content_match",
+                        "status": "passed",
+                        "detail": "written content matches applied proposal",
+                    },
                 ],
                 "failures": [],
                 "verified_at": self._utc_now_iso(),
@@ -3624,7 +4347,9 @@ if __name__ == \"__main__\":
             }
 
         if is_post_apply_full_test_guard_request:
-            latest_applied = self._latest_applied_patch_proposal(session_messages, session_metadata)
+            latest_applied = self._latest_applied_patch_proposal(
+                session_messages, session_metadata
+            )
             if latest_applied is None:
                 return None
             target_path = str((latest_applied or {}).get("target_path") or "")
@@ -3656,7 +4381,9 @@ if __name__ == \"__main__\":
             or is_post_apply_preview_request
             or is_post_apply_targeted_validation_request
         ):
-            applied = self._latest_applied_patch_proposal(session_messages, session_metadata)
+            applied = self._latest_applied_patch_proposal(
+                session_messages, session_metadata
+            )
             if applied is None:
                 return {
                     "visible_text": "I do not have an applied patch to verify in this session.",
@@ -3750,13 +4477,15 @@ if __name__ == \"__main__\":
                     include_business_name=False,
                 )
                 actual_content = str((verify_data or {}).get("actual_content") or "")
-                targeted_status, targeted_checks, targeted_failures = self._validate_patch_proposal(
-                    root=self._workspace_root(),
-                    target_path=target_path,
-                    content=actual_content,
-                    language=str(applied.get("language") or "html"),
-                    business_name="",
-                    operation=str(applied.get("operation") or "update"),
+                targeted_status, targeted_checks, targeted_failures = (
+                    self._validate_patch_proposal(
+                        root=self._workspace_root(),
+                        target_path=target_path,
+                        content=actual_content,
+                        language=str(applied.get("language") or "html"),
+                        business_name="",
+                        operation=str(applied.get("operation") or "update"),
+                    )
                 )
                 targeted_validation = {
                     "status": targeted_status,
@@ -3803,7 +4532,10 @@ if __name__ == \"__main__\":
                 session_metadata=session_metadata,
             )
             return {
-                "visible_text": str(proposal.get("visible_text") or "I prepared a commit proposal. No files were changed, no commit was created, and no push was performed."),
+                "visible_text": str(
+                    proposal.get("visible_text")
+                    or "I prepared a commit proposal. No files were changed, no commit was created, and no push was performed."
+                ),
                 "code_artifact": {},
                 "artifact_patch_proposal": {},
                 "commit_proposal": proposal,
@@ -3823,7 +4555,9 @@ if __name__ == \"__main__\":
             }
 
         if allow_commit_lane and is_commit_approval_request:
-            pending_commit = self._latest_pending_commit_proposal(session_messages, session_metadata)
+            pending_commit = self._latest_pending_commit_proposal(
+                session_messages, session_metadata
+            )
             if pending_commit is None:
                 return {
                     "visible_text": "I do not have a pending commit proposal to approve in this session.",
@@ -3845,7 +4579,10 @@ if __name__ == \"__main__\":
                 }
             applied_commit = self._apply_commit_proposal(proposal=pending_commit)
             return {
-                "visible_text": str(applied_commit.get("visible_text") or "Committed the approved local changes. No push was performed."),
+                "visible_text": str(
+                    applied_commit.get("visible_text")
+                    or "Committed the approved local changes. No push was performed."
+                ),
                 "code_artifact": {},
                 "artifact_patch_proposal": {},
                 "commit_proposal": applied_commit.get("commit_proposal", {}),
@@ -3853,7 +4590,11 @@ if __name__ == \"__main__\":
                 "provenance": applied_commit.get("provenance", {}),
             }
 
-        if not is_generation and refinement_mode is not None and latest_artifact is None:
+        if (
+            not is_generation
+            and refinement_mode is not None
+            and latest_artifact is None
+        ):
             return {
                 "visible_text": self._artifact_needs_context_message(),
                 "code_artifact": {},
@@ -3918,9 +4659,13 @@ if __name__ == \"__main__\":
             }
 
         if refinement_mode == "explain" and latest_artifact is not None:
-            previous_artifact = artifact_history[-2]["artifact"] if len(artifact_history) >= 2 else None
+            previous_artifact = (
+                artifact_history[-2]["artifact"] if len(artifact_history) >= 2 else None
+            )
             return {
-                "visible_text": self._artifact_change_summary(latest_artifact, previous_artifact),
+                "visible_text": self._artifact_change_summary(
+                    latest_artifact, previous_artifact
+                ),
                 "code_artifact": {},
                 "artifact_patch_proposal": {},
                 "context_receipt": {
@@ -3937,10 +4682,15 @@ if __name__ == \"__main__\":
 
         if is_refinement_request and latest_artifact is not None:
             filename = str(latest_artifact.get("filename") or "index.html")
-            language = str(latest_artifact.get("language") or self._code_artifact_language(normalized))
+            language = str(
+                latest_artifact.get("language")
+                or self._code_artifact_language(normalized)
+            )
             previewable = bool(latest_artifact.get("previewable", language == "html"))
             apply_requested = False
-            business_name = self._extract_business_name_from_html(str(latest_artifact.get("content") or ""))
+            business_name = self._extract_business_name_from_html(
+                str(latest_artifact.get("content") or "")
+            )
             business_name = self._format_business_name(
                 business_name,
                 "Local Business Website" if language == "html" else "Draft Artifact",
@@ -3963,13 +4713,24 @@ if __name__ == \"__main__\":
         provenance: dict[str, Any]
         typography_refinement_payload: dict[str, Any] | None = None
         if is_refinement_request and latest_artifact is not None:
-            typography_style = self._typography_style_request(normalized) if refinement_mode == "typography_only" else None
+            typography_style = (
+                self._typography_style_request(normalized)
+                if refinement_mode == "typography_only"
+                else None
+            )
             if typography_style:
-                content, typography_refinement_payload, typ_ok, typ_reason = self._deterministic_typography_refinement_content(
-                    source_artifact=latest_artifact,
-                    requested_style=typography_style,
+                content, typography_refinement_payload, typ_ok, typ_reason = (
+                    self._deterministic_typography_refinement_content(
+                        source_artifact=latest_artifact,
+                        requested_style=typography_style,
+                    )
                 )
-                typography_business_name = self._extract_business_name_from_html(str(latest_artifact.get("content") or "")) or ""
+                typography_business_name = (
+                    self._extract_business_name_from_html(
+                        str(latest_artifact.get("content") or "")
+                    )
+                    or ""
+                )
                 valid, reason = self._validate_artifact_content(
                     content=content,
                     language=str(latest_artifact.get("language") or "html"),
@@ -3992,7 +4753,8 @@ if __name__ == \"__main__\":
                         "provenance": {
                             "artifact_generation": "typography_refinement_failed",
                             "artifact_validation": "failed",
-                            "source_artifact": source_artifact_label or "latest session artifact",
+                            "source_artifact": source_artifact_label
+                            or "latest session artifact",
                             "source_artifact_key": "latest_session_artifact",
                             "revision_mode": "typography_only",
                             "failure_reason": typ_reason if not typ_ok else reason,
@@ -4005,7 +4767,8 @@ if __name__ == \"__main__\":
                 provenance = {
                     "artifact_generation": "deterministic_typography_refinement",
                     "artifact_validation": "passed",
-                    "source_artifact": source_artifact_label or "latest session artifact",
+                    "source_artifact": source_artifact_label
+                    or "latest session artifact",
                     "source_artifact_key": "latest_session_artifact",
                     "revision_mode": "typography_only",
                     "revision_number": next_revision_number,
@@ -4014,8 +4777,14 @@ if __name__ == \"__main__\":
             else:
                 try:
                     revision_source_artifact = dict(latest_artifact)
-                    revision_source_artifact["_revision_mode"] = refinement_mode or "full_revision"
-                    content, model_used, model_endpoint = await self._revise_artifact_with_local_model(
+                    revision_source_artifact["_revision_mode"] = (
+                        refinement_mode or "full_revision"
+                    )
+                    (
+                        content,
+                        model_used,
+                        model_endpoint,
+                    ) = await self._revise_artifact_with_local_model(
                         question=question,
                         source_artifact=revision_source_artifact,
                     )
@@ -4024,7 +4793,8 @@ if __name__ == \"__main__\":
                         "model_used": model_used,
                         "model_endpoint": model_endpoint,
                         "artifact_validation": "passed",
-                        "source_artifact": source_artifact_label or "latest session artifact",
+                        "source_artifact": source_artifact_label
+                        or "latest session artifact",
                         "source_artifact_key": "latest_session_artifact",
                         "revision_mode": refinement_mode or "full_revision",
                         "revision_number": next_revision_number,
@@ -4058,7 +4828,8 @@ if __name__ == \"__main__\":
                             "provenance": {
                                 "artifact_generation": "artifact_refinement_failed",
                                 "artifact_validation": "failed",
-                                "source_artifact": source_artifact_label or "latest session artifact",
+                                "source_artifact": source_artifact_label
+                                or "latest session artifact",
                                 "source_artifact_key": "latest_session_artifact",
                                 "revision_mode": refinement_mode or "full_revision",
                                 "failure_reason": reason,
@@ -4068,8 +4839,11 @@ if __name__ == \"__main__\":
                         "artifact_generation": "deterministic_prompt_template_fallback",
                         "model_used": model_resolution.model_tag or "unknown",
                         "fallback_reason": f"artifact revision fallback: {fallback_reason}",
-                        "fallback_prevalidation": "passed" if valid else f"failed:{reason}",
-                        "source_artifact": source_artifact_label or "latest session artifact",
+                        "fallback_prevalidation": "passed"
+                        if valid
+                        else f"failed:{reason}",
+                        "source_artifact": source_artifact_label
+                        or "latest session artifact",
                         "source_artifact_key": "latest_session_artifact",
                         "revision_mode": refinement_mode or "full_revision",
                         "revision_number": next_revision_number,
@@ -4100,7 +4874,9 @@ if __name__ == \"__main__\":
                 }
             except Exception as exc:
                 fallback_reason = str(exc).strip() or "local_model_error"
-                content = self._default_code_artifact_content(filename, language, question)
+                content = self._default_code_artifact_content(
+                    filename, language, question
+                )
                 valid, reason = self._validate_artifact_content(
                     content=content,
                     language=language,
@@ -4143,10 +4919,14 @@ if __name__ == \"__main__\":
         if business_name:
             fidelity_context["requested_business_name_override"] = business_name
         if is_refinement_request and latest_artifact is not None:
-            fidelity_source_prompt = str(latest_artifact.get("source_prompt") or question)
-            fidelity_context["requested_business_type_override"] = self._artifact_business_category(
-                fidelity_source_prompt,
-                business_name,
+            fidelity_source_prompt = str(
+                latest_artifact.get("source_prompt") or question
+            )
+            fidelity_context["requested_business_type_override"] = (
+                self._artifact_business_category(
+                    fidelity_source_prompt,
+                    business_name,
+                )
             )
         fidelity_prompt = question
         if refinement_mode == "typography_only" and latest_artifact is not None:
@@ -4159,13 +4939,21 @@ if __name__ == \"__main__\":
         )
         prompt_fidelity_payload = {
             "status": str(prompt_fidelity.get("status") or "failed"),
-            "requested_business_name": str(prompt_fidelity.get("requested_business_name") or "").strip(),
-            "requested_business_type": str(prompt_fidelity.get("requested_business_type") or "").strip(),
+            "requested_business_name": str(
+                prompt_fidelity.get("requested_business_name") or ""
+            ).strip(),
+            "requested_business_type": str(
+                prompt_fidelity.get("requested_business_type") or ""
+            ).strip(),
             "requested_colors": [
-                str(item).strip() for item in (prompt_fidelity.get("requested_colors") or []) if str(item).strip()
+                str(item).strip()
+                for item in (prompt_fidelity.get("requested_colors") or [])
+                if str(item).strip()
             ],
             "forbidden_terms_checked": [
-                str(item).strip() for item in (prompt_fidelity.get("forbidden_terms_checked") or []) if str(item).strip()
+                str(item).strip()
+                for item in (prompt_fidelity.get("forbidden_terms_checked") or [])
+                if str(item).strip()
             ],
             "repair_attempted": False,
         }
@@ -4185,18 +4973,32 @@ if __name__ == \"__main__\":
                 content = repaired_content
                 prompt_fidelity_payload = {
                     "status": "repaired",
-                    "requested_business_name": str(repaired_fidelity.get("requested_business_name") or "").strip(),
-                    "requested_business_type": str(repaired_fidelity.get("requested_business_type") or "").strip(),
+                    "requested_business_name": str(
+                        repaired_fidelity.get("requested_business_name") or ""
+                    ).strip(),
+                    "requested_business_type": str(
+                        repaired_fidelity.get("requested_business_type") or ""
+                    ).strip(),
                     "requested_colors": [
-                        str(item).strip() for item in (repaired_fidelity.get("requested_colors") or []) if str(item).strip()
+                        str(item).strip()
+                        for item in (repaired_fidelity.get("requested_colors") or [])
+                        if str(item).strip()
                     ],
                     "forbidden_terms_checked": [
-                        str(item).strip() for item in (repaired_fidelity.get("forbidden_terms_checked") or []) if str(item).strip()
+                        str(item).strip()
+                        for item in (
+                            repaired_fidelity.get("forbidden_terms_checked") or []
+                        )
+                        if str(item).strip()
                     ],
                     "repair_attempted": True,
                 }
             else:
-                failure_reason = ", ".join(repaired_fidelity.get("failures") or prompt_fidelity.get("failures") or ["prompt_fidelity_failed"])
+                failure_reason = ", ".join(
+                    repaired_fidelity.get("failures")
+                    or prompt_fidelity.get("failures")
+                    or ["prompt_fidelity_failed"]
+                )
                 return {
                     "visible_text": (
                         "I generated an artifact, but it failed prompt-fidelity validation because it still contained stale template or palette content. "
@@ -4223,7 +5025,9 @@ if __name__ == \"__main__\":
                 }
 
         provenance["prompt_fidelity"] = prompt_fidelity_payload
-        provenance["artifact_validation"] = prompt_fidelity_payload.get("status", "passed")
+        provenance["artifact_validation"] = prompt_fidelity_payload.get(
+            "status", "passed"
+        )
         if typography_refinement_payload is not None:
             provenance["typography_refinement"] = typography_refinement_payload
 
@@ -4240,7 +5044,9 @@ if __name__ == \"__main__\":
                 "previewable": previewable,
                 "applied": False,
                 "content": content,
-                "artifact_id": latest_artifact.get("artifact_id") if latest_artifact is not None else f"{self._slugify_artifact_name(filename)}-artifact",
+                "artifact_id": latest_artifact.get("artifact_id")
+                if latest_artifact is not None
+                else f"{self._slugify_artifact_name(filename)}-artifact",
                 "revision_id": f"{(latest_artifact.get('artifact_id') if latest_artifact is not None else self._slugify_artifact_name(filename) + '-artifact')}:r{next_revision_number}",
                 "revision_number": next_revision_number,
                 "source_prompt": question.strip(),
@@ -4887,4 +5693,3 @@ if __name__ == \"__main__\":
             return "Missing required record: knowledge."
 
         return None
-

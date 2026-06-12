@@ -278,7 +278,10 @@ def _planning_scope(goal: str) -> dict[str, object]:
             "reason": (
                 "request is documentation-focused, so the planning scope should stay in docs and related runbook files."
             ),
-            "files": ["docs/CODE_09F_SCOPE_AWARE_BUILD_TASK.md", "docs/CODE_LANE_INDEX.md"],
+            "files": [
+                "docs/CODE_09F_SCOPE_AWARE_BUILD_TASK.md",
+                "docs/CODE_LANE_INDEX.md",
+            ],
             "tests": [],
             "changes": [
                 "Inspect the relevant docs file before editing runbook or guidance text.",

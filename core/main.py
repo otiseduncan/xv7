@@ -793,26 +793,23 @@ def _classify_speech_act(question: str) -> str:
     normalized = _normalize_intent_text(question)
     is_question = STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?")
     is_repo_build_task = (
-        (
-            "build this feature" in normalized
-            or "code 9" in normalized
-            or "code builder" in normalized
-            or "code builder smoke test" in normalized
-            or "add tests" in normalized
-            or "add or update tests" in normalized
-            or "run pytest" in normalized
-            or "pytest" in normalized
-            or "code builder smoke test" in normalized
-            or "git commit" in normalized
-            or "git push" in normalized
-            or "implement patch" in normalized
-        )
-        and (
-            "we are in" in normalized
-            or "x:\\" in normalized
-            or "pytest" in normalized
-            or "git" in normalized
-        )
+        "build this feature" in normalized
+        or "code 9" in normalized
+        or "code builder" in normalized
+        or "code builder smoke test" in normalized
+        or "add tests" in normalized
+        or "add or update tests" in normalized
+        or "run pytest" in normalized
+        or "pytest" in normalized
+        or "code builder smoke test" in normalized
+        or "git commit" in normalized
+        or "git push" in normalized
+        or "implement patch" in normalized
+    ) and (
+        "we are in" in normalized
+        or "x:\\" in normalized
+        or "pytest" in normalized
+        or "git" in normalized
     )
 
     if _extract_active_focus_instruction(question) is not None:
@@ -2499,31 +2496,49 @@ async def add_session_message(
         return updated_state
 
     normalized_question = _normalize_intent_text(payload.raw_text)
-    latest_applied_patch = brain_context_manager.answer_contract._latest_applied_patch_proposal(
-        session_state.messages,
-        session_state.metadata,
+    latest_applied_patch = (
+        brain_context_manager.answer_contract._latest_applied_patch_proposal(
+            session_state.messages,
+            session_state.metadata,
+        )
     )
     is_post_apply_file_check_prompt = (
-        brain_context_manager.answer_contract._is_post_apply_verify_request(normalized_question)
-        or brain_context_manager.answer_contract._is_post_apply_preview_request(normalized_question)
-        or brain_context_manager.answer_contract._is_post_apply_targeted_validation_request(normalized_question)
+        brain_context_manager.answer_contract._is_post_apply_verify_request(
+            normalized_question
+        )
+        or brain_context_manager.answer_contract._is_post_apply_preview_request(
+            normalized_question
+        )
+        or brain_context_manager.answer_contract._is_post_apply_targeted_validation_request(
+            normalized_question
+        )
     )
     is_post_apply_full_test_prompt = (
-        brain_context_manager.answer_contract._is_post_apply_full_test_guard_request(normalized_question)
+        brain_context_manager.answer_contract._is_post_apply_full_test_guard_request(
+            normalized_question
+        )
         and latest_applied_patch is not None
     )
     is_artifact_patch_lane_prompt = (
-        brain_context_manager.answer_contract._is_patch_proposal_request(normalized_question)
-        or brain_context_manager.answer_contract._is_patch_apply_request(normalized_question)
+        brain_context_manager.answer_contract._is_patch_proposal_request(
+            normalized_question
+        )
+        or brain_context_manager.answer_contract._is_patch_apply_request(
+            normalized_question
+        )
         or is_post_apply_file_check_prompt
         or is_post_apply_full_test_prompt
     )
     prioritize_artifact_over_build_guard = (
-        brain_context_manager.answer_contract._prioritize_artifact_over_build_guard(normalized_question)
+        brain_context_manager.answer_contract._prioritize_artifact_over_build_guard(
+            normalized_question
+        )
     )
 
     if is_artifact_patch_lane_prompt:
-        brain_context = brain_context_manager.build_context_for_question(payload.raw_text)
+        brain_context = brain_context_manager.build_context_for_question(
+            payload.raw_text
+        )
         inference_state.messages.insert(
             0,
             ConversationMessage(role="system", content=brain_context.prompt),
@@ -2531,7 +2546,9 @@ async def add_session_message(
         try:
             artifact_response = await brain_context_manager.code_artifact_response(
                 payload.raw_text,
-                session_messages=[msg.model_dump(mode="json") for msg in session_state.messages],
+                session_messages=[
+                    msg.model_dump(mode="json") for msg in session_state.messages
+                ],
                 session_metadata=session_state.metadata,
             )
         except RuntimeError as artifact_error:
@@ -2548,7 +2565,9 @@ async def add_session_message(
                 visible_text = sanitize_visible_answer_text(str(artifact_error).strip())
                 assistant_payload = build_assistant_payload(
                     visible_text=visible_text,
-                    context_receipt=_merge_focus_context_receipt(brain_context.receipt, session_state.metadata),
+                    context_receipt=_merge_focus_context_receipt(
+                        brain_context.receipt, session_state.metadata
+                    ),
                     operator_receipts=[],
                     memory_receipts=[],
                     model_use_receipt={},
@@ -2579,9 +2598,13 @@ async def add_session_message(
                     assistant_role=assistant_message.role,
                     assistant_content=assistant_message.content,
                 )
-                updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+                updated_state.metadata["answer_provenance"] = assistant_payload[
+                    "policy_provenance"
+                ]
                 updated_state.metadata["vector_memory"] = vector_memory_receipt
-                updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+                updated_state.metadata["context_receipt"] = assistant_payload[
+                    "context_receipt"
+                ]
                 updated_state.metadata["last_assistant_payload"] = assistant_payload
                 await memory_manager.update_session(updated_state)
                 return updated_state
@@ -2615,7 +2638,9 @@ async def add_session_message(
                 warnings=[],
                 action_history_refs=action_history_refs,
                 code_artifact=artifact_response.get("code_artifact"),
-                artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
+                artifact_patch_proposal=artifact_response.get(
+                    "artifact_patch_proposal"
+                ),
                 commit_proposal=artifact_response.get("commit_proposal"),
             )
 
@@ -2635,9 +2660,13 @@ async def add_session_message(
                 assistant_role=assistant_message.role,
                 assistant_content=assistant_message.content,
             )
-            updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
             updated_state.metadata["vector_memory"] = vector_memory_receipt
-            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
             updated_state.metadata["last_assistant_payload"] = assistant_payload
             await memory_manager.update_session(updated_state)
             return updated_state
@@ -3244,12 +3273,16 @@ async def add_session_message(
         return updated_state
 
     normalized_for_commit_check = _normalize_intent_text(payload.raw_text)
-    is_explicit_commit_approval = brain_context_manager.answer_contract._is_commit_approval_request(
-        normalized_for_commit_check
+    is_explicit_commit_approval = (
+        brain_context_manager.answer_contract._is_commit_approval_request(
+            normalized_for_commit_check
+        )
     )
-    if _is_build_follow_up_prompt(payload.raw_text) and _lacks_verified_operator_success(
-        session_state.metadata
-    ) and not is_explicit_commit_approval:
+    if (
+        _is_build_follow_up_prompt(payload.raw_text)
+        and _lacks_verified_operator_success(session_state.metadata)
+        and not is_explicit_commit_approval
+    ):
         visible_text = (
             "I cannot report implementation completion from this turn because the last relevant operator action is not verified as successful. "
             "No files were changed. No tests were run. No commit or push occurred."
@@ -3359,7 +3392,9 @@ async def add_session_message(
     try:
         artifact_response = await brain_context_manager.code_artifact_response(
             payload.raw_text,
-            session_messages=[msg.model_dump(mode="json") for msg in session_state.messages],
+            session_messages=[
+                msg.model_dump(mode="json") for msg in session_state.messages
+            ],
             session_metadata=session_state.metadata,
         )
     except RuntimeError as artifact_error:
@@ -3376,7 +3411,9 @@ async def add_session_message(
             visible_text = sanitize_visible_answer_text(str(artifact_error).strip())
             assistant_payload = build_assistant_payload(
                 visible_text=visible_text,
-                context_receipt=_merge_focus_context_receipt(brain_context.receipt, session_state.metadata),
+                context_receipt=_merge_focus_context_receipt(
+                    brain_context.receipt, session_state.metadata
+                ),
                 operator_receipts=[],
                 memory_receipts=[],
                 model_use_receipt={},
@@ -3411,9 +3448,13 @@ async def add_session_message(
                 assistant_role=assistant_message.role,
                 assistant_content=assistant_message.content,
             )
-            updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
             updated_state.metadata["vector_memory"] = vector_memory_receipt
-            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
             updated_state.metadata["last_assistant_payload"] = assistant_payload
             await memory_manager.update_session(updated_state)
             return updated_state
@@ -3471,7 +3512,9 @@ async def add_session_message(
             assistant_role=assistant_message.role,
             assistant_content=assistant_message.content,
         )
-        updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
         updated_state.metadata["vector_memory"] = vector_memory_receipt
         updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
         updated_state.metadata["last_assistant_payload"] = assistant_payload

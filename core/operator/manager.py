@@ -496,9 +496,8 @@ class OperatorManager:
                 requires_approval=True,
             )
 
-        has_change_shape = (
-            isinstance(payload.get("changes"), list)
-            or isinstance(payload.get("path"), str)
+        has_change_shape = isinstance(payload.get("changes"), list) or isinstance(
+            payload.get("path"), str
         )
         if not has_change_shape:
             return self._build_result(
@@ -1690,7 +1689,9 @@ class OperatorManager:
                 if isinstance(data.get("workspace_summary", {}), dict)
                 else {}
             )
-            branch = str(workspace_summary.get("branch", "unknown")).strip() or "unknown"
+            branch = (
+                str(workspace_summary.get("branch", "unknown")).strip() or "unknown"
+            )
             dirty_count = int(workspace_summary.get("dirty_file_count", 0) or 0)
 
             inspect_text = ", ".join(likely_files[:10]) if likely_files else "(none)"

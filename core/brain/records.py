@@ -32,7 +32,10 @@ class BrainRecordLoader:
             self.runtime_records_dir = runtime_records_dir
         elif runtime_env_path:
             runtime_path = Path(runtime_env_path)
-            if self._same_path(runtime_path, self.records_dir) and not allow_seed_writes:
+            if (
+                self._same_path(runtime_path, self.records_dir)
+                and not allow_seed_writes
+            ):
                 if runtime_fallback_env_path:
                     self.runtime_records_dir = Path(runtime_fallback_env_path)
                 else:
