@@ -19,6 +19,7 @@ from core.operator.actions.runtime import (
     logs_summary,
     runtime_health,
 )
+from core.operator.actions.workspace import workspace_map
 
 __all__ = [
     "docker_compose_ps",
@@ -40,5 +41,6 @@ __all__ = [
     "repo_recent_commits",
     "repo_status",
     "runtime_health",
+    "workspace_map",
 ]
 # Operator read-only action implementations.
