@@ -1208,6 +1208,172 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('chatReceiptRole').textContent).toBe('chat');
     expect(document.getElementById('chatReceiptSelectionSource').textContent).toBe('registry_effective_profile');
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+    expect(document.getElementById('promptInput').disabled).toBe(false);
+  });
+
+  it('recovers from a malformed assistant response and still unlocks the composer', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {},
+          messages: [],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Return a safe response even if the payload is malformed.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+    expect(prompt.disabled).toBe(false);
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('Recovered from a render error.');
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
+    expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('No assistant content returned.');
+    expect(document.getElementById('alertBox').textContent).toContain('Recovered from malformed assistant response');
+  });
+
+  it('recovers from assistant artifact render failures without hanging the UI', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            last_assistant_payload: {
+              visible_text: 'Here is your artifact.',
+              code_artifacts: [
+                {
+                  filename: 'index.html',
+                  language: 'html',
+                  content: '<main>artifact</main>',
+                },
+              ],
+            },
+          },
+          messages: [
+            { role: 'user', content: 'Before artifact', metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Here is your artifact.',
+              metadata: {
+                visible_text: 'Here is your artifact.',
+                code_artifacts: [
+                  {
+                    filename: 'index.html',
+                    language: 'html',
+                    content: '<main>artifact</main>',
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    const ui = new Xv7UI();
+    await flushAsync();
+    vi.spyOn(ui, 'createCodeArtifactCard').mockImplementation(() => {
+      throw new Error('render exploded');
+    });
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Render an artifact safely even if the card render fails.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('Recovered from a render error.');
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
+    expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Here is your artifact.');
+    expect(document.getElementById('alertBox').textContent).toContain('Recovered from assistant render failure');
+  });
+
+  it('times out hanging chat requests and restores the composer', async () => {
+    const fetchMock = vi.fn((url, init = {}) => {
+      const path = new URL(url, 'http://localhost').pathname;
+      if (path === '/personas') {
+        return Promise.resolve(okJson({ personas: { default: { name: 'default', model: 'qwen3:8b' } } }));
+      }
+      if (path === '/runtime/models' && (init.method || '').toUpperCase() === 'GET') {
+        return Promise.resolve(okJson({
+          available_profiles: ['balanced'],
+          profiles: { balanced: { chat: 'qwen3:8b', reasoning: 'qwen3:8b', code: 'qwen3:8b', embedding: 'nomic-embed-text:latest' } },
+          active_profile: 'balanced',
+          profile_source: 'env',
+          resolved_models: { chat: 'qwen3:8b', reasoning: 'qwen3:8b', code: 'qwen3:8b', embedding: 'nomic-embed-text:latest' },
+          availability: { chat: true, reasoning: true, code: true, embedding: true },
+          ollama: { reachable: true, base_url: 'http://ollama:11434', models: ['qwen3:8b'], error: null },
+          config_error: null,
+        }));
+      }
+      if (path === '/runtime/models/active' && (init.method || '').toUpperCase() === 'GET') {
+        return Promise.resolve(okJson({
+          active_profile: 'balanced',
+          profile_source: 'env',
+          resolved_models: { chat: 'qwen3:8b', reasoning: 'qwen3:8b', code: 'qwen3:8b', embedding: 'nomic-embed-text:latest' },
+          role_aliases: { default: 'chat' },
+          availability: { chat: true, reasoning: true, code: true, embedding: true },
+          ollama: { reachable: true, base_url: 'http://ollama:11434', models: ['qwen3:8b'], error: null },
+          config_error: null,
+        }));
+      }
+      if (path === '/runtime/models/effective' && (init.method || '').toUpperCase() === 'GET') {
+        return Promise.resolve(okJson({
+          active_profile: 'balanced',
+          profile_source: 'env',
+          effective_models: { chat: 'qwen3:8b', reasoning: 'qwen3:8b', code: 'qwen3:8b', embedding: 'nomic-embed-text:latest' },
+          role_aliases: { default: 'chat' },
+          config_error: null,
+        }));
+      }
+      if (path === '/api/sessions' && (init.method || '').toUpperCase() === 'POST') {
+        return Promise.resolve(okJson({ session_id: 'session-1', current_persona: 'default', metadata: {}, messages: [] }));
+      }
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve, reject) => {
+          const onAbort = () => {
+            const abortError = new Error('aborted');
+            abortError.name = 'AbortError';
+            reject(abortError);
+          };
+          init.signal?.addEventListener('abort', onAbort, { once: true });
+        });
+      }
+      return Promise.resolve(errorText(404, `${init.method || 'GET'} ${path} not mocked`));
+    });
+    global.fetch = fetchMock;
+
+    const ui = new Xv7UI();
+    ui.chatMessageTimeoutMs = 1;
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Hang long enough to trigger the timeout recovery.';
+    document.getElementById('sendButton').click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await flushAsync();
+
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+    expect(document.getElementById('alertBox').textContent).toContain('Request timed out before xv7-core responded');
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(0);
   });
 
   it('renders an inline code artifact card inside the assistant chat flow', async () => {

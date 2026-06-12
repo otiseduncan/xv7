@@ -2959,11 +2959,8 @@ if __name__ == \"__main__\":
             if artifact is None:
                 continue
 
-            policy = (
-                metadata.get("policy_provenance")
-                if isinstance(metadata.get("policy_provenance"), dict)
-                else {}
-            )
+            policy_raw = metadata.get("policy_provenance")
+            policy: dict[str, Any] = policy_raw if isinstance(policy_raw, dict) else {}
             artifact_id = str(
                 artifact.get("artifact_id")
                 or policy.get("artifact_id")
@@ -4143,9 +4140,11 @@ if __name__ == \"__main__\":
             proposal = self._build_patch_proposal_from_artifact(
                 artifact=latest_artifact
             )
-            validation_status = str(
-                proposal.get("validation", {}).get("status") or "failed"
+            validation_raw = proposal.get("validation")
+            validation: dict[str, Any] = (
+                validation_raw if isinstance(validation_raw, dict) else {}
             )
+            validation_status = str(validation.get("status") or "failed")
             return {
                 "visible_text": "I prepared a patch proposal from the active artifact. No files were changed.",
                 "code_artifact": {},
@@ -4189,15 +4188,19 @@ if __name__ == \"__main__\":
                     },
                 }
 
-            validation = (
-                pending.get("validation")
-                if isinstance(pending.get("validation"), dict)
+            pending_validation_raw = pending.get("validation")
+            pending_validation: dict[str, Any] = (
+                pending_validation_raw
+                if isinstance(pending_validation_raw, dict)
                 else {}
             )
-            validation_status = str(validation.get("status") or "failed").lower()
-            failures = (
-                validation.get("failures")
-                if isinstance(validation.get("failures"), list)
+            validation_status = str(
+                pending_validation.get("status") or "failed"
+            ).lower()
+            failures_raw = pending_validation.get("failures")
+            failures: list[str] = (
+                [str(item) for item in failures_raw]
+                if isinstance(failures_raw, list)
                 else []
             )
             if validation_status != "passed":
@@ -4416,8 +4419,12 @@ if __name__ == \"__main__\":
                     verification=verification,
                     preview_path=preview_path,
                 )
-                checks_total = len(verification.get("checks") or [])
-                failures_total = len(verification.get("failures") or [])
+                checks_raw = verification.get("checks")
+                failures_raw = verification.get("failures")
+                checks_total = len(checks_raw) if isinstance(checks_raw, list) else 0
+                failures_total = (
+                    len(failures_raw) if isinstance(failures_raw, list) else 0
+                )
                 return {
                     "visible_text": (
                         f"Post-apply verification {'passed' if verification.get('status') == 'passed' else 'failed'} for {target_path}. "
@@ -4709,7 +4716,7 @@ if __name__ == \"__main__\":
             style_hints = self._extract_style_hints(question)
             layout_hints = self._extract_layout_hints(question)
 
-        content: str
+        artifact_content: str = ""
         provenance: dict[str, Any]
         typography_refinement_payload: dict[str, Any] | None = None
         if is_refinement_request and latest_artifact is not None:
@@ -4719,7 +4726,7 @@ if __name__ == \"__main__\":
                 else None
             )
             if typography_style:
-                content, typography_refinement_payload, typ_ok, typ_reason = (
+                artifact_content, typography_refinement_payload, typ_ok, typ_reason = (
                     self._deterministic_typography_refinement_content(
                         source_artifact=latest_artifact,
                         requested_style=typography_style,
@@ -4732,7 +4739,7 @@ if __name__ == \"__main__\":
                     or ""
                 )
                 valid, reason = self._validate_artifact_content(
-                    content=content,
+                    content=artifact_content,
                     language=str(latest_artifact.get("language") or "html"),
                     business_name=typography_business_name,
                     style_hints={"colors": [], "styles": []},
@@ -4781,7 +4788,7 @@ if __name__ == \"__main__\":
                         refinement_mode or "full_revision"
                     )
                     (
-                        content,
+                        artifact_content,
                         model_used,
                         model_endpoint,
                     ) = await self._revise_artifact_with_local_model(
@@ -4801,13 +4808,13 @@ if __name__ == \"__main__\":
                     }
                 except Exception as exc:
                     fallback_reason = str(exc).strip() or "artifact_revision_failed"
-                    content = self._deterministic_revision_fallback_content(
+                    artifact_content = self._deterministic_revision_fallback_content(
                         question=question,
                         source_artifact=latest_artifact,
                         revision_mode=refinement_mode or "full_revision",
                     )
                     valid, reason = self._validate_revision_candidate(
-                        content=content,
+                        content=artifact_content,
                         source_artifact=latest_artifact,
                         requested_question=question,
                     )
@@ -4861,9 +4868,9 @@ if __name__ == \"__main__\":
                     layout_hints=layout_hints,
                 )
                 if len(generation_result) == 3:
-                    content, model_used, model_endpoint = generation_result
+                    artifact_content, model_used, model_endpoint = generation_result
                 else:
-                    content, model_used = generation_result  # type: ignore[misc]
+                    artifact_content, model_used = generation_result  # type: ignore[misc]
                     model_endpoint = configured_ollama_base_url_candidates()[0]
                 provenance = {
                     "artifact_generation": "local_model",
@@ -4874,11 +4881,11 @@ if __name__ == \"__main__\":
                 }
             except Exception as exc:
                 fallback_reason = str(exc).strip() or "local_model_error"
-                content = self._default_code_artifact_content(
+                artifact_content = self._default_code_artifact_content(
                     filename, language, question
                 )
                 valid, reason = self._validate_artifact_content(
-                    content=content,
+                    content=artifact_content,
                     language=language,
                     business_name=business_name,
                     style_hints=style_hints,
@@ -4934,7 +4941,7 @@ if __name__ == \"__main__\":
 
         prompt_fidelity = self.validate_artifact_prompt_fidelity(
             fidelity_prompt,
-            content,
+            artifact_content,
             fidelity_context,
         )
         prompt_fidelity_payload = {
@@ -4961,7 +4968,7 @@ if __name__ == \"__main__\":
         if not bool(prompt_fidelity.get("passed")):
             repaired_content = self._repair_artifact_prompt_fidelity(
                 prompt=question,
-                artifact_content=content,
+                artifact_content=artifact_content,
                 fidelity_report=prompt_fidelity,
             )
             repaired_fidelity = self.validate_artifact_prompt_fidelity(
@@ -4970,7 +4977,7 @@ if __name__ == \"__main__\":
                 fidelity_context,
             )
             if bool(repaired_fidelity.get("passed")):
-                content = repaired_content
+                artifact_content = repaired_content
                 prompt_fidelity_payload = {
                     "status": "repaired",
                     "requested_business_name": str(
@@ -5043,7 +5050,7 @@ if __name__ == \"__main__\":
                 "language": language,
                 "previewable": previewable,
                 "applied": False,
-                "content": content,
+                "content": artifact_content,
                 "artifact_id": latest_artifact.get("artifact_id")
                 if latest_artifact is not None
                 else f"{self._slugify_artifact_name(filename)}-artifact",

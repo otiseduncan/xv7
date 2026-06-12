@@ -305,7 +305,8 @@ def _planning_scope(goal: str) -> dict[str, object]:
 
 def _likely_files(goal: str, workspace: dict) -> list[str]:
     scope = _planning_scope(goal)
-    likely: list[str] = list(scope.get("files", []))
+    scope_files = scope.get("files", [])
+    likely = [str(item) for item in scope_files] if isinstance(scope_files, list) else []
     lowered = goal.lower()
 
     if not likely:
@@ -357,7 +358,10 @@ def _proposed_changes(
 ) -> list[str]:
     scope = _planning_scope(goal)
     lowered = goal.lower()
-    changes: list[str] = list(scope.get("changes", []))
+    scope_changes = scope.get("changes", [])
+    changes: list[str] = (
+        [str(item) for item in scope_changes] if isinstance(scope_changes, list) else []
+    )
     if not changes and (
         "code-02" in lowered or "patch plan" in lowered or "planner" in lowered
     ):

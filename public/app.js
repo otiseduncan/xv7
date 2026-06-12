@@ -91,6 +91,9 @@ class Xv7UI {
   voiceAvailabilityNote = '';
 
   /** @type {number} */
+  chatMessageTimeoutMs = 2 * 60 * 1000;
+
+  /** @type {number} */
   messageCounter = 0;
 
   /** @type {boolean} */
@@ -1063,90 +1066,16 @@ class Xv7UI {
         return;
       }
 
-      const data = await this.fetchJson(`/api/sessions/${this.currentSessionId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ raw_text: raw }),
-      });
+      const data = await this.fetchJson(
+        `/api/sessions/${this.currentSessionId}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ raw_text: raw }),
+        },
+        this.chatMessageTimeoutMs,
+      );
 
-      try {
-        const messages = Array.isArray(data?.messages) ? data.messages : [];
-        const assistantMessage = messages[messages.length - 1];
-        const responseMetadata = data && typeof data === 'object' && data.metadata && typeof data.metadata === 'object'
-          ? data.metadata
-          : {};
-        const assistantContent =
-          assistantMessage &&
-          typeof assistantMessage === 'object' &&
-          typeof assistantMessage.content === 'string'
-            ? assistantMessage.content
-            : '';
-        const assistantMeta =
-          assistantMessage &&
-          typeof assistantMessage === 'object' &&
-          assistantMessage.metadata &&
-          typeof assistantMessage.metadata === 'object'
-            ? assistantMessage.metadata
-            : {};
-        const fallbackAssistantMeta =
-          responseMetadata.last_assistant_payload && typeof responseMetadata.last_assistant_payload === 'object'
-            ? responseMetadata.last_assistant_payload
-            : {};
-        const mergedAssistantMeta = {
-          ...fallbackAssistantMeta,
-          ...assistantMeta,
-        };
-        const assistantArtifacts = this.collectCodeArtifacts(assistantMessage);
-        if (assistantArtifacts.length) {
-          mergedAssistantMeta.code_artifacts = assistantArtifacts;
-        }
-        this.debugArtifactReceipt(assistantMessage, mergedAssistantMeta);
-        const assistantText = this.resolveAssistantVisibleText(mergedAssistantMeta, assistantContent);
-        const reasoningText = this.extractReasoning(assistantContent);
-
-        const assistantArticle = this.appendMessageCard(
-          'assistant',
-          assistantText || 'No assistant content returned.',
-          reasoningText,
-          mergedAssistantMeta,
-          this.inferAssistantTimestamp(mergedAssistantMeta),
-        );
-
-        this.setAvatarState('idle', 'assistant-response-received');
-
-        const spokenText = String(assistantText || 'No assistant content returned.').trim();
-        if (spokenText) {
-          this.startSpeechPlayback(spokenText, {
-            messageId: assistantArticle?.dataset?.messageId || null,
-            startStatus: 'Reading response aloud...',
-            stopStatus: 'Read-aloud stopped.',
-            failStatus: 'Browser blocked voice playback. Try clicking Read again.',
-          });
-        }
-
-        this.renderModelUseReceipt(data?.metadata?.model_use_receipt);
-        this.renderOperatorActivity(data?.metadata?.operator_action_history);
-        this.updateStatusFromHistory(data?.metadata?.operator_action_history);
-
-        const operatorHistory = Array.isArray(data?.metadata?.operator_action_history)
-          ? data.metadata.operator_action_history
-          : [];
-        const hasOperatorFailure = operatorHistory.some((item) => {
-          const status = String(item?.status || '').toLowerCase();
-          return status === 'failed' || status === 'denied';
-        });
-        if (hasOperatorFailure) {
-          this.setAvatarState('error', 'operator-action-failed');
-          this.scheduleAvatarReset('idle', 1700);
-        }
-
-        this.memoryLogCount = messages.length;
-        this.updateSessionTelemetry();
-        this.renderRetrievalJournal(data);
-        this.setHardwareLoad('Ready', 12);
-      } catch (parseError) {
-        this.els.sendButton.textContent = 'Error';
-        throw new Error(`Failed to parse assistant response: ${this.humanizeError(parseError)}`);
-      }
+      this.renderSessionResponse(data);
     } catch (error) {
       this.setHardwareLoad('Recovery', 24);
       this.showAlert(this.humanizeError(error), true);
@@ -1154,7 +1083,110 @@ class Xv7UI {
       this.scheduleAvatarReset('idle', 1800);
     } finally {
       this.lockInput(false);
+      this.els.promptInput.focus();
     }
+  }
+
+  renderSessionResponse(data) {
+    const response = data && typeof data === 'object' ? data : {};
+    const responseMetadata = response.metadata && typeof response.metadata === 'object' ? response.metadata : {};
+    const messages = Array.isArray(response.messages) ? response.messages : [];
+    const assistantMessage = messages.length ? messages[messages.length - 1] : null;
+    const hasValidAssistantMessage = assistantMessage && typeof assistantMessage === 'object';
+    const assistantContent =
+      hasValidAssistantMessage && typeof assistantMessage.content === 'string'
+        ? assistantMessage.content
+        : '';
+    const assistantMeta =
+      hasValidAssistantMessage && assistantMessage.metadata && typeof assistantMessage.metadata === 'object'
+        ? assistantMessage.metadata
+        : {};
+    const fallbackAssistantMeta =
+      responseMetadata.last_assistant_payload && typeof responseMetadata.last_assistant_payload === 'object'
+        ? responseMetadata.last_assistant_payload
+        : {};
+    const mergedAssistantMeta = {
+      ...fallbackAssistantMeta,
+      ...assistantMeta,
+    };
+    const responseError = hasValidAssistantMessage
+      ? null
+      : new Error('Assistant response did not include a valid assistant message.');
+    const assistantArtifacts = this.collectCodeArtifacts(assistantMessage);
+    if (assistantArtifacts.length) {
+      mergedAssistantMeta.code_artifacts = assistantArtifacts;
+    }
+    if (responseError) {
+      mergedAssistantMeta.render_error = responseError.message;
+    }
+
+    this.debugArtifactReceipt(assistantMessage, mergedAssistantMeta);
+    const assistantText = this.resolveAssistantVisibleText(mergedAssistantMeta, assistantContent);
+    const reasoningText = this.extractReasoning(assistantContent);
+
+    let assistantArticle;
+    let renderError = null;
+    try {
+      assistantArticle = this.appendMessageCard(
+        'assistant',
+        assistantText || 'No assistant content returned.',
+        reasoningText,
+        mergedAssistantMeta,
+        this.inferAssistantTimestamp(mergedAssistantMeta),
+      );
+    } catch (error) {
+      renderError = error;
+      assistantArticle = this.appendMessageCard(
+        'assistant',
+        assistantText || 'No assistant content returned.',
+        reasoningText,
+        null,
+        this.nowIso(),
+      );
+    }
+
+    if (responseError && assistantArticle) {
+      this.appendRenderErrorNotice(assistantArticle, responseError);
+      this.showAlert('Recovered from malformed assistant response. Please retry if needed.', true, 2600);
+    }
+
+    if (renderError && assistantArticle) {
+      this.appendRenderErrorNotice(assistantArticle, renderError);
+      this.showAlert(`Recovered from assistant render failure: ${this.humanizeError(renderError)}`, true, 2600);
+    }
+
+    this.setAvatarState('idle', 'assistant-response-received');
+
+    const spokenText = String(assistantText || 'No assistant content returned.').trim();
+    if (spokenText && assistantArticle) {
+      this.startSpeechPlayback(spokenText, {
+        messageId: assistantArticle?.dataset?.messageId || null,
+        startStatus: 'Reading response aloud...',
+        stopStatus: 'Read-aloud stopped.',
+        failStatus: 'Browser blocked voice playback. Try clicking Read again.',
+      });
+    }
+
+    this.renderModelUseReceipt(responseMetadata.model_use_receipt);
+    this.renderOperatorActivity(responseMetadata.operator_action_history);
+    this.updateStatusFromHistory(responseMetadata.operator_action_history);
+
+    const operatorHistory = Array.isArray(responseMetadata.operator_action_history)
+      ? responseMetadata.operator_action_history
+      : [];
+    const hasOperatorFailure = operatorHistory.some((item) => {
+      const status = String(item?.status || '').toLowerCase();
+      return status === 'failed' || status === 'denied';
+    });
+    if (hasOperatorFailure) {
+      this.setAvatarState('error', 'operator-action-failed');
+      this.scheduleAvatarReset('idle', 1700);
+    }
+
+    this.memoryLogCount = messages.length;
+    this.updateSessionTelemetry();
+    this.renderRetrievalJournal(response);
+    this.setHardwareLoad('Ready', 12);
   }
 
   async sendQuickPrompt(text) {
@@ -1357,13 +1389,18 @@ class Xv7UI {
     const patchProposal = role === 'assistant' ? this.collectArtifactPatchProposal(messageMetadata) : null;
 
     if (role === 'assistant') {
-      copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
-      this.appendCodeArtifacts(article, messageMetadata);
-      this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
-      this.appendWhyThisAnswerDrawer(article, messageMetadata);
-      if (messageMetadata && typeof messageMetadata === 'object') {
-        this.latestAssistantMeta = messageMetadata;
-        this.updateBrainRecordsCalmSummary();
+      try {
+        copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
+        this.appendCodeArtifacts(article, messageMetadata);
+        this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
+        this.appendWhyThisAnswerDrawer(article, messageMetadata);
+        if (messageMetadata && typeof messageMetadata === 'object') {
+          this.latestAssistantMeta = messageMetadata;
+          this.updateBrainRecordsCalmSummary();
+        }
+      } catch (error) {
+        this.appendRenderErrorNotice(article, error);
+        this.showAlert(`Recovered from assistant render failure: ${this.humanizeError(error)}`, true, 2600);
       }
     }
 
@@ -1394,6 +1431,24 @@ class Xv7UI {
     this.visibleConversation.push(copyPayload);
 
     return article;
+  }
+
+  appendRenderErrorNotice(article, error) {
+    if (!article) return;
+
+    const notice = document.createElement('div');
+    notice.className = 'chat-render-error';
+
+    const title = document.createElement('p');
+    title.className = 'chat-render-error-title';
+    title.textContent = 'Recovered from a render error.';
+
+    const message = document.createElement('p');
+    message.className = 'chat-render-error-message';
+    message.textContent = `Details: ${this.humanizeError(error)}`;
+
+    notice.append(title, message);
+    article.append(notice);
   }
 
   appendCodeArtifacts(article, messageMetadata) {
@@ -3686,6 +3741,10 @@ class Xv7UI {
     const fallback =
       'xv7-core is currently resetting or loading heavy model weights. Wait a moment and retry your request.';
 
+    if (error && typeof error === 'object' && error.name === 'AbortError') {
+      return 'Request timed out before xv7-core responded. The UI recovered so you can retry.';
+    }
+
     if (error instanceof Error) return error.message || fallback;
     if (typeof error === 'string') return error;
     return fallback;
@@ -4470,7 +4529,7 @@ class Xv7UI {
    * @param {string} path
    * @param {RequestInit} init
    */
-  async fetchJson(path, init) {
+  async fetchJson(path, init, timeoutMs = 15 * 60 * 1000) {
     const headers = new Headers(init?.headers || {});
     if (!headers.has('Content-Type') && init?.body) {
       headers.set('Content-Type', 'application/json');
@@ -4478,7 +4537,7 @@ class Xv7UI {
 
     // Intentionally long timeout to avoid failing while large model weights load.
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15 * 60 * 1000);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(`${this.apiBase}${path}`, {
