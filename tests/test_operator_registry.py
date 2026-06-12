@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -14,6 +15,7 @@ EXPECTED_ACTIONS = {
     "workspace_map",
     "patch_plan",
     "apply_approved_patch",
+    "test_runner",
     "list_project_files",
     "read_project_file",
     "runtime_health",
@@ -32,6 +34,13 @@ EXPECTED_ACTIONS = {
     "logs_summary",
     "memory_audit",
 }
+
+
+class FakeCompletedProcess:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 def test_operator_registry_contains_expected_actions() -> None:
@@ -124,4 +133,59 @@ def test_run_action_apply_approved_patch_rejects_invalid_json(tmp_path: Path) ->
             action_id="OP-20260611-0007",
             repo_root=tmp_path,
             target="not-json",
+        )
+
+
+def test_run_action_test_runner_with_json_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_run(_command: list[str], **_kwargs: object) -> FakeCompletedProcess:
+        return FakeCompletedProcess(0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = run_action(
+        "test_runner",
+        action_id="OP-20260611-0008",
+        repo_root=tmp_path,
+        target=json.dumps(
+            {
+                "preset": "single_pytest",
+                "test_target": "tests/test_operator_registry.py::test_operator_registry_contains_expected_actions",
+            }
+        ),
+    )
+
+    assert result.status == "success"
+    assert result.action_name == "test_runner"
+    assert result.data["passed"] is True
+
+
+def test_run_action_test_runner_accepts_plain_preset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_run(_command: list[str], **_kwargs: object) -> FakeCompletedProcess:
+        return FakeCompletedProcess(0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = run_action(
+        "test_runner",
+        action_id="OP-20260611-0009",
+        repo_root=tmp_path,
+        target="lint_backend",
+    )
+
+    assert result.status == "success"
+    assert result.action_name == "test_runner"
+    assert result.data["preset"] == "lint_backend"
+
+
+def test_run_action_test_runner_rejects_non_object_json(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="target JSON must be an object"):
+        run_action(
+            "test_runner",
+            action_id="OP-20260611-0010",
+            repo_root=tmp_path,
+            target=json.dumps(["ci_core"]),
         )
