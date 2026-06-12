@@ -3198,7 +3198,69 @@ async def add_session_message(
         0,
         ConversationMessage(role="system", content=brain_context.prompt),
     )
-    artifact_response = await brain_context_manager.code_artifact_response(payload.raw_text)
+    try:
+        artifact_response = await brain_context_manager.code_artifact_response(
+            payload.raw_text,
+            session_messages=[msg.model_dump(mode="json") for msg in session_state.messages],
+            session_metadata=session_state.metadata,
+        )
+    except RuntimeError as artifact_error:
+        artifact_error_text = str(artifact_error).lower()
+        if (
+            "artifact revision failed validation" in artifact_error_text
+            or "artifact generation failed validation" in artifact_error_text
+        ):
+            brain_answer_source = (
+                "artifact_revision_error"
+                if "artifact revision failed validation" in artifact_error_text
+                else "artifact_generation_error"
+            )
+            visible_text = sanitize_visible_answer_text(str(artifact_error).strip())
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=_merge_focus_context_receipt(brain_context.receipt, session_state.metadata),
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "answer_contract",
+                    "brain_answer_source": brain_answer_source,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=[
+                    str(item.get("action_id", ""))
+                    for item in get_history(session_state.metadata)[-5:]
+                    if isinstance(item, dict) and str(item.get("action_id", ""))
+                ],
+            )
+
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload["policy_provenance"]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+        raise
+
     if artifact_response is not None:
         visible_text = str(artifact_response.get("visible_text", "")).strip()
         artifact_provenance = artifact_response.get("provenance", {})

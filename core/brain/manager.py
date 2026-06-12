@@ -304,8 +304,18 @@ class BrainContextManager:
             session_metadata=session_metadata or {},
         )
 
-    async def code_artifact_response(self, question: str) -> dict[str, Any] | None:
-        return await self.answer_contract.build_code_artifact_response(question)
+    async def code_artifact_response(
+        self,
+        question: str,
+        *,
+        session_messages: list[Any] | None = None,
+        session_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        return await self.answer_contract.build_code_artifact_response(
+            question,
+            session_messages=session_messages,
+            session_metadata=session_metadata,
+        )
 
     async def code_artifact_connectivity_diagnostic(self) -> dict[str, Any]:
         return await self.answer_contract.artifact_model_connectivity_diagnostic()

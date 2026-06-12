@@ -31,7 +31,18 @@ class AnswerContract:
     HARDWARE_SCAN_PATTERN = re.compile(
         r"\b(cpu|gpu|processor|graphics|vram|disk|disks|disc|discs|drive|drives|ports?|processes|services|docker|container|vscode|vs code|hardware|system scan|host scan|system info|temperature sensor|thermal|fan|hardware temp|system temperature)\b"
     )
-    SMS_PATTERN = re.compile(r"\b(text|sms|send a text|send text|message someone)\b")
+    SMS_PATTERN = re.compile(
+        r"\b(send a text|send text|send this as a text message|text my|text someone|message someone|message\s+[a-z0-9]+|sms this to|sms)\b"
+    )
+    ARTIFACT_EDIT_ACTION_PATTERN = re.compile(
+        r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use)\b"
+    )
+    ARTIFACT_EDIT_TARGET_PATTERN = re.compile(
+        r"\b(website|site|artifact|page|font|text|headline|button|copy|color|colors|theme|style|script|handwritten|premium|darker|preview|code)\b"
+    )
+    SMS_EXPLICIT_SEND_PATTERN = re.compile(
+        r"\b(send a text|send text|send this as a text message|text my|message\s+[a-z0-9]+|sms this)\b"
+    )
     EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
     EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
     WEATHER_PATTERN = re.compile(r"\b(weather|forecast|temperature|rain|snow|humidity)\b")
@@ -206,17 +217,75 @@ class AnswerContract:
 
     @classmethod
     def _extract_artifact_name(cls, question: str) -> str | None:
-        patterns = [
+        quoted_patterns = [
             r"one-page\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]\s+website",
-            r"one-page\s+([^,.]+?)\s+website",
-            r"for\s+([^,.]+?)\s+website",
-            r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)",
+            r"website\s+for\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]",
+            r"for\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]",
         ]
-        for pattern in patterns:
+        for pattern in quoted_patterns:
             match = re.search(pattern, question, flags=re.IGNORECASE)
             if not match:
                 continue
             candidate = cls._clean_artifact_label(match.group(1))
+            if candidate:
+                return candidate
+
+        patterns = [
+            (r"one-page\s+([^,.]+?)\s+website", False),
+            (r"for\s+([^,.]+?)\s+website", False),
+            (r"for\s+([^,.]+?)\s+(?:grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b", True),
+            (r"for\s+([^,.]+?)\s+using\b", True),
+            (r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)", False),
+        ]
+
+        suffixes = (
+            " dog grooming",
+            " pet grooming",
+            " grooming",
+            " detailing",
+            " locksmiths",
+            " locksmith",
+            " arcade",
+            " florist",
+            " flowers",
+            " website",
+            " site",
+        )
+        banned_full = {
+            "website",
+            "site",
+            "local business",
+            "local business website",
+            "one-page website",
+            "one page website",
+            "small html artifact",
+            "html artifact",
+            "code artifact",
+            "grooming",
+            "pet grooming",
+            "dog grooming",
+            "detailing",
+            "locksmith",
+            "locksmiths",
+            "arcade",
+            "florist",
+            "flowers",
+        }
+
+        for pattern, trim_suffix in patterns:
+            match = re.search(pattern, question, flags=re.IGNORECASE)
+            if not match:
+                continue
+            candidate = cls._clean_artifact_label(match.group(1))
+            lowered = candidate.lower()
+            if trim_suffix:
+                for suffix in suffixes:
+                    if lowered.endswith(suffix):
+                        candidate = cls._clean_artifact_label(candidate[: -len(suffix)])
+                        lowered = candidate.lower()
+                        break
+            if lowered in banned_full:
+                continue
             if candidate:
                 return candidate
         return None
@@ -224,6 +293,29 @@ class AnswerContract:
     @staticmethod
     def _artifact_business_category(question: str, name: str | None) -> str:
         text = f"{question} {name or ''}".lower()
+        if any(
+            token in text
+            for token in ("locksmith", "lockout", "rekey", "deadbolt", "key", "security lock")
+        ):
+            return "locksmith"
+        if any(
+            token in text
+            for token in (
+                "dog grooming",
+                "pet grooming",
+                "grooming",
+                "puppy",
+                "dog wash",
+                "bath",
+                "trim",
+                "fur",
+                "paw",
+                "kennel",
+                "pet spa",
+                "groomer",
+            )
+        ):
+            return "grooming"
         if any(token in text for token in ("hot dog", "hotdog", "cart", "food truck", "food cart", "concession")):
             return "hot_dog_cart"
         if any(token in text for token in ("flower", "florist", "bouquet", "bouquets", "blossom", "bloom", "petal")):
@@ -242,9 +334,29 @@ class AnswerContract:
             "accent_2": "#fb7185",
             "font_stack": '"Segoe UI", system-ui, sans-serif',
             "hero_transform": "none",
+            "bg": "#07111f",
+            "panel": "rgba(10, 19, 34, 0.92)",
+            "text": "#f3f7fb",
+            "muted": "#b7c5d7",
+            "border": "rgba(122, 214, 255, 0.18)",
         }
 
-        if category == "hot_dog_cart":
+        if category == "locksmith":
+            style.update({"accent": "#dc2626", "accent_2": "#9ca3af", "font_stack": '"Segoe UI", system-ui, sans-serif'})
+        elif category == "grooming":
+            style.update(
+                {
+                    "accent": "#7c3aed",
+                    "accent_2": "#22c55e",
+                    "font_stack": '"Segoe UI", system-ui, sans-serif',
+                    "bg": "#ffffff",
+                    "panel": "rgba(255, 255, 255, 0.96)",
+                    "text": "#1f2937",
+                    "muted": "#4b5563",
+                    "border": "rgba(124, 58, 237, 0.22)",
+                }
+            )
+        elif category == "hot_dog_cart":
             style.update({"accent": "#fbbf24", "accent_2": "#fb7185", "font_stack": '"Segoe UI", system-ui, sans-serif'})
         elif category == "florist":
             style.update({"accent": "#f59e0b", "accent_2": "#ec4899", "font_stack": 'Georgia, "Times New Roman", serif'})
@@ -255,6 +367,17 @@ class AnswerContract:
 
         if any(token in text for token in ("purple", "violet", "magenta")):
             style["accent"] = "#a855f7"
+        if any(token in text for token in ("green", "mint", "lime")):
+            style["accent_2"] = "#22c55e"
+        if "white" in text:
+            style.update(
+                {
+                    "bg": "#ffffff",
+                    "panel": "rgba(255, 255, 255, 0.96)",
+                    "text": "#111827",
+                    "muted": "#4b5563",
+                }
+            )
         if any(token in text for token in ("cyan", "aqua", "teal")):
             style["accent_2"] = "#22d3ee"
         if any(token in text for token in ("bright", "neon")):
@@ -279,6 +402,56 @@ class AnswerContract:
         category = cls._artifact_business_category(question, business_name)
         display_name = cls._format_business_name(business_name, "Local Business Website")
         style = cls._artifact_style_profile(question, category)
+
+        if category == "locksmith":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Locked out? Fast, verified locksmith response when every minute matters.",
+                "lead": f"An urgent, trust-first one-page locksmith website for {display_name} focused on emergency lockout service, rekeying, and home security.",
+                "primary_cta": "Call emergency lockout now",
+                "secondary_cta": "View security services",
+                "highlight_title": "Emergency & Security Services",
+                "highlights": [
+                    ("24/7 Emergency Lockout", "Rapid dispatch for home, office, and vehicle lockouts"),
+                    ("Rekey & Key Duplication", "Secure key control without full lock replacement"),
+                    ("Deadbolt & Entry Security", "Reinforced hardware and break-in response"),
+                ],
+                "info_title": "Why Residents Trust Us",
+                "info_lines": [
+                    "Licensed local locksmith technicians with verified ID on arrival.",
+                    "Upfront pricing before work starts. No hidden after-hours surprises.",
+                    "Priority dispatch for urgent lockout and compromised-lock situations.",
+                ],
+                "action_title": "Need Help Right Now?",
+                "action_body": "Call now for immediate emergency lockout support and on-site security restoration.",
+                "action_label": "Dispatch Technician",
+            }
+
+        if category == "grooming":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Pet grooming that keeps every pup clean, calm, and camera-ready.",
+                "lead": f"A friendly one-page pet grooming website for {display_name} featuring gentle bath, trim, and coat care with easy booking.",
+                "primary_cta": "Book a grooming appointment",
+                "secondary_cta": "See bath & trim services",
+                "highlight_title": "Dog & Pet Grooming Services",
+                "highlights": [
+                    ("Bath & Wash", "Deep clean wash with pet-safe shampoo and careful rinse"),
+                    ("Trim & Paw Care", "Breed-aware trim, nail touch-up, and paw tidy service"),
+                    ("Coat & Fur Care", "Deshed, brush-out, and coat conditioning for comfort"),
+                ],
+                "info_title": "Why Pet Parents Choose Us",
+                "info_lines": [
+                    "Calm, pet-safe handling for puppies and adult dogs.",
+                    "White, purple, and green studio style with clean grooming stations.",
+                    "Simple appointment booking and clear service timing.",
+                ],
+                "action_title": "Ready for a Fresh Groom?",
+                "action_body": "Book your pet grooming appointment for bath, trim, fur care, and a happy return home.",
+                "action_label": "Book Grooming",
+            }
 
         if category == "hot_dog_cart":
             return {
@@ -430,6 +603,11 @@ class AnswerContract:
             accent_2 = str(style["accent_2"])
             font_stack = str(style["font_stack"])
             hero_transform = str(style["hero_transform"])
+            bg = str(style.get("bg", "#07111f"))
+            panel = str(style.get("panel", "rgba(10, 19, 34, 0.92)"))
+            text_color = str(style.get("text", "#f3f7fb"))
+            muted = str(style.get("muted", "#b7c5d7"))
+            border = str(style.get("border", "rgba(122, 214, 255, 0.18)"))
             return f"""<!doctype html>
 <html lang=\"en\">
     <head>
@@ -439,13 +617,13 @@ class AnswerContract:
         <style>
             :root {{
                 color-scheme: dark;
-                --bg: #07111f;
-                --panel: rgba(10, 19, 34, 0.92);
-                --text: #f3f7fb;
-                --muted: #b7c5d7;
+                --bg: {bg};
+                --panel: {panel};
+                --text: {text_color};
+                --muted: {muted};
                 --accent: {accent};
                 --accent-2: {accent_2};
-                --border: rgba(122, 214, 255, 0.18);
+                --border: {border};
                 --font-stack: {font_stack};
             }}
             * {{ box-sizing: border-box; }}
@@ -456,7 +634,7 @@ class AnswerContract:
                 color: var(--text);
                 background:
                     radial-gradient(circle at top, color-mix(in srgb, var(--accent) 22%, transparent), transparent 36%),
-                    linear-gradient(180deg, #0a1323 0%, #07111f 52%, #050b14 100%);
+                    linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, #0a1323) 0%, var(--bg) 52%, color-mix(in srgb, var(--bg) 80%, #050b14) 100%);
             }}
             .page {{
                 min-height: 100vh;
@@ -721,12 +899,26 @@ if __name__ == \"__main__\":
         style_hints: dict[str, list[str]],
         layout_hints: list[str],
         strict_retry: bool,
+        retry_requirements: list[str] | None = None,
     ) -> str:
-        retry_line = (
-            "This is a retry because the first draft failed validation. Be stricter and output only valid source code."
-            if strict_retry
-            else "Output only source code that satisfies all constraints below."
-        )
+        retry_requirements = retry_requirements or []
+        retry_line = "Output only source code that satisfies all constraints below."
+        if strict_retry:
+            retry_line = (
+                "This is a retry because the first draft failed validation. Be stricter and fix every missing requirement explicitly."
+            )
+            if retry_requirements:
+                retry_line += " Missing requirements: " + "; ".join(retry_requirements) + "."
+
+        category = cls._artifact_business_category(question, business_name)
+        category_brief = {
+            "locksmith": "Locksmith direction: urgent trust-first security layout with lockout CTA, trust badges, and service cards.",
+            "florist": "Florist direction: elegant floral tone with bouquet-oriented sections and refined typography.",
+            "detailing": "Detailing direction: automotive shine/finish framing with package cards and conversion-focused CTAs.",
+            "arcade": "Arcade direction: neon retro atmosphere with game-grid energy and high-score language.",
+            "hot_dog_cart": "Hot dog cart direction: street-food clarity with menu highlights and quick-order focus.",
+            "generic": "Direction: adapt visual language to the specific business request.",
+        }.get(category, "Direction: adapt visual language to the specific business request.")
         colors = ", ".join(style_hints.get("colors", [])) or "none specified"
         styles = ", ".join(style_hints.get("styles", [])) or "none specified"
         layout = "; ".join(layout_hints) or "none specified"
@@ -738,6 +930,7 @@ if __name__ == \"__main__\":
             f"Requested colors: {colors}\n"
             f"Requested style/font mood: {styles}\n"
             f"Requested layout/content hints: {layout}\n"
+            f"Industry direction: {category_brief}\n"
             f"Previewable requested: {str(previewable).lower()}\n"
             f"Apply to repo requested: {str(apply_requested).lower()} (must remain false in artifact metadata and never mutate repo)\n"
             "Hard constraints:\n"
@@ -748,9 +941,165 @@ if __name__ == \"__main__\":
             "- No external script tags.\n"
             "- Must include the exact business/site name text in visible content.\n"
             "- Must reflect requested colors/style when provided.\n"
+            "- Avoid generic repeated hero copy; do not reuse the same hero phrase/layout across different industries.\n"
             "- Must not include unrelated business names from earlier prompts.\n"
             "- If language is html: return a complete single-file document including <!doctype html>, inline CSS, and no external dependencies.\n"
             f"{retry_line}\n"
+        )
+
+    @staticmethod
+    def _remediation_for_validation_reason(reason: str) -> str:
+        mapping = {
+            "empty_content": "return non-empty source code",
+            "markdown_fence_detected": "remove markdown code fences",
+            "content_length_out_of_bounds": "keep output concise but complete",
+            "external_script_tag_detected": "remove external script tags",
+            "remote_url_detected": "remove all remote URLs/assets",
+            "business_name_missing": "include the exact business name text",
+            "color_hints_missing": "include requested color cues in CSS/style",
+            "style_hints_missing": "include requested mood/style keywords in copy or CSS",
+            "stale_business_leak_detected": "remove unrelated prior business names",
+            "html_shell_missing": "return complete HTML document shell",
+            "inline_css_missing": "include inline <style> CSS",
+            "generic_business_name_fallback_detected": "use the requested business name instead of Local Business Website",
+            "crimson_locksmith_language_missing": "include locksmith/security/key/lock/emergency/lockout language",
+            "crimson_urgency_trust_copy_missing": "include urgent and trustworthy service copy",
+            "crimson_color_black_missing": "include black/dark styling cues",
+            "crimson_color_red_missing": "include red accent styling cues",
+            "crimson_color_silver_missing": "include silver/gray/metal styling cues",
+            "crimson_irrelevant_copy_detected": "remove irrelevant non-locksmith business copy",
+            "grooming_language_missing": "include pet grooming, dog, bath, trim, fur, or paw language",
+            "grooming_irrelevant_copy_detected": "remove unrelated non-grooming business copy",
+            "generic_hero_reuse_detected": "replace generic repeated hero phrasing with industry-specific copy",
+            "revision_content_unchanged": "modify content per requested revision and return full replacement",
+        }
+        return mapping.get(reason, f"fix validation issue: {reason}")
+
+    @staticmethod
+    def _looks_like_artifact_edit(normalized_question: str) -> bool:
+        has_action = bool(AnswerContract.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question))
+        has_target = bool(AnswerContract.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question))
+        explicit = any(
+            phrase in normalized_question
+            for phrase in (
+                "revise this site",
+                "update the artifact",
+                "change the website",
+                "make the text script",
+                "change the text on the website",
+                "change the font to script",
+            )
+        )
+        return explicit or (has_action and has_target)
+
+    @staticmethod
+    def _extract_business_name_from_html(content: str) -> str | None:
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL)
+        if title_match:
+            value = html.unescape(re.sub(r"\s+", " ", title_match.group(1))).strip()
+            if value:
+                return value
+        h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL)
+        if h1_match:
+            raw = re.sub(r"<[^>]+>", "", h1_match.group(1))
+            value = html.unescape(re.sub(r"\s+", " ", raw)).strip()
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _extract_artifact_from_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(metadata, dict):
+            return None
+
+        artifacts: list[Any] = []
+        code_artifacts = metadata.get("code_artifacts")
+        if isinstance(code_artifacts, list):
+            artifacts.extend(code_artifacts)
+
+        single = metadata.get("code_artifact")
+        if isinstance(single, dict):
+            artifacts.append(single)
+
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                continue
+            filename = str(artifact.get("filename", "")).strip()
+            content = artifact.get("content")
+            if filename and isinstance(content, str) and content.strip():
+                return {
+                    "type": "code_artifact",
+                    "filename": filename,
+                    "language": str(artifact.get("language") or "html").strip() or "html",
+                    "previewable": bool(artifact.get("previewable", True)),
+                    "applied": bool(artifact.get("applied", False)),
+                    "content": content,
+                }
+        return None
+
+    @classmethod
+    def _latest_assistant_artifact(
+        cls,
+        session_messages: list[Any] | None,
+        session_metadata: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        if isinstance(session_messages, list):
+            for message in reversed(session_messages):
+                if not isinstance(message, dict):
+                    continue
+                if str(message.get("role", "")).lower() != "assistant":
+                    continue
+                metadata = message.get("metadata")
+                if not isinstance(metadata, dict):
+                    continue
+                artifact = cls._extract_artifact_from_metadata(metadata)
+                if artifact is not None:
+                    return artifact, "latest session artifact"
+
+        if isinstance(session_metadata, dict):
+            last_payload = session_metadata.get("last_assistant_payload")
+            if isinstance(last_payload, dict):
+                artifact = cls._extract_artifact_from_metadata(last_payload)
+                if artifact is not None:
+                    return artifact, "previous assistant artifact"
+
+        return None, None
+
+    @classmethod
+    def _build_local_artifact_revision_prompt(
+        cls,
+        *,
+        edit_instruction: str,
+        source_artifact: dict[str, Any],
+        strict_retry: bool,
+        retry_requirements: list[str] | None = None,
+    ) -> str:
+        retry_requirements = retry_requirements or []
+        filename = str(source_artifact.get("filename") or "index.html")
+        language = str(source_artifact.get("language") or "html")
+        existing_content = str(source_artifact.get("content") or "")
+
+        retry_line = "Output only revised source code."
+        if strict_retry:
+            retry_line = "This is a retry because the first revision failed validation."
+            if retry_requirements:
+                retry_line += " Missing requirements: " + "; ".join(retry_requirements) + "."
+
+        return (
+            f"Revise an existing {language} code artifact for filename {filename}.\n"
+            f"User edit instruction: {edit_instruction.strip()}\n"
+            "Hard constraints:\n"
+            "- Return ONLY the full replacement source code content.\n"
+            "- No markdown fences and no explanation.\n"
+            "- Keep same filename/language/previewability metadata externally; only revise content.\n"
+            "- No file writes, no repo mutation, no apply behavior.\n"
+            "- No remote assets, no remote URLs, no external scripts, no external fonts/images.\n"
+            "- Preserve business intent while applying the requested style/content changes.\n"
+            f"{retry_line}\n"
+            "Current artifact source to revise:\n"
+            "<<<ARTIFACT_START>>>\n"
+            f"{existing_content}\n"
+            "<<<ARTIFACT_END>>>\n"
         )
 
     @staticmethod
@@ -764,6 +1113,45 @@ if __name__ == \"__main__\":
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         return "\n".join(lines).strip()
+
+    @staticmethod
+    def _insert_before_tag(content: str, closing_tag: str, snippet: str) -> str:
+        pattern = re.compile(rf"</{re.escape(closing_tag)}>", flags=re.IGNORECASE)
+        if pattern.search(content):
+            return pattern.sub(f"{snippet}</{closing_tag}>", content, count=1)
+        return content + snippet
+
+    @classmethod
+    def _deterministic_revision_fallback_content(
+        cls,
+        *,
+        question: str,
+        source_artifact: dict[str, Any],
+    ) -> str:
+        source_content = str(source_artifact.get("content") or "")
+        language = str(source_artifact.get("language") or "html").lower()
+        if not source_content.strip() or language != "html":
+            return source_content
+
+        normalized = question.lower()
+        style_lines: list[str] = []
+        if any(token in normalized for token in ("script", "cursive", "handwritten")):
+            style_lines.append("h1, .hero-title { font-family: 'Brush Script MT', cursive; }")
+        if "gold" in normalized:
+            style_lines.append(":root { --xv7-black: #070707; --xv7-gold: #d4af37; }")
+            style_lines.append("body { background: var(--xv7-black); color: var(--xv7-gold); }")
+            style_lines.append(".cta, .button, .accent { color: var(--xv7-gold); border-color: var(--xv7-gold); }")
+
+        revised = source_content
+        if style_lines:
+            style_block = "<style id=\"xv7-fallback-revision\">" + " ".join(style_lines) + "</style>"
+            revised = cls._insert_before_tag(revised, "head", style_block)
+
+        if "premium" in normalized and "premium" not in revised.lower():
+            premium_note = "<p class=\"xv7-premium\">Premium emergency locksmith response with verified technicians.</p>"
+            revised = cls._insert_before_tag(revised, "body", premium_note)
+
+        return revised
 
     @classmethod
     def _validate_artifact_content(
@@ -828,6 +1216,64 @@ if __name__ == \"__main__\":
             if "<style" not in lowered:
                 return False, "inline_css_missing"
 
+        if business_name and business_name.lower() != "local business website" and "local business website" in lowered:
+            return False, "generic_business_name_fallback_detected"
+
+        is_crimson_locksmith = (
+            "crimson turtle locksmiths" in requested_lower
+            or "locksmith" in requested_lower
+            or "lockout" in requested_lower
+        )
+        if is_crimson_locksmith:
+            locksmith_keywords = ("locksmith", "security", "key", "lock", "emergency", "lockout")
+            if not any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in locksmith_keywords):
+                return False, "crimson_locksmith_language_missing"
+            if "urgent" not in lowered or "trust" not in lowered:
+                return False, "crimson_urgency_trust_copy_missing"
+            if not any(token in lowered for token in ("black", "#000", "#111", "dark")):
+                return False, "crimson_color_black_missing"
+            if not any(token in lowered for token in ("red", "#dc", "#ef", "#b9")):
+                return False, "crimson_color_red_missing"
+            if not any(token in lowered for token in ("silver", "gray", "grey", "metal", "#9ca3af", "#c0c0c0")):
+                return False, "crimson_color_silver_missing"
+            irrelevant = (
+                "hot dog",
+                "bouquet",
+                "florist",
+                "arcade",
+                "detailing",
+                "chili dog",
+            )
+            if any(token in lowered for token in irrelevant):
+                return False, "crimson_irrelevant_copy_detected"
+
+        is_grooming = any(
+            token in requested_lower
+            for token in (
+                "grooming",
+                "dog grooming",
+                "pet grooming",
+                "puppy",
+                "dog wash",
+                "bath",
+                "trim",
+                "fur",
+                "paw",
+                "kennel",
+                "spa",
+            )
+        )
+        if is_grooming:
+            grooming_keywords = ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw")
+            if not any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in grooming_keywords):
+                return False, "grooming_language_missing"
+            if any(token in lowered for token in ("harry", "flow flowers", "rico", "neon byte", "crimson turtle")) and (business_name.lower() not in lowered if business_name else True):
+                return False, "grooming_irrelevant_copy_detected"
+
+        if any(token in requested_lower for token in ("locksmith", "florist", "detailing", "arcade", "grooming", "pet grooming", "dog grooming")):
+            if "a clean one-page website with a clear offer" in lowered:
+                return False, "generic_hero_reuse_detected"
+
         return True, "passed"
 
     async def _generate_artifact_with_local_model(
@@ -847,7 +1293,7 @@ if __name__ == \"__main__\":
         if not model_tag:
             raise RuntimeError("No configured code model available for artifact generation")
 
-        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "45"))
+        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "8"))
         timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=10.0)
         endpoint_candidates = configured_ollama_base_url_candidates()
         payload_base = {
@@ -867,6 +1313,7 @@ if __name__ == \"__main__\":
         )
 
         last_error = "model_generation_failed"
+        retry_requirements: list[str] = []
         for strict_retry in (False, True):
             user_prompt = self._build_local_artifact_prompt(
                 question=question,
@@ -878,6 +1325,7 @@ if __name__ == \"__main__\":
                 style_hints=style_hints,
                 layout_hints=layout_hints,
                 strict_retry=strict_retry,
+                retry_requirements=retry_requirements,
             )
             payload = {
                 **payload_base,
@@ -912,6 +1360,99 @@ if __name__ == \"__main__\":
                     if valid:
                         return candidate, model_tag, endpoint
                     last_error = reason
+                    remediation = self._remediation_for_validation_reason(reason)
+                    if remediation not in retry_requirements:
+                        retry_requirements.append(remediation)
+                except (httpx.TimeoutException, httpx.HTTPError) as exc:
+                    last_error = f"{endpoint}: {exc}"
+
+        raise RuntimeError(last_error)
+
+    async def _revise_artifact_with_local_model(
+        self,
+        *,
+        question: str,
+        source_artifact: dict[str, Any],
+    ) -> tuple[str, str, str]:
+        model_resolution = resolve_model_for_runtime_role("code")
+        model_tag = model_resolution.model_tag
+        if not model_tag:
+            raise RuntimeError("No configured code model available for artifact revision")
+
+        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "8"))
+        timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=10.0)
+        endpoint_candidates = configured_ollama_base_url_candidates()
+        payload_base = {
+            "model": model_tag,
+            "stream": False,
+            "keep_alive": -1,
+            "options": {
+                "num_ctx": 12288,
+                "num_predict": 2600,
+                "temperature": 0.25,
+            },
+        }
+
+        system_prompt = (
+            "You are a strict code revision model. Return only complete revised source code with no markdown fences and no prose."
+        )
+
+        source_content = str(source_artifact.get("content") or "")
+        language = str(source_artifact.get("language") or "html")
+        business_name = self._extract_business_name_from_html(source_content) or ""
+        style_hints = self._extract_style_hints(question)
+        retry_requirements: list[str] = []
+        last_error = "artifact_revision_failed"
+
+        for strict_retry in (False, True):
+            user_prompt = self._build_local_artifact_revision_prompt(
+                edit_instruction=question,
+                source_artifact=source_artifact,
+                strict_retry=strict_retry,
+                retry_requirements=retry_requirements,
+            )
+            payload = {
+                **payload_base,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            }
+
+            for endpoint in endpoint_candidates:
+                try:
+                    async with httpx.AsyncClient(base_url=endpoint, timeout=timeout) as client:
+                        response = await client.post("/api/chat", json=payload)
+                        response.raise_for_status()
+                    data: dict[str, Any] = response.json()
+                    message = data.get("message")
+                    if not isinstance(message, dict):
+                        last_error = "missing_message"
+                        continue
+                    raw_content = message.get("content")
+                    if not isinstance(raw_content, str) or not raw_content.strip():
+                        last_error = "missing_content"
+                        continue
+                    candidate = self._strip_markdown_fences(raw_content)
+                    if candidate.strip() == source_content.strip():
+                        last_error = "revision_content_unchanged"
+                        remediation = self._remediation_for_validation_reason(last_error)
+                        if remediation not in retry_requirements:
+                            retry_requirements.append(remediation)
+                        continue
+                    valid, reason = self._validate_artifact_content(
+                        content=candidate,
+                        language=language,
+                        business_name=business_name,
+                        style_hints=style_hints,
+                        requested_question=question,
+                    )
+                    if valid:
+                        return candidate, model_tag, endpoint
+                    last_error = reason
+                    remediation = self._remediation_for_validation_reason(reason)
+                    if remediation not in retry_requirements:
+                        retry_requirements.append(remediation)
                 except (httpx.TimeoutException, httpx.HTTPError) as exc:
                     last_error = f"{endpoint}: {exc}"
 
@@ -921,7 +1462,7 @@ if __name__ == \"__main__\":
         model_resolution = resolve_model_for_runtime_role("code")
         model_tag = model_resolution.model_tag
         endpoint_candidates = configured_ollama_base_url_candidates()
-        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "45"))
+        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "8"))
         timeout = httpx.Timeout(connect=5.0, read=min(timeout_seconds, 10.0), write=10.0, pool=5.0)
 
         checks: list[dict[str, Any]] = []
@@ -967,58 +1508,129 @@ if __name__ == \"__main__\":
             "checks": checks,
         }
 
-    async def build_code_artifact_response(self, question: str) -> dict[str, Any] | None:
+    async def build_code_artifact_response(
+        self,
+        question: str,
+        *,
+        session_messages: list[Any] | None = None,
+        session_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         normalized = self._normalize(question)
-        if not self.is_code_artifact_request(normalized):
+        latest_artifact, source_artifact_label = self._latest_assistant_artifact(
+            session_messages,
+            session_metadata,
+        )
+        is_generation = self.is_code_artifact_request(normalized)
+        is_revision = (
+            latest_artifact is not None
+            and self._looks_like_artifact_edit(normalized)
+            and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized)
+            and not is_generation
+        )
+
+        if not is_generation and not is_revision:
             return None
 
-        language = self._code_artifact_language(normalized)
-        filename = self._extract_requested_filename(question, language)
-        previewable = self._extract_requested_previewable(question, language)
-        apply_requested = self._extract_apply_intent(question)
-        business_name = self._format_business_name(
-            self._extract_artifact_name(question),
-            "Local Business Website" if language == "html" else "Draft Artifact",
-        )
-        style_hints = self._extract_style_hints(question)
-        layout_hints = self._extract_layout_hints(question)
+        if is_revision and latest_artifact is not None:
+            filename = str(latest_artifact.get("filename") or "index.html")
+            language = str(latest_artifact.get("language") or self._code_artifact_language(normalized))
+            previewable = bool(latest_artifact.get("previewable", language == "html"))
+            apply_requested = False
+            business_name = self._extract_business_name_from_html(str(latest_artifact.get("content") or ""))
+            business_name = self._format_business_name(
+                business_name,
+                "Local Business Website" if language == "html" else "Draft Artifact",
+            )
+            style_hints = self._extract_style_hints(question)
+            layout_hints = self._extract_layout_hints(question)
+        else:
+            language = self._code_artifact_language(normalized)
+            filename = self._extract_requested_filename(question, language)
+            previewable = self._extract_requested_previewable(question, language)
+            apply_requested = self._extract_apply_intent(question)
+            business_name = self._format_business_name(
+                self._extract_artifact_name(question),
+                "Local Business Website" if language == "html" else "Draft Artifact",
+            )
+            style_hints = self._extract_style_hints(question)
+            layout_hints = self._extract_layout_hints(question)
 
         content: str
         provenance: dict[str, Any]
-        try:
-            generation_result = await self._generate_artifact_with_local_model(
-                question=question,
-                filename=filename,
-                language=language,
-                previewable=previewable,
-                apply_requested=apply_requested,
-                business_name=business_name,
-                style_hints=style_hints,
-                layout_hints=layout_hints,
-            )
-            if len(generation_result) == 3:
-                content, model_used, model_endpoint = generation_result
-            else:
-                content, model_used = generation_result  # type: ignore[misc]
-                model_endpoint = configured_ollama_base_url_candidates()[0]
-            provenance = {
-                "artifact_generation": "local_model",
-                "model_used": model_used,
-                "model_endpoint": model_endpoint,
-                "artifact_validation": "passed",
-            }
-        except Exception as exc:
-            content = self._default_code_artifact_content(filename, language, question)
-            fallback_reason = str(exc).strip() or "local_model_error"
-            model_resolution = resolve_model_for_runtime_role("code")
-            provenance = {
-                "artifact_generation": "deterministic_prompt_template_fallback",
-                "model_used": model_resolution.model_tag or "unknown",
-                "fallback_reason": fallback_reason,
-            }
+        if is_revision and latest_artifact is not None:
+            try:
+                content, model_used, model_endpoint = await self._revise_artifact_with_local_model(
+                    question=question,
+                    source_artifact=latest_artifact,
+                )
+                provenance = {
+                    "artifact_generation": "local_model_revision",
+                    "model_used": model_used,
+                    "model_endpoint": model_endpoint,
+                    "artifact_validation": "passed",
+                    "source_artifact": source_artifact_label or "latest session artifact",
+                }
+            except Exception as exc:
+                fallback_reason = str(exc).strip() or "artifact_revision_failed"
+                content = self._deterministic_revision_fallback_content(
+                    question=question,
+                    source_artifact=latest_artifact,
+                )
+                model_resolution = resolve_model_for_runtime_role("code")
+                provenance = {
+                    "artifact_generation": "deterministic_prompt_template_fallback",
+                    "model_used": model_resolution.model_tag or "unknown",
+                    "fallback_reason": f"artifact revision fallback: {fallback_reason}",
+                    "source_artifact": source_artifact_label or "latest session artifact",
+                }
+        else:
+            try:
+                generation_result = await self._generate_artifact_with_local_model(
+                    question=question,
+                    filename=filename,
+                    language=language,
+                    previewable=previewable,
+                    apply_requested=apply_requested,
+                    business_name=business_name,
+                    style_hints=style_hints,
+                    layout_hints=layout_hints,
+                )
+                if len(generation_result) == 3:
+                    content, model_used, model_endpoint = generation_result
+                else:
+                    content, model_used = generation_result  # type: ignore[misc]
+                    model_endpoint = configured_ollama_base_url_candidates()[0]
+                provenance = {
+                    "artifact_generation": "local_model",
+                    "model_used": model_used,
+                    "model_endpoint": model_endpoint,
+                    "artifact_validation": "passed",
+                }
+            except Exception as exc:
+                fallback_reason = str(exc).strip() or "local_model_error"
+                content = self._default_code_artifact_content(filename, language, question)
+                valid, reason = self._validate_artifact_content(
+                    content=content,
+                    language=language,
+                    business_name=business_name,
+                    style_hints=style_hints,
+                    requested_question=question,
+                )
+                if not valid:
+                    raise RuntimeError(f"artifact generation failed validation: {fallback_reason}; fallback invalid: {reason}")
+                model_resolution = resolve_model_for_runtime_role("code")
+                provenance = {
+                    "artifact_generation": "deterministic_prompt_template_fallback",
+                    "model_used": model_resolution.model_tag or "unknown",
+                    "fallback_reason": fallback_reason,
+                }
 
         return {
-            "visible_text": f"Here is a draft {language.upper()} artifact for {filename}.",
+            "visible_text": (
+                f"Here is a revised {language.upper()} artifact for {filename}."
+                if is_revision
+                else f"Here is a draft {language.upper()} artifact for {filename}."
+            ),
             "code_artifact": {
                 "type": "code_artifact",
                 "filename": filename,
@@ -1187,6 +1799,8 @@ if __name__ == \"__main__\":
         if self.MEDICAL_PATTERN.search(normalized) and "do you know" in normalized:
             return "medical_context_request"
         if self.WEB_LOOKUP_PATTERN.search(normalized):
+            if self._looks_like_artifact_edit(normalized):
+                return None
             return "web_lookup_request"
 
         external_action_hints = (

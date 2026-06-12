@@ -95,6 +95,15 @@ def _extract_business_name(prompt: str) -> str:
     quoted = re.search(r'"([^"]{2,80})"', prompt)
     if quoted:
         return quoted.group(1)
+    unquoted = re.search(
+        r"for\s+(.+?)(?:\s+(?:website|grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade)\b|\s+using\b|$)",
+        prompt,
+        flags=re.IGNORECASE,
+    )
+    if unquoted:
+        candidate = re.sub(r"\s+", " ", unquoted.group(1)).strip(" .,:;\"'“”‘’")
+        if candidate:
+            return candidate
     return "Local Business Website"
 
 
@@ -102,7 +111,7 @@ def _make_fake_model_html(prompt: str) -> str:
     name = _extract_business_name(prompt)
     lowered = prompt.lower()
     colors: list[str] = []
-    for token in ("pink", "cream", "gold", "black", "silver", "blue", "purple", "cyan", "red"):
+    for token in ("pink", "cream", "gold", "black", "silver", "blue", "purple", "cyan", "red", "green", "white"):
         if token in lowered:
             colors.append(token)
     color_css = ", ".join(colors) if colors else "slate, sky"
@@ -111,6 +120,25 @@ def _make_fake_model_html(prompt: str) -> str:
         mood = "futuristic"
     if "trustworthy" in lowered:
         mood = "trustworthy"
+
+    hero = f"{mood} one-page website for {name}."
+    detail = "Generated from local model test double."
+    lowered_name = name.lower()
+    if "locksmith" in lowered_name:
+        hero = f"{name} emergency locksmith security response."
+        detail = "Urgent trustworthy lockout, rekey, key security, and emergency service."
+    elif "flowers" in lowered_name or "flor" in lowered_name:
+        hero = f"{name} elegant bouquet and floral studio."
+        detail = "Seasonal blooms, bouquet design, and same-day floral delivery."
+    elif "detailing" in lowered_name:
+        hero = f"{name} bold automotive detailing and shine packages."
+        detail = "Interior reset, exterior gloss, and mobile detailing appointments."
+    elif "arcade" in lowered_name:
+        hero = f"{name} neon retro arcade experience."
+        detail = "Retro game grid, high scores, and futuristic arcade nights."
+    elif any(token in lowered for token in ("grooming", "pet grooming", "dog grooming", "dog wash", "trim", "fur", "paw")):
+        hero = f"{name} pet grooming, bath, trim, and fur care."
+        detail = "Friendly dog grooming with bath, wash, paw tidy, coat care, and easy booking."
 
     return f"""<!doctype html>
 <html lang=\"en\">
@@ -127,8 +155,9 @@ def _make_fake_model_html(prompt: str) -> str:
   <body>
     <main class=\"hero\">
       <h1>{name}</h1>
-      <p>{mood} one-page website for {name}.</p>
-      <p>Generated from local model test double.</p>
+            <p>{hero}</p>
+            <p>One-page website experience tuned for {name}.</p>
+            <p>{detail}</p>
     </main>
   </body>
 </html>"""
@@ -834,6 +863,265 @@ def test_local_capability_prompts_are_honest_and_current(
         for part in expected_parts:
             assert part in answer
         assert "context required" not in answer
+
+
+def test_crimson_fidelity_contains_locksmith_language_and_visual_cues(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    prompt = (
+        'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
+        "Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. "
+        "Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo."
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    content = payload["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+    assert "crimson turtle locksmiths" in content
+    assert any(token in content for token in ("locksmith", "security", "key", "lock", "emergency", "lockout"))
+    assert "black" in content
+    assert "red" in content
+    assert "silver" in content or "gray" in content or "grey" in content
+    assert "clean one-page website with a clear offer" not in content
+
+
+def test_unquoted_soggy_doggy_prompt_is_prompt_aware(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    artifact = payload["messages"][-1]["metadata"]["code_artifact"]
+    content = str(artifact.get("content", ""))
+    lowered = content.lower()
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
+
+    assert artifact.get("filename") == "index.html"
+    assert "Soggy Doggy" in content
+    assert any(token in lowered for token in ("groom", "pet", "dog", "bath", "trim", "fur", "paw"))
+    assert any(token in lowered for token in ("white", "#ffffff"))
+    assert any(token in lowered for token in ("purple", "#7c3aed", "#a855f7"))
+    assert any(token in lowered for token in ("green", "#22c55e"))
+    assert "local business website" not in lowered
+    assert "a clean one-page website with a clear offer and simple call to action." not in content
+    for forbidden in ("harry", "flow", "rico", "neon", "crimson"):
+        assert forbidden not in lowered
+    assert provenance.get("artifact_generation") in {"local_model", "deterministic_prompt_template_fallback"}
+
+
+def test_generation_validation_failure_returns_clear_answer(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        raise RuntimeError("timeout")
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._default_code_artifact_content",
+        staticmethod(lambda filename, language, question: "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"),
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    assert "artifact generation failed validation" in answer
+    assert provenance.get("brain_answer_source") == "artifact_generation_error"
+
+
+def test_industry_outputs_do_not_collapse_to_same_hero(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    prompts = [
+        "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. Use soft pink, cream, and gold colors with an elegant script-style heading. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+        "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website. Make it black, silver, and electric blue with a bold automotive feel. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+        "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website. Use bright purple and cyan colors, a retro arcade feel, and a bold futuristic font style. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+        "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+    ]
+
+    heroes: list[str] = []
+    for prompt in prompts:
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+        content = response.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+        hero_match = re.search(r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL)
+        assert hero_match is not None
+        heroes.append(hero_match.group(1).strip().lower())
+
+    assert len(set(heroes)) == len(heroes)
+
+
+def test_artifact_edit_followups_route_to_revision_not_sms(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (
+            "<!doctype html><html><head><style>body{background:black;color:red;} .metal{color:silver;} h1{font-family:Arial;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+            "fake-code-model:test",
+        )
+
+    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+        if "black and gold" in question.lower():
+            return (
+                "<!doctype html><html><head><style>body{background:#070707;color:#f5d27a;} h1{font-family:'Brush Script MT',cursive;} .metal{color:#d4af37;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Premium urgent locksmith emergency lockout service.</p></body></html>",
+                "qwen3:14b",
+                "http://ollama:11434",
+            )
+        return (
+            "<!doctype html><html><head><style>body{background:black;color:red;} h1{font-family:'Brush Script MT',cursive;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+            "qwen3:14b",
+            "http://ollama:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model",
+        _fake_revise,
+    )
+
+    generate_prompt = (
+        'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
+        "Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. "
+        "Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo."
+    )
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": generate_prompt},
+    )
+    assert gen.status_code == 200
+
+    for edit_prompt in (
+        "change the text on the website to script",
+        "make the text script",
+        "change the colors to black and gold",
+    ):
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": edit_prompt},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        answer = payload["messages"][-1]["content"].lower()
+        assert "sms connector" not in answer
+        artifact = payload["messages"][-1]["metadata"].get("code_artifact", {})
+        assert artifact.get("filename") == "index.html"
+        assert artifact.get("language") == "html"
+        assert artifact.get("previewable") is True
+        assert artifact.get("applied") is False
+        provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+        assert provenance.get("artifact_generation") == "local_model_revision"
+        assert provenance.get("artifact_validation") == "passed"
+
+
+def test_explicit_sms_still_returns_refusal_even_after_artifact(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (
+            "<!doctype html><html><head><style>body{background:black;color:red;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+            "fake-code-model:test",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    generate_prompt = (
+        'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
+        "Use black, red, and silver colors. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo."
+    )
+    gen = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": generate_prompt},
+    )
+    assert gen.status_code == 200
+
+    sms = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "send a text to John"},
+    )
+    assert sms.status_code == 200
+    answer = sms.json()["messages"][-1]["content"].lower()
+    assert "can't send texts yet" in answer
+    assert "sms connector" in answer
 
 
 def test_can_you_delete_files_uses_operator_mode_boundary(

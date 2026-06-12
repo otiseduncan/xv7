@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
@@ -687,7 +688,7 @@ def test_local_model_generation_tries_secondary_endpoint(monkeypatch) -> None:
             return _FakeResponse(
                 {
                     "message": {
-                        "content": "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>trustworthy urgent locksmith service</p></body></html>"
+                            "content": "<!doctype html><html><head><style>body{background:black;color:red;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>trustworthy urgent locksmith service</p></body></html>"
                     }
                 }
             )
@@ -776,3 +777,369 @@ def test_artifact_model_connectivity_diagnostic_reports_checks(monkeypatch) -> N
     assert len(payload["checks"]) == 2
     assert payload["checks"][0]["reachable"] is False
     assert payload["checks"][1]["reachable"] is True
+
+
+def test_crimson_template_is_locksmith_specific_and_visual() -> None:
+    contract = AnswerContract()
+    content = contract._default_code_artifact_content(
+        "index.html",
+        "html",
+        (
+            'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
+            "Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service."
+        ),
+    )
+    lowered = content.lower()
+
+    assert "Crimson Turtle Locksmiths" in content
+    assert any(token in lowered for token in ("locksmith", "security", "key", "lock", "emergency", "lockout"))
+    assert any(token in lowered for token in ("black", "dark", "#000", "#111"))
+    assert "red" in lowered or "#dc2626" in lowered
+    assert any(token in lowered for token in ("silver", "gray", "grey", "metal", "#9ca3af"))
+    assert "trust" in lowered and "urgent" in lowered
+    assert "a clean one-page website with a clear offer" not in lowered
+
+
+def test_unquoted_soggy_doggy_name_and_grooming_template() -> None:
+    contract = AnswerContract()
+    prompt = "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+
+    assert contract._extract_artifact_name(prompt) == "Soggy Doggy"
+    assert contract._artifact_business_category(prompt, "Soggy Doggy") == "grooming"
+
+    content = contract._default_code_artifact_content("index.html", "html", prompt)
+    lowered = content.lower()
+    assert "Soggy Doggy" in content
+    assert any(token in lowered for token in ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw"))
+    assert "white" in lowered or "#ffffff" in lowered
+    assert "purple" in lowered or "#7c3aed" in lowered or "#a855f7" in lowered
+    assert "green" in lowered or "#22c55e" in lowered
+    assert "local business website" not in lowered
+    assert "a clean one-page website with a clear offer and simple call to action." not in content
+    for forbidden in ("harry", "flow flowers", "rico", "neon byte", "crimson turtle"):
+        assert forbidden not in lowered
+
+
+def test_validate_artifact_rejects_generic_output_for_grooming_prompt() -> None:
+    contract = AnswerContract()
+    valid, reason = contract._validate_artifact_content(
+        content=(
+            "<!doctype html><html><head><style>body{background:white;color:purple;}</style></head>"
+            "<body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"
+        ),
+        language="html",
+        business_name="Soggy Doggy",
+        style_hints={"colors": ["white", "purple", "green"], "styles": []},
+        requested_question="generate a small HTML artifact for Soggy Doggy grooming using white purple and green",
+    )
+
+    assert valid is False
+    assert reason in {
+        "business_name_missing",
+        "color_hints_missing",
+        "grooming_language_missing",
+        "generic_business_name_fallback_detected",
+        "generic_hero_reuse_detected",
+    }
+
+
+def test_generation_fallback_raises_when_template_cannot_pass_validation(monkeypatch) -> None:
+    contract = AnswerContract()
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.resolve_model_for_runtime_role",
+        lambda role: RuntimeRoleModelResolution(
+            profile="balanced",
+            profile_source="env",
+            alias_used=role,
+            canonical_role="code",
+            model_tag="qwen3:14b",
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        AnswerContract,
+        "_default_code_artifact_content",
+        staticmethod(lambda filename, language, question: "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"),
+    )
+
+    async def _fake_generate_failure(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        raise RuntimeError("timeout")
+
+    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate_failure)
+
+    with pytest.raises(RuntimeError, match="artifact generation failed validation"):
+        asyncio.run(
+            contract.build_code_artifact_response(
+                "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+            )
+        )
+
+
+def test_artifact_generation_retry_prompt_includes_missing_requirements(monkeypatch) -> None:
+    contract = AnswerContract()
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.resolve_model_for_runtime_role",
+        lambda role: RuntimeRoleModelResolution(
+            profile="balanced",
+            profile_source="env",
+            alias_used=role,
+            canonical_role="code",
+            model_tag="qwen3:14b",
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.configured_ollama_base_url_candidates",
+        lambda: ["http://127.0.0.1:11434"],
+    )
+
+    user_prompts: list[str] = []
+    responses = [
+        {
+            "message": {
+                "content": "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>service</p></body></html>"
+            }
+        },
+        {
+            "message": {
+                "content": "<!doctype html><html><head><style>body{background:black;color:red;} .silver{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith security lockout service</p></body></html>"
+            }
+        },
+    ]
+
+    class _FakeResponse:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._payload
+
+    class _FakeClient:
+        def __init__(self, *, base_url: str, timeout):
+            self.base_url = base_url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, path: str, json: dict):
+            messages = json.get("messages", [])
+            user_prompts.append(str(messages[-1].get("content", "")))
+            payload = responses.pop(0)
+            return _FakeResponse(payload)
+
+    monkeypatch.setattr("core.brain.answer_contract.httpx.AsyncClient", _FakeClient)
+
+    content, model, _endpoint = asyncio.run(
+        contract._generate_artifact_with_local_model(
+            question=(
+                'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
+                "Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service."
+            ),
+            filename="index.html",
+            language="html",
+            previewable=True,
+            apply_requested=False,
+            business_name="Crimson Turtle Locksmiths",
+            style_hints={"colors": ["black", "red", "silver"], "styles": ["trustworthy", "urgent"]},
+            layout_hints=[],
+        )
+    )
+
+    assert model == "qwen3:14b"
+    assert "Crimson Turtle Locksmiths" in content
+    assert len(user_prompts) == 2
+    assert "Missing requirements:" in user_prompts[1]
+    assert "silver/gray/metal" in user_prompts[1] or "silver" in user_prompts[1]
+
+
+def test_artifact_edit_detection_prefers_edit_over_sms_with_active_artifact() -> None:
+    contract = AnswerContract()
+    session_messages = [
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><head><style>body{background:black;color:red;}.x{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+                }
+            },
+        }
+    ]
+
+    assert contract._tool_intent_category("change the text on the website to script") is None
+    artifact, source = contract._latest_assistant_artifact(session_messages, {})
+    assert artifact is not None
+    assert source == "latest session artifact"
+    assert contract._looks_like_artifact_edit("change the text on the website to script") is True
+    assert contract.SMS_EXPLICIT_SEND_PATTERN.search("change the text on the website to script") is None
+
+
+def test_revision_prompt_contains_existing_content_and_instruction() -> None:
+    contract = AnswerContract()
+    artifact = {
+        "filename": "index.html",
+        "language": "html",
+        "previewable": True,
+        "applied": False,
+        "content": "<!doctype html><html><body><h1>Crimson Turtle Locksmiths</h1></body></html>",
+    }
+    prompt = contract._build_local_artifact_revision_prompt(
+        edit_instruction="change the font to script",
+        source_artifact=artifact,
+        strict_retry=False,
+    )
+
+    assert "change the font to script" in prompt
+    assert "Crimson Turtle Locksmiths" in prompt
+    assert "full replacement source code" in prompt
+
+
+def test_build_code_artifact_response_revision_preserves_metadata(monkeypatch) -> None:
+    contract = AnswerContract()
+    session_messages = [
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><head><style>body{background:black;color:red;} h1{font-family:Arial;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+                }
+            },
+        }
+    ]
+
+    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]):
+        return (
+            "<!doctype html><html><head><style>body{background:black;color:red;} h1{font-family:'Brush Script MT',cursive;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+            "qwen3:14b",
+            "http://ollama:11434",
+        )
+
+    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _fake_revise)
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "change the text on the website to script",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    artifact = response["code_artifact"]
+    assert artifact["filename"] == "index.html"
+    assert artifact["language"] == "html"
+    assert artifact["previewable"] is True
+    assert artifact["applied"] is False
+    assert "Brush Script" in artifact["content"]
+    assert response["provenance"]["artifact_generation"] == "local_model_revision"
+    assert response["provenance"]["artifact_validation"] == "passed"
+    assert response["provenance"]["source_artifact"] == "latest session artifact"
+
+
+def test_build_code_artifact_response_revision_uses_deterministic_fallback(monkeypatch) -> None:
+    contract = AnswerContract()
+    session_messages = [
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><head><style>body{background:black;color:red;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Urgent trustworthy locksmith emergency lockout service.</p></body></html>",
+                }
+            },
+        }
+    ]
+
+    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]):
+        raise RuntimeError("revision_content_unchanged")
+
+    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _fake_revise)
+    monkeypatch.setattr(
+        "core.brain.answer_contract.resolve_model_for_runtime_role",
+        lambda role: RuntimeRoleModelResolution(
+            profile="balanced",
+            profile_source="env",
+            alias_used=role,
+            canonical_role="code",
+            model_tag="qwen3:14b",
+            error=None,
+        ),
+    )
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "change the colors to black and gold and make it more premium",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    artifact = response["code_artifact"]
+    assert artifact["filename"] == "index.html"
+    assert artifact["language"] == "html"
+    assert artifact["previewable"] is True
+    assert artifact["applied"] is False
+    assert "#d4af37" in artifact["content"] or "gold" in artifact["content"].lower()
+    assert "premium" in artifact["content"].lower()
+    assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+    assert response["provenance"]["model_used"] == "qwen3:14b"
+    assert response["provenance"]["source_artifact"] == "latest session artifact"
+    assert "artifact revision fallback" in response["provenance"]["fallback_reason"]
+
+
+def test_sms_pattern_handles_explicit_message_wording() -> None:
+    contract = AnswerContract()
+    records = _layer_map()
+
+    for prompt in (
+        "send a text to John",
+        "text my wife",
+        "message Sarah",
+        "SMS this to Bob",
+    ):
+        answer = contract.try_answer(
+            prompt,
+            records_by_layer=records,
+            session_metadata={},
+        )
+        assert answer is not None
+        assert "sms connector" in answer.lower()
+
+    non_sms = contract._tool_intent_category("change the text on the website to script")
+    assert non_sms is None
