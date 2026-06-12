@@ -115,12 +115,9 @@ def test_apply_patch_can_create_parent_directories_inside_repo(
     )
 
     assert result.status == "success"
-    assert (
-        (tmp_path / "docs" / "nested" / "example.md").read_text(
-            encoding="utf-8"
-        )
-        == "created\n"
-    )
+    assert (tmp_path / "docs" / "nested" / "example.md").read_text(
+        encoding="utf-8"
+    ) == "created\n"
     assert result.data["changed_files"] == ["docs/nested/example.md"]
 
 

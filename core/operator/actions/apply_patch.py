@@ -49,9 +49,7 @@ def _inside_repo(repo_root: Path, candidate: Path) -> bool:
         return False
 
 
-def _safe_target_path(
-    repo_root: Path, raw_path: str
-) -> tuple[Path | None, str | None]:
+def _safe_target_path(repo_root: Path, raw_path: str) -> tuple[Path | None, str | None]:
     if not raw_path or not raw_path.strip():
         return None, "Patch change path is required."
     path = Path(raw_path)
