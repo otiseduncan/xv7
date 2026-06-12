@@ -17,7 +17,9 @@ class FakeCompletedProcess:
         self.stderr = stderr
 
 
-def test_diff_report_clean_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_diff_report_clean_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     def fake_run(_repo_root: Path, _command: list[str]) -> FakeCompletedProcess:
         return FakeCompletedProcess(0, stdout="", stderr="")
 

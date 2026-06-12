@@ -24,7 +24,7 @@ GIT_COMMANDS: dict[str, GitCommand] = {
 
 
 def _compact(text: str, max_chars: int = MAX_OUTPUT_CHARS) -> str:
-    cleaned = text.strip()
+    cleaned = text.rstrip()
     if len(cleaned) <= max_chars:
         return cleaned
     return cleaned[-max_chars:]
@@ -201,6 +201,8 @@ def diff_report(*, action_id: str, repo_root: Path) -> OperatorActionResult:
             "shortstat": command_results["shortstat"]["stdout_tail"],
             "command_results": command_results,
             "duration_ms": duration_ms,
-            "next_recommended_action": "run tests before commit" if has_changes else "none",
+            "next_recommended_action": "run tests before commit"
+            if has_changes
+            else "none",
         },
     )
