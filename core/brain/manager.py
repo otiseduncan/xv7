@@ -307,5 +307,8 @@ class BrainContextManager:
     async def code_artifact_response(self, question: str) -> dict[str, Any] | None:
         return await self.answer_contract.build_code_artifact_response(question)
 
+    async def code_artifact_connectivity_diagnostic(self) -> dict[str, Any]:
+        return await self.answer_contract.artifact_model_connectivity_diagnostic()
+
     def apply_active_focus_instruction(self, focus_summary: str) -> BrainRecord:
         return self.loader.apply_active_focus_instruction(focus_summary)

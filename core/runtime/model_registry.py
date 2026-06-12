@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse, urlunparse
 
 try:
     import yaml  # type: ignore[import-untyped]
@@ -359,16 +360,65 @@ def resolve_model_for_runtime_role(
 
 
 def configured_ollama_base_url() -> str:
-    env_value = _normalized(os.getenv("OLLAMA_BASE_URL"))
-    if env_value is not None:
-        return env_value.rstrip("/")
-
-    config = load_registry_config()
-    base_url = _normalized(config.ollama.get("base_url"))
-    if base_url is not None:
-        return base_url.rstrip("/")
-
+    candidates = configured_ollama_base_url_candidates()
+    if candidates:
+        return candidates[0]
     return DEFAULT_OLLAMA["base_url"].rstrip("/")
+
+
+def _in_docker_runtime() -> bool:
+    if Path("/.dockerenv").exists():
+        return True
+    cgroup_path = Path("/proc/1/cgroup")
+    if cgroup_path.exists():
+        try:
+            lowered = cgroup_path.read_text(encoding="utf-8", errors="ignore").lower()
+            if "docker" in lowered or "kubepods" in lowered or "containerd" in lowered:
+                return True
+        except OSError:
+            return False
+    return False
+
+
+def _replace_host(base_url: str, host: str) -> str:
+    parsed = urlparse(base_url)
+    scheme = parsed.scheme or "http"
+    port = parsed.port
+    netloc = f"{host}:{port}" if port is not None else host
+    return urlunparse((scheme, netloc, parsed.path or "", "", "", "")).rstrip("/")
+
+
+def configured_ollama_base_url_candidates() -> list[str]:
+    env_value = _normalized(os.getenv("OLLAMA_BASE_URL"))
+    config = load_registry_config()
+    config_base = _normalized(config.ollama.get("base_url"))
+    base_url = (env_value or config_base or DEFAULT_OLLAMA["base_url"]).rstrip("/")
+
+    parsed = urlparse(base_url)
+    hostname = (parsed.hostname or "").lower()
+    in_docker = _in_docker_runtime()
+
+    candidates: list[str] = [base_url]
+
+    # Native runs cannot resolve Docker service DNS names like 'ollama'.
+    if not in_docker and hostname in {"ollama", "xv7-ollama"}:
+        candidates.append(_replace_host(base_url, "127.0.0.1"))
+        candidates.append(_replace_host(base_url, "localhost"))
+
+    # Container runs should prefer service DNS if a localhost host leaked into config.
+    if in_docker and hostname in {"127.0.0.1", "localhost", "host.docker.internal"}:
+        candidates.append(_replace_host(base_url, "ollama"))
+        candidates.append(_replace_host(base_url, "xv7-ollama"))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        cleaned = candidate.rstrip("/")
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        deduped.append(cleaned)
+    return deduped
 
 
 def configured_ollama_timeout_seconds() -> float:

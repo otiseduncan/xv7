@@ -37,6 +37,30 @@ async def _fake_persist_vector_memory_round_trip(
     return {"status": "ok"}
 
 
+async def _fake_artifact_connectivity() -> dict[str, Any]:
+    return {
+        "configured_endpoint": "http://ollama:11434",
+        "endpoint_candidates": ["http://ollama:11434", "http://127.0.0.1:11434"],
+        "resolved_model_tag": "qwen3:14b",
+        "reachable_endpoint": "http://127.0.0.1:11434",
+        "reachable": True,
+        "checks": [
+            {
+                "endpoint": "http://ollama:11434",
+                "reachable": False,
+                "available_models": [],
+                "error": "[Errno 11001] getaddrinfo failed",
+            },
+            {
+                "endpoint": "http://127.0.0.1:11434",
+                "reachable": True,
+                "available_models": ["qwen3:14b"],
+                "error": None,
+            },
+        ],
+    }
+
+
 def _setup_contract_only(monkeypatch, tmp_path: Path) -> TestClient:
     monkeypatch.setenv("XV7_API_KEY", "test-secret")
     monkeypatch.setattr("core.main.base_agent", _FailingAgent())
@@ -739,6 +763,24 @@ def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Pat
     assert "cannot execute live web searches" in answer
     assert "browser tool" in answer
     assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("code_artifact") == {}
+
+
+def test_runtime_artifact_connectivity_endpoint(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "core.main.brain_context_manager.code_artifact_connectivity_diagnostic",
+        _fake_artifact_connectivity,
+    )
+
+    response = client.get("/runtime/models/artifact-connectivity")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload.get("resolved_model_tag") == "qwen3:14b"
+    assert payload.get("reachable") is True
+    assert payload.get("reachable_endpoint") == "http://127.0.0.1:11434"
+    checks = payload.get("checks", [])
+    assert isinstance(checks, list)
+    assert len(checks) == 2
 
 
 def test_become_prompt_is_personal_assistant_first(monkeypatch, tmp_path: Path) -> None:

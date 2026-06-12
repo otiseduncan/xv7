@@ -1621,6 +1621,11 @@ async def runtime_effective_models(profile: str | None = None) -> dict[str, Any]
     return build_effective_runtime_models(profile_override=profile)
 
 
+@app.get("/runtime/models/artifact-connectivity")
+async def runtime_artifact_model_connectivity() -> dict[str, Any]:
+    return await brain_context_manager.code_artifact_connectivity_diagnostic()
+
+
 @app.get("/runtime/context/active")
 async def runtime_active_context() -> dict[str, Any]:
     context = brain_context_manager.build_active_context()

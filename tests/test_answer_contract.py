@@ -5,6 +5,7 @@ import asyncio
 from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer
+from core.runtime.model_registry import RuntimeRoleModelResolution
 
 
 def _layer_map() -> dict[BrainLayer, object]:
@@ -631,3 +632,147 @@ def test_artifact_validation_blocks_stale_business_leakage() -> None:
     )
     assert valid is False
     assert reason == "stale_business_leak_detected"
+
+
+def test_local_model_generation_tries_secondary_endpoint(monkeypatch) -> None:
+    contract = AnswerContract()
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.resolve_model_for_runtime_role",
+        lambda role: RuntimeRoleModelResolution(
+            profile="balanced",
+            profile_source="env",
+            alias_used=role,
+            canonical_role="code",
+            model_tag="qwen3:14b",
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.configured_ollama_base_url_candidates",
+        lambda: ["http://ollama:11434", "http://127.0.0.1:11434"],
+    )
+
+    calls: list[str] = []
+
+    class _FakeResponse:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._payload
+
+    class _FakeClient:
+        def __init__(self, *, base_url: str, timeout):
+            self.base_url = base_url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, path: str, json: dict):
+            calls.append(self.base_url)
+            if self.base_url.startswith("http://ollama"):
+                import httpx
+
+                raise httpx.ConnectError(
+                    "[Errno 11001] getaddrinfo failed",
+                    request=httpx.Request("POST", f"{self.base_url}{path}"),
+                )
+            return _FakeResponse(
+                {
+                    "message": {
+                        "content": "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>trustworthy urgent locksmith service</p></body></html>"
+                    }
+                }
+            )
+
+    monkeypatch.setattr("core.brain.answer_contract.httpx.AsyncClient", _FakeClient)
+
+    content, model, endpoint = asyncio.run(
+        contract._generate_artifact_with_local_model(
+            question=(
+                "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. "
+                "Use black, red, and silver colors, make it trustworthy and urgent."
+            ),
+            filename="index.html",
+            language="html",
+            previewable=True,
+            apply_requested=False,
+            business_name="Crimson Turtle Locksmiths",
+            style_hints={"colors": ["black", "red", "silver"], "styles": ["trustworthy", "urgent"]},
+            layout_hints=[],
+        )
+    )
+
+    assert model == "qwen3:14b"
+    assert endpoint == "http://127.0.0.1:11434"
+    assert "Crimson Turtle Locksmiths" in content
+    assert calls[0] == "http://ollama:11434"
+    assert "http://127.0.0.1:11434" in calls
+
+
+def test_artifact_model_connectivity_diagnostic_reports_checks(monkeypatch) -> None:
+    contract = AnswerContract()
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.resolve_model_for_runtime_role",
+        lambda role: RuntimeRoleModelResolution(
+            profile="balanced",
+            profile_source="env",
+            alias_used=role,
+            canonical_role="code",
+            model_tag="qwen3:14b",
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.configured_ollama_base_url_candidates",
+        lambda: ["http://ollama:11434", "http://127.0.0.1:11434"],
+    )
+
+    class _FakeResponse:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._payload
+
+    class _FakeClient:
+        def __init__(self, *, base_url: str, timeout):
+            self.base_url = base_url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, path: str):
+            if self.base_url.startswith("http://ollama"):
+                import httpx
+
+                raise httpx.ConnectError(
+                    "[Errno 11001] getaddrinfo failed",
+                    request=httpx.Request("GET", f"{self.base_url}{path}"),
+                )
+            return _FakeResponse({"models": [{"name": "qwen3:14b"}]})
+
+    monkeypatch.setattr("core.brain.answer_contract.httpx.AsyncClient", _FakeClient)
+
+    payload = asyncio.run(contract.artifact_model_connectivity_diagnostic())
+    assert payload["configured_endpoint"] == "http://ollama:11434"
+    assert payload["resolved_model_tag"] == "qwen3:14b"
+    assert payload["reachable"] is True
+    assert payload["reachable_endpoint"] == "http://127.0.0.1:11434"
+    assert len(payload["checks"]) == 2
+    assert payload["checks"][0]["reachable"] is False
+    assert payload["checks"][1]["reachable"] is True

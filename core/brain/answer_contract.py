@@ -9,7 +9,7 @@ import httpx
 
 from core.brain.schema import BrainLayer, BrainRecord
 from core.runtime.model_registry import (
-    configured_ollama_base_url,
+    configured_ollama_base_url_candidates,
     resolve_model_for_runtime_role,
 )
 
@@ -841,7 +841,7 @@ if __name__ == \"__main__\":
         business_name: str,
         style_hints: dict[str, list[str]],
         layout_hints: list[str],
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         model_resolution = resolve_model_for_runtime_role("code")
         model_tag = model_resolution.model_tag
         if not model_tag:
@@ -849,6 +849,7 @@ if __name__ == \"__main__\":
 
         timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "45"))
         timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=10.0)
+        endpoint_candidates = configured_ollama_base_url_candidates()
         payload_base = {
             "model": model_tag,
             "stream": False,
@@ -886,34 +887,85 @@ if __name__ == \"__main__\":
                 ],
             }
 
-            try:
-                async with httpx.AsyncClient(base_url=configured_ollama_base_url(), timeout=timeout) as client:
-                    response = await client.post("/api/chat", json=payload)
-                    response.raise_for_status()
-                data: dict[str, Any] = response.json()
-                message = data.get("message")
-                if not isinstance(message, dict):
-                    last_error = "missing_message"
-                    continue
-                raw_content = message.get("content")
-                if not isinstance(raw_content, str) or not raw_content.strip():
-                    last_error = "missing_content"
-                    continue
-                candidate = self._strip_markdown_fences(raw_content)
-                valid, reason = self._validate_artifact_content(
-                    content=candidate,
-                    language=language,
-                    business_name=business_name,
-                    style_hints=style_hints,
-                    requested_question=question,
-                )
-                if valid:
-                    return candidate, model_tag
-                last_error = reason
-            except (httpx.TimeoutException, httpx.HTTPError) as exc:
-                last_error = str(exc)
+            for endpoint in endpoint_candidates:
+                try:
+                    async with httpx.AsyncClient(base_url=endpoint, timeout=timeout) as client:
+                        response = await client.post("/api/chat", json=payload)
+                        response.raise_for_status()
+                    data: dict[str, Any] = response.json()
+                    message = data.get("message")
+                    if not isinstance(message, dict):
+                        last_error = "missing_message"
+                        continue
+                    raw_content = message.get("content")
+                    if not isinstance(raw_content, str) or not raw_content.strip():
+                        last_error = "missing_content"
+                        continue
+                    candidate = self._strip_markdown_fences(raw_content)
+                    valid, reason = self._validate_artifact_content(
+                        content=candidate,
+                        language=language,
+                        business_name=business_name,
+                        style_hints=style_hints,
+                        requested_question=question,
+                    )
+                    if valid:
+                        return candidate, model_tag, endpoint
+                    last_error = reason
+                except (httpx.TimeoutException, httpx.HTTPError) as exc:
+                    last_error = f"{endpoint}: {exc}"
 
         raise RuntimeError(last_error)
+
+    async def artifact_model_connectivity_diagnostic(self) -> dict[str, Any]:
+        model_resolution = resolve_model_for_runtime_role("code")
+        model_tag = model_resolution.model_tag
+        endpoint_candidates = configured_ollama_base_url_candidates()
+        timeout_seconds = float(os.getenv("XV7_ARTIFACT_MODEL_TIMEOUT_SECONDS", "45"))
+        timeout = httpx.Timeout(connect=5.0, read=min(timeout_seconds, 10.0), write=10.0, pool=5.0)
+
+        checks: list[dict[str, Any]] = []
+        first_reachable: str | None = None
+        for endpoint in endpoint_candidates:
+            try:
+                async with httpx.AsyncClient(base_url=endpoint, timeout=timeout) as client:
+                    response = await client.get("/api/tags")
+                    response.raise_for_status()
+                payload = response.json()
+                models = payload.get("models", []) if isinstance(payload, dict) else []
+                available = []
+                if isinstance(models, list):
+                    for item in models:
+                        if isinstance(item, dict):
+                            name = item.get("name") or item.get("model")
+                            if isinstance(name, str) and name.strip():
+                                available.append(name.strip())
+                reachable = True
+                error: str | None = None
+            except Exception as exc:
+                reachable = False
+                available = []
+                error = str(exc)
+
+            checks.append(
+                {
+                    "endpoint": endpoint,
+                    "reachable": reachable,
+                    "available_models": sorted(available),
+                    "error": error,
+                }
+            )
+            if reachable and first_reachable is None:
+                first_reachable = endpoint
+
+        return {
+            "configured_endpoint": endpoint_candidates[0] if endpoint_candidates else None,
+            "endpoint_candidates": endpoint_candidates,
+            "resolved_model_tag": model_tag,
+            "reachable_endpoint": first_reachable,
+            "reachable": first_reachable is not None,
+            "checks": checks,
+        }
 
     async def build_code_artifact_response(self, question: str) -> dict[str, Any] | None:
         normalized = self._normalize(question)
@@ -934,7 +986,7 @@ if __name__ == \"__main__\":
         content: str
         provenance: dict[str, Any]
         try:
-            content, model_used = await self._generate_artifact_with_local_model(
+            generation_result = await self._generate_artifact_with_local_model(
                 question=question,
                 filename=filename,
                 language=language,
@@ -944,9 +996,15 @@ if __name__ == \"__main__\":
                 style_hints=style_hints,
                 layout_hints=layout_hints,
             )
+            if len(generation_result) == 3:
+                content, model_used, model_endpoint = generation_result
+            else:
+                content, model_used = generation_result  # type: ignore[misc]
+                model_endpoint = configured_ollama_base_url_candidates()[0]
             provenance = {
                 "artifact_generation": "local_model",
                 "model_used": model_used,
+                "model_endpoint": model_endpoint,
                 "artifact_validation": "passed",
             }
         except Exception as exc:
