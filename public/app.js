@@ -1071,6 +1071,9 @@ class Xv7UI {
       try {
         const messages = Array.isArray(data?.messages) ? data.messages : [];
         const assistantMessage = messages[messages.length - 1];
+        const responseMetadata = data && typeof data === 'object' && data.metadata && typeof data.metadata === 'object'
+          ? data.metadata
+          : {};
         const assistantContent =
           assistantMessage &&
           typeof assistantMessage === 'object' &&
@@ -1084,19 +1087,28 @@ class Xv7UI {
           typeof assistantMessage.metadata === 'object'
             ? assistantMessage.metadata
             : {};
+        const fallbackAssistantMeta =
+          responseMetadata.last_assistant_payload && typeof responseMetadata.last_assistant_payload === 'object'
+            ? responseMetadata.last_assistant_payload
+            : {};
+        const mergedAssistantMeta = {
+          ...fallbackAssistantMeta,
+          ...assistantMeta,
+        };
         const assistantArtifacts = this.collectCodeArtifacts(assistantMessage);
         if (assistantArtifacts.length) {
-          assistantMeta.code_artifacts = assistantArtifacts;
+          mergedAssistantMeta.code_artifacts = assistantArtifacts;
         }
-        const assistantText = this.resolveAssistantVisibleText(assistantMeta, assistantContent);
+        this.debugArtifactReceipt(assistantMessage, mergedAssistantMeta);
+        const assistantText = this.resolveAssistantVisibleText(mergedAssistantMeta, assistantContent);
         const reasoningText = this.extractReasoning(assistantContent);
 
         const assistantArticle = this.appendMessageCard(
           'assistant',
           assistantText || 'No assistant content returned.',
           reasoningText,
-          assistantMeta,
-          this.inferAssistantTimestamp(assistantMeta),
+          mergedAssistantMeta,
+          this.inferAssistantTimestamp(mergedAssistantMeta),
         );
 
         this.setAvatarState('idle', 'assistant-response-received');
@@ -2971,6 +2983,26 @@ class Xv7UI {
         previewable: artifact.previewable === true,
       }))
       .filter((artifact) => artifact.filename.trim() && artifact.content);
+  }
+
+  debugArtifactReceipt(message, metadata) {
+    const debugEnabled = Boolean(window.__XV7_DEBUG_ARTIFACTS);
+    if (!debugEnabled || !console || typeof console.debug !== 'function') return;
+    const artifacts = this.collectCodeArtifacts(message);
+    const metaArtifacts = [];
+    if (metadata && typeof metadata === 'object') {
+      if (Array.isArray(metadata.code_artifacts)) {
+        metaArtifacts.push(...metadata.code_artifacts);
+      }
+      if (metadata.code_artifact && typeof metadata.code_artifact === 'object') {
+        metaArtifacts.push(metadata.code_artifact);
+      }
+    }
+    console.debug('XV7 artifact receipt', {
+      messageArtifacts: artifacts.length,
+      metadataArtifacts: metaArtifacts.length,
+      hasCodeArtifact: metaArtifacts.length > 0 || artifacts.length > 0,
+    });
   }
 
   /**

@@ -1319,6 +1319,61 @@ describe('ModelProfileControl', () => {
     expect(artifactCard.querySelector('.code-artifact-button:last-child')?.textContent).toBe('Preview');
   });
 
+  it('renders inline artifact card from real response metadata fallback path', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init?.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            last_assistant_payload: {
+              visible_text: 'Here is a draft HTML artifact for index.html.',
+              code_artifact: {
+                type: 'code_artifact',
+                filename: 'index.html',
+                language: 'html',
+                previewable: true,
+                applied: false,
+                content: '<!doctype html><html><body><main>Draft</main></body></html>',
+              },
+            },
+          },
+          messages: [
+            { role: 'user', content: 'Before artifact', metadata: {} },
+            { role: 'assistant', content: 'Here is a draft HTML artifact for index.html.', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Generate a small HTML code artifact for a one-page website.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    ui.appendMessageCard('user', 'After artifact', null, null, '2026-06-11T00:00:05Z');
+
+    const cards = [...document.querySelectorAll('.chat-card')];
+    const artifactCard = cards[1].querySelector('.code-artifact-card');
+    expect(cards[1].querySelector('.chat-visible-text')?.textContent).toBe('Here is a draft HTML artifact for index.html.');
+    expect(artifactCard).toBeTruthy();
+    expect(artifactCard.querySelector('.code-artifact-filename')?.textContent).toBe('index.html');
+    expect(artifactCard.querySelector('.code-artifact-badge-language')?.textContent).toBe('HTML');
+    expect(artifactCard.querySelector('.code-artifact-badge-status')?.textContent).toBe('Draft only');
+    expect([...artifactCard.querySelectorAll('.code-artifact-button')].map((node) => node.textContent)).toEqual([
+      'Copy',
+      'Download',
+      'Preview',
+    ]);
+    expect(artifactCard.querySelector('.code-artifact-footer-copy')?.textContent).toContain('not been applied to the repo');
+    expect(cards[2].textContent || '').toContain('After artifact');
+  });
+
   it('renders operator receipt chip and expandable details', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
