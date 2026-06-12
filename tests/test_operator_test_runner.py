@@ -76,7 +76,11 @@ def test_test_runner_single_pytest_success(
     assert result.data["passed"] is True
     assert result.data["failed_command"] is None
     assert result.data["exit_codes"] == [0]
-    assert calls[0][2:5] == ["pytest", "tests/test_operator_registry.py::test_operator_registry_contains_expected_actions", "-v"]
+    assert calls[0][2:5] == [
+        "pytest",
+        "tests/test_operator_registry.py::test_operator_registry_contains_expected_actions",
+        "-v",
+    ]
 
 
 def test_test_runner_stops_on_failed_command(
