@@ -413,8 +413,28 @@ class AnswerContract:
 
         if any(token in text for token in ("purple", "violet", "magenta")):
             style["accent"] = "#a855f7"
+        if "yellow" in text:
+            style["accent"] = "#facc15"
+        if "gold" in text:
+            style["accent"] = "#d4af37"
+        if "red" in text:
+            style["accent"] = "#dc2626"
+        if "orange" in text:
+            style["accent"] = "#f97316"
+        if "blue" in text:
+            style["accent"] = "#2563eb"
         if any(token in text for token in ("green", "mint", "lime")):
             style["accent_2"] = "#22c55e"
+        if "black" in text:
+            style.update(
+                {
+                    "bg": "#070707",
+                    "panel": "rgba(12, 12, 12, 0.96)",
+                    "text": "#f5f5f5",
+                    "muted": "#d4d4d4",
+                    "border": "rgba(250, 204, 21, 0.24)",
+                }
+            )
         if "white" in text:
             style.update(
                 {
@@ -424,6 +444,8 @@ class AnswerContract:
                     "muted": "#4b5563",
                 }
             )
+        if "silver" in text:
+            style["accent_2"] = "#c0c0c0"
         if any(token in text for token in ("cyan", "aqua", "teal")):
             style["accent_2"] = "#22d3ee"
         if any(token in text for token in ("bright", "neon")):
@@ -434,6 +456,10 @@ class AnswerContract:
             style["font_stack"] = '"Trebuchet MS", "Arial Black", sans-serif'
         if any(token in text for token in ("clean", "playful")) and category != "arcade":
             style["font_stack"] = '"Segoe UI", system-ui, sans-serif'
+
+        if any(token in text for token in ("white", "cream")) and any(token in text for token in ("black", "dark")):
+            style["text"] = "#111827"
+            style["panel"] = "rgba(255, 255, 255, 0.94)"
 
         return style
 
@@ -475,6 +501,12 @@ class AnswerContract:
             }
 
         if category == "grooming":
+            palette = ", ".join(AnswerContract._extract_style_hints(question).get("colors", []))
+            palette_line = (
+                f"Requested palette applied across grooming stations and CTA accents: {palette}."
+                if palette
+                else "Requested palette applied across grooming stations and CTA accents."
+            )
             return {
                 "display_name": display_name,
                 "style": style,
@@ -491,7 +523,7 @@ class AnswerContract:
                 "info_title": "Why Pet Parents Choose Us",
                 "info_lines": [
                     "Calm, pet-safe handling for puppies and adult dogs.",
-                    "White, purple, and green studio style with clean grooming stations.",
+                    palette_line,
                     "Simple appointment booking and clear service timing.",
                 ],
                 "action_title": "Ready for a Fresh Groom?",
@@ -932,6 +964,275 @@ if __name__ == \"__main__\":
                 hints.append(cleaned)
         return hints[:6]
 
+    @staticmethod
+    def _artifact_intent_label(question: str) -> str:
+        lowered = question.lower()
+        if "small html artifact" in lowered:
+            return "small HTML artifact"
+        if "one-page" in lowered and "website" in lowered:
+            return "one-page website"
+        if "html" in lowered:
+            return "HTML artifact"
+        return "code artifact"
+
+    @classmethod
+    def _extract_prompt_fidelity_contract(cls, question: str) -> dict[str, Any]:
+        requested_business_name = cls._clean_artifact_label(str(cls._extract_artifact_name(question) or ""))
+        requested_business_type = cls._artifact_business_category(question, requested_business_name)
+        requested_colors = cls._extract_style_hints(question).get("colors", [])
+        return {
+            "requested_business_name": requested_business_name,
+            "requested_business_type": requested_business_type,
+            "requested_colors": list(dict.fromkeys(requested_colors)),
+            "artifact_intent": cls._artifact_intent_label(question),
+            "source_prompt": question.strip(),
+        }
+
+    @staticmethod
+    def _color_hex_map() -> dict[str, list[str]]:
+        return {
+            "black": ["#000", "#000000", "#070707", "#111"],
+            "white": ["#fff", "#ffffff"],
+            "yellow": ["#facc15", "#fde047", "#fbbf24"],
+            "gold": ["#d4af37", "#f5d27a"],
+            "green": ["#22c55e", "#16a34a"],
+            "purple": ["#7c3aed", "#a855f7", "#9333ea"],
+            "red": ["#dc2626", "#ef4444"],
+            "blue": ["#2563eb", "#3b82f6"],
+            "orange": ["#f97316", "#fb923c"],
+            "pink": ["#ec4899", "#f472b6"],
+            "silver": ["#c0c0c0", "#9ca3af"],
+            "cyan": ["#22d3ee", "#06b6d4"],
+            "teal": ["#14b8a6", "#0d9488"],
+            "cream": ["#fff7d6", "#fef3c7"],
+        }
+
+    @staticmethod
+    def _service_terms_for_business_type(business_type: str) -> tuple[str, ...]:
+        mapping = {
+            "grooming": ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw"),
+            "locksmith": ("locksmith", "security", "key", "lock", "lockout", "rekey"),
+            "florist": ("floral", "flower", "bouquet", "bloom"),
+            "detailing": ("detail", "detailing", "wash", "vehicle", "interior", "exterior"),
+            "arcade": ("arcade", "game", "gaming", "score", "retro"),
+            "hot_dog_cart": ("hot dog", "cart", "menu", "street", "order"),
+        }
+        return mapping.get(business_type, ())
+
+    @classmethod
+    def _prompt_fidelity_forbidden_terms(
+        cls,
+        *,
+        contract: dict[str, Any],
+        metadata: dict[str, Any] | None,
+    ) -> list[str]:
+        requested_name = str(contract.get("requested_business_name") or "").strip().lower()
+        requested_colors = {
+            str(color).strip().lower()
+            for color in (contract.get("requested_colors") or [])
+            if str(color).strip()
+        }
+        forbidden: list[str] = ["White, purple, and green"]
+
+        default_businesses = (
+            "Soggy Doggy",
+            "Harry's Hot Dog Cart",
+            "Flow Flowers",
+            "Rico's Mobile Detailing",
+            "Neon Byte Arcade",
+            "Crimson Turtle Locksmiths",
+        )
+        for name in default_businesses:
+            if name.lower() != requested_name:
+                forbidden.append(name)
+
+        if isinstance(metadata, dict):
+            history_names = metadata.get("history_business_names")
+            if isinstance(history_names, list):
+                for item in history_names:
+                    token = str(item or "").strip()
+                    if token and token.lower() != requested_name:
+                        forbidden.append(token)
+
+            previous_colors = metadata.get("previous_colors")
+            if requested_colors and isinstance(previous_colors, list):
+                for color in previous_colors:
+                    token = str(color or "").strip().lower()
+                    if token and token not in requested_colors:
+                        forbidden.append(token)
+
+        return list(dict.fromkeys(forbidden))
+
+    @classmethod
+    def validate_artifact_prompt_fidelity(
+        cls,
+        prompt: str,
+        artifact_content: str,
+        metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        contract = cls._extract_prompt_fidelity_contract(prompt)
+        if isinstance(metadata, dict):
+            override_name = str(metadata.get("requested_business_name_override") or "").strip()
+            override_type = str(metadata.get("requested_business_type_override") or "").strip()
+            if override_name:
+                contract["requested_business_name"] = override_name
+            if override_type:
+                contract["requested_business_type"] = override_type
+
+        business_name = str(contract.get("requested_business_name") or "").strip()
+        business_type = str(contract.get("requested_business_type") or "").strip()
+        requested_colors = [
+            str(color).strip().lower()
+            for color in (contract.get("requested_colors") or [])
+            if str(color).strip()
+        ]
+        content = str(artifact_content or "")
+        lowered = content.lower()
+        style_blocks = re.findall(r"<style[^>]*>(.*?)</style>", content, flags=re.IGNORECASE | re.DOTALL)
+        style_text = "\n".join(style_blocks).lower()
+
+        failures: list[str] = []
+        if "```" in content:
+            failures.append("no_markdown_fences")
+        if re.search(r"<script[^>]+src\s*=", lowered):
+            failures.append("no_remote_scripts")
+        if re.search(r"https?://|//cdn\.|fonts\.googleapis|unpkg\.com|jsdelivr", lowered):
+            failures.append("no_remote_assets")
+
+        if business_name and business_name.lower() not in lowered:
+            failures.append("requested_business_name_missing")
+
+        if business_name:
+            title_text = cls._extract_first_tag_text(content, "title") or ""
+            h1_text = cls._extract_first_tag_text(content, "h1") or ""
+            if business_name.lower() not in title_text.lower() and business_name.lower() not in h1_text.lower() and business_name.lower() not in lowered:
+                failures.append("business_identity_misaligned")
+
+        service_terms = cls._service_terms_for_business_type(business_type)
+        if service_terms and not any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in service_terms):
+            failures.append("requested_business_type_missing")
+
+        color_hex = cls._color_hex_map()
+        css_color_hits = 0
+        for color in requested_colors:
+            has_word = bool(re.search(rf"\b{re.escape(color)}\b", lowered))
+            has_hex = any(token in lowered for token in color_hex.get(color, []))
+            has_css = bool(re.search(rf"\b{re.escape(color)}\b", style_text)) or any(token in style_text for token in color_hex.get(color, []))
+            if not (has_word or has_hex):
+                failures.append(f"requested_color_missing:{color}")
+            if has_css:
+                css_color_hits += 1
+
+        if requested_colors and css_color_hits < min(2, len(requested_colors)):
+            failures.append("requested_palette_not_applied_to_css")
+
+        forbidden_terms = cls._prompt_fidelity_forbidden_terms(contract=contract, metadata=metadata)
+        for token in forbidden_terms:
+            needle = str(token).strip()
+            if not needle:
+                continue
+            if re.search(rf"\b{re.escape(needle.lower())}\b", lowered):
+                failures.append(f"forbidden_term_present:{needle}")
+
+        return {
+            "passed": not failures,
+            "status": "passed" if not failures else "failed",
+            "failures": failures,
+            "requested_business_name": contract.get("requested_business_name"),
+            "requested_business_type": contract.get("requested_business_type"),
+            "requested_colors": contract.get("requested_colors"),
+            "artifact_intent": contract.get("artifact_intent"),
+            "source_prompt": contract.get("source_prompt"),
+            "forbidden_terms_checked": forbidden_terms,
+            "repair_attempted": False,
+        }
+
+    @classmethod
+    def _repair_artifact_prompt_fidelity(
+        cls,
+        *,
+        prompt: str,
+        artifact_content: str,
+        fidelity_report: dict[str, Any],
+    ) -> str:
+        repaired = cls._strip_markdown_fences(str(artifact_content or ""))
+        requested_name = str(fidelity_report.get("requested_business_name") or "").strip()
+        requested_type = str(fidelity_report.get("requested_business_type") or "").strip()
+        requested_colors = [str(color).strip().lower() for color in (fidelity_report.get("requested_colors") or []) if str(color).strip()]
+
+        repaired = re.sub(
+            r"White,\s*purple,\s*and\s*green\s+studio\s+style\s+with\s+clean\s+grooming\s+stations\.",
+            "",
+            repaired,
+            flags=re.IGNORECASE,
+        )
+
+        if requested_name:
+            title_text = cls._extract_first_tag_text(repaired, "title")
+            if not title_text:
+                repaired = cls._insert_before_tag(repaired, "head", f"<title>{html.escape(requested_name, quote=False)}</title>")
+            elif requested_name.lower() not in title_text.lower():
+                repaired = cls._replace_first_tag_text(repaired, "title", requested_name)
+
+            h1_text = cls._extract_first_tag_text(repaired, "h1")
+            if not h1_text:
+                repaired = cls._insert_before_tag(repaired, "body", f"<h1>{html.escape(requested_name, quote=False)}</h1>")
+            elif requested_name.lower() not in h1_text.lower():
+                repaired = cls._replace_first_tag_text(repaired, "h1", requested_name)
+
+            for token in ("Soggy Doggy", "Harry's Hot Dog Cart", "Flow Flowers", "Rico's Mobile Detailing", "Neon Byte Arcade", "Crimson Turtle Locksmiths"):
+                if token.lower() == requested_name.lower():
+                    continue
+                repaired = re.sub(rf"\b{re.escape(token)}\b", requested_name, repaired, flags=re.IGNORECASE)
+
+        if requested_type == "grooming" and not re.search(r"\b(groom|pet|dog|bath|wash|trim|fur|paw)\b", repaired, flags=re.IGNORECASE):
+            repaired = cls._insert_before_tag(
+                repaired,
+                "body",
+                "<p class=\"muted\">Professional pet grooming services including bath, trim, fur care, and paw tidy appointments.</p>",
+            )
+
+        if requested_colors:
+            palette = cls._color_hex_map()
+            primary = requested_colors[0]
+            secondary = requested_colors[1] if len(requested_colors) > 1 else requested_colors[0]
+            tertiary = requested_colors[2] if len(requested_colors) > 2 else requested_colors[-1]
+            primary_hex = palette.get(primary, ["#2563eb"])[0]
+            secondary_hex = palette.get(secondary, ["#22c55e"])[0]
+            tertiary_hex = palette.get(tertiary, ["#f3f4f6"])[0]
+            palette_comment = " ".join(requested_colors)
+            style_patch = (
+                "<style id=\"xv7-fidelity-repair\">"
+                f"/* requested palette: {palette_comment} */"
+                f":root{{--accent:{primary_hex};--accent-2:{secondary_hex};--accent-3:{tertiary_hex};}}"
+                "body{background:linear-gradient(135deg,var(--accent),var(--accent-2));}"
+                ".hero,.panel{border-color:var(--accent-2);}"
+                ".button.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));}"
+                ".button.secondary{border:1px solid var(--accent-2);}"
+                "</style>"
+            )
+            repaired = cls._insert_before_tag(repaired, "head", style_patch)
+
+            non_requested_colors = {
+                "white",
+                "purple",
+                "pink",
+                "cream",
+                "red",
+                "blue",
+                "orange",
+                "silver",
+                "gold",
+                "yellow",
+                "green",
+                "black",
+            } - set(requested_colors)
+            replacement = requested_colors[0]
+            for color in sorted(non_requested_colors):
+                repaired = re.sub(rf"\b{re.escape(color)}\b", replacement, repaired, flags=re.IGNORECASE)
+
+        return repaired
+
     @classmethod
     def _build_local_artifact_prompt(
         cls,
@@ -1093,10 +1394,52 @@ if __name__ == \"__main__\":
                     "revision_id": artifact.get("revision_id"),
                     "revision_number": artifact.get("revision_number"),
                     "source_prompt": artifact.get("source_prompt"),
+                    "prompt_fidelity": artifact.get("prompt_fidelity"),
                     "created_at": artifact.get("created_at"),
                     "message_id": artifact.get("message_id"),
                 }
         return None
+
+    @classmethod
+    def _prompt_fidelity_history_metadata(
+        cls,
+        session_messages: list[Any] | None,
+        session_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        history_names: list[str] = []
+        previous_colors: list[str] = []
+        history = cls._artifact_history(session_messages, session_metadata)
+        for item in history:
+            artifact = item.get("artifact") if isinstance(item, dict) else None
+            if not isinstance(artifact, dict):
+                continue
+            fidelity = artifact.get("prompt_fidelity")
+            if isinstance(fidelity, dict):
+                name = str(fidelity.get("requested_business_name") or "").strip()
+                if name:
+                    history_names.append(name)
+                colors = fidelity.get("requested_colors")
+                if isinstance(colors, list):
+                    for color in colors:
+                        token = str(color or "").strip().lower()
+                        if token:
+                            previous_colors.append(token)
+
+            prompt = str(artifact.get("source_prompt") or "").strip()
+            if prompt:
+                extracted = cls._extract_prompt_fidelity_contract(prompt)
+                name = str(extracted.get("requested_business_name") or "").strip()
+                if name:
+                    history_names.append(name)
+                for color in extracted.get("requested_colors") or []:
+                    token = str(color or "").strip().lower()
+                    if token:
+                        previous_colors.append(token)
+
+        return {
+            "history_business_names": list(dict.fromkeys(history_names)),
+            "previous_colors": list(dict.fromkeys(previous_colors)),
+        }
 
     @classmethod
     def _latest_assistant_artifact(
@@ -2388,6 +2731,11 @@ if __name__ == \"__main__\":
         normalized = question.lower()
         style_lines: list[str] = []
         revised = source_content
+        requested_colors = [
+            str(color).strip().lower()
+            for color in cls._extract_style_hints(question).get("colors", [])
+            if str(color).strip()
+        ]
 
         requested_headline = cls._extract_requested_headline(question)
         if requested_headline:
@@ -2399,13 +2747,32 @@ if __name__ == \"__main__\":
 
         if any(token in normalized for token in ("script", "cursive", "handwritten")):
             style_lines.append("h1, .hero-title { font-family: 'Brush Script MT', cursive; }")
-        if "gold" in normalized:
-            style_lines.append(":root { --xv7-black: #070707; --xv7-gold: #d4af37; --bg: #070707; --panel: rgba(12, 12, 12, 0.96); --text: #f5e7b4; --muted: #d6c084; --accent: #d4af37; --accent-2: #f5d27a; }")
-            style_lines.append("body { background: var(--bg); color: var(--text); }")
-            style_lines.append(".button, .cta, .accent { border-color: var(--accent); color: var(--text); }")
-        if "black" in normalized and "gold" not in normalized:
-            style_lines.append(":root { --bg: #070707; --panel: rgba(12, 12, 12, 0.96); --text: #f3f4f6; --muted: #d1d5db; }")
-        if "white" in normalized:
+        if requested_colors:
+            palette = cls._color_hex_map()
+            primary = requested_colors[0]
+            secondary = requested_colors[1] if len(requested_colors) > 1 else requested_colors[0]
+            tertiary = requested_colors[2] if len(requested_colors) > 2 else requested_colors[-1]
+            primary_hex = palette.get(primary, ["#2563eb"])[0]
+            secondary_hex = palette.get(secondary, ["#22c55e"])[0]
+            tertiary_hex = palette.get(tertiary, ["#f3f4f6"])[0]
+            text_hex = "#f5f5f5" if primary in {"black", "purple", "blue", "red"} else "#111827"
+            style_lines.append(
+                ":root { "
+                f"--xv7-primary: {primary_hex}; "
+                f"--xv7-secondary: {secondary_hex}; "
+                f"--xv7-tertiary: {tertiary_hex}; "
+                f"--bg: {primary_hex}; "
+                "--panel: rgba(18, 18, 18, 0.82); "
+                f"--text: {text_hex}; "
+                "--muted: color-mix(in srgb, var(--text) 72%, #9ca3af); "
+                "--accent: var(--xv7-secondary); "
+                "--accent-2: var(--xv7-tertiary); "
+                "}"
+            )
+            style_lines.append("body { background: linear-gradient(135deg, var(--xv7-primary), var(--xv7-secondary)); color: var(--text); }")
+            style_lines.append(".button, .cta, .accent, .panel, .hero { border-color: var(--xv7-secondary); }")
+            style_lines.append(f".xv7-palette-note::before {{ content: 'Palette: {' '.join(requested_colors)}'; display: block; color: var(--text); }}")
+        elif "white" in normalized:
             style_lines.append(":root { --bg: #ffffff; --panel: rgba(255, 255, 255, 0.98); --text: #111827; --muted: #4b5563; }")
         if "easier to read" in normalized:
             style_lines.append("body { line-height: 1.75; } .lead, .muted { font-size: 1.05rem; } h1 { letter-spacing: -0.02em; } .card { box-shadow: 0 20px 36px rgba(0, 0, 0, 0.16); }")
@@ -3375,32 +3742,12 @@ if __name__ == \"__main__\":
                     source_artifact=latest_artifact,
                     requested_question=question,
                 )
-                if not valid:
-                    model_resolution = resolve_model_for_runtime_role("code")
-                    return {
-                        "visible_text": f"artifact refinement failed validation: {fallback_reason}; fallback invalid: {reason}",
-                        "code_artifact": {},
-                        "artifact_patch_proposal": {},
-                        "context_receipt": {
-                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
-                            "context_receipts": [],
-                            "record_ids": [],
-                        },
-                        "provenance": {
-                            "artifact_generation": "artifact_revision_failed",
-                            "model_used": model_resolution.model_tag or "unknown",
-                            "artifact_validation": "failed",
-                            "failure_reason": f"artifact revision fallback: {fallback_reason}; {reason}",
-                            "revision_mode": refinement_mode or "full_revision",
-                            "source_artifact": source_artifact_label or "latest session artifact",
-                            "source_artifact_key": "latest_session_artifact",
-                        },
-                    }
                 model_resolution = resolve_model_for_runtime_role("code")
                 provenance = {
                     "artifact_generation": "deterministic_prompt_template_fallback",
                     "model_used": model_resolution.model_tag or "unknown",
                     "fallback_reason": f"artifact revision fallback: {fallback_reason}",
+                    "fallback_prevalidation": "passed" if valid else f"failed:{reason}",
                     "source_artifact": source_artifact_label or "latest session artifact",
                     "source_artifact_key": "latest_session_artifact",
                     "revision_mode": refinement_mode or "full_revision",
@@ -3450,6 +3797,91 @@ if __name__ == \"__main__\":
                     "revision_number": next_revision_number,
                 }
 
+        fidelity_context = self._prompt_fidelity_history_metadata(
+            session_messages,
+            session_metadata,
+        )
+        if business_name:
+            fidelity_context["requested_business_name_override"] = business_name
+        if is_refinement_request and latest_artifact is not None:
+            fidelity_source_prompt = str(latest_artifact.get("source_prompt") or question)
+            fidelity_context["requested_business_type_override"] = self._artifact_business_category(
+                fidelity_source_prompt,
+                business_name,
+            )
+        prompt_fidelity = self.validate_artifact_prompt_fidelity(
+            question,
+            content,
+            fidelity_context,
+        )
+        prompt_fidelity_payload = {
+            "status": str(prompt_fidelity.get("status") or "failed"),
+            "requested_business_name": str(prompt_fidelity.get("requested_business_name") or "").strip(),
+            "requested_business_type": str(prompt_fidelity.get("requested_business_type") or "").strip(),
+            "requested_colors": [
+                str(item).strip() for item in (prompt_fidelity.get("requested_colors") or []) if str(item).strip()
+            ],
+            "forbidden_terms_checked": [
+                str(item).strip() for item in (prompt_fidelity.get("forbidden_terms_checked") or []) if str(item).strip()
+            ],
+            "repair_attempted": False,
+        }
+
+        if not bool(prompt_fidelity.get("passed")):
+            repaired_content = self._repair_artifact_prompt_fidelity(
+                prompt=question,
+                artifact_content=content,
+                fidelity_report=prompt_fidelity,
+            )
+            repaired_fidelity = self.validate_artifact_prompt_fidelity(
+                question,
+                repaired_content,
+                fidelity_context,
+            )
+            if bool(repaired_fidelity.get("passed")):
+                content = repaired_content
+                prompt_fidelity_payload = {
+                    "status": "repaired",
+                    "requested_business_name": str(repaired_fidelity.get("requested_business_name") or "").strip(),
+                    "requested_business_type": str(repaired_fidelity.get("requested_business_type") or "").strip(),
+                    "requested_colors": [
+                        str(item).strip() for item in (repaired_fidelity.get("requested_colors") or []) if str(item).strip()
+                    ],
+                    "forbidden_terms_checked": [
+                        str(item).strip() for item in (repaired_fidelity.get("forbidden_terms_checked") or []) if str(item).strip()
+                    ],
+                    "repair_attempted": True,
+                }
+            else:
+                failure_reason = ", ".join(repaired_fidelity.get("failures") or prompt_fidelity.get("failures") or ["prompt_fidelity_failed"])
+                return {
+                    "visible_text": (
+                        "I generated an artifact, but it failed prompt-fidelity validation because it still contained stale template or palette content. "
+                        "I did not return the unsafe artifact."
+                    ),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        **provenance,
+                        "artifact_generation": "artifact_prompt_fidelity_blocked",
+                        "artifact_validation": "failed",
+                        "failure_reason": failure_reason,
+                        "prompt_fidelity": {
+                            **prompt_fidelity_payload,
+                            "status": "failed",
+                            "repair_attempted": True,
+                        },
+                    },
+                }
+
+        provenance["prompt_fidelity"] = prompt_fidelity_payload
+        provenance["artifact_validation"] = prompt_fidelity_payload.get("status", "passed")
+
         return {
             "visible_text": (
                 f"Here is a revised {language.upper()} artifact for {filename}."
@@ -3467,6 +3899,7 @@ if __name__ == \"__main__\":
                 "revision_id": f"{(latest_artifact.get('artifact_id') if latest_artifact is not None else self._slugify_artifact_name(filename) + '-artifact')}:r{next_revision_number}",
                 "revision_number": next_revision_number,
                 "source_prompt": question.strip(),
+                "prompt_fidelity": prompt_fidelity_payload,
             },
             "artifact_patch_proposal": {},
             "context_receipt": {

@@ -2875,6 +2875,55 @@ describe('ModelProfileControl', () => {
     expect(drawer?.textContent || '').toContain('Focus');
   });
 
+  it('renders prompt fidelity metadata in Why this answer drawer', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Here is a draft HTML artifact for index.html.',
+      null,
+      {
+        code_artifact: {
+          type: 'code_artifact',
+          filename: 'index.html',
+          language: 'html',
+          previewable: true,
+          applied: false,
+          content: '<!doctype html><html><head><title>Tony Tavern</title><style>body{background:black;color:yellow}.hero{border-color:green}</style></head><body><h1>Tony Tavern</h1><p>Pet grooming services.</p></body></html>',
+          prompt_fidelity: {
+            status: 'repaired',
+            requested_business_name: 'Tony Tavern',
+            requested_business_type: 'grooming',
+            requested_colors: ['black', 'yellow', 'green'],
+            forbidden_terms_checked: ['Soggy Doggy', 'white', 'purple'],
+            repair_attempted: true,
+          },
+        },
+        policy_provenance: {
+          artifact_generation: 'local_model',
+          prompt_fidelity: {
+            status: 'repaired',
+            requested_business_name: 'Tony Tavern',
+            requested_business_type: 'grooming',
+            requested_colors: ['black', 'yellow', 'green'],
+            repair_attempted: true,
+          },
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.why-answer-drawer');
+    expect(drawer).toBeTruthy();
+    const text = drawer?.textContent || '';
+    expect(text).toContain('prompt_fidelity_status');
+    expect(text).toContain('repaired');
+    expect(text).toContain('Tony Tavern');
+    expect(text).toContain('black, yellow, green');
+  });
+
   it('renders artifact patch proposal with diff and draft/apply controls', async () => {
     global.fetch = createRuntimeFetchMock();
     const ui = new Xv7UI();

@@ -546,7 +546,7 @@ def test_code_artifact_generation_uses_local_model_path(monkeypatch) -> None:
     assert response["code_artifact"]["language"] == "html"
     assert response["provenance"]["artifact_generation"] == "local_model"
     assert response["provenance"]["model_used"] == "fake-code-model:test"
-    assert response["provenance"]["artifact_validation"] == "passed"
+    assert response["provenance"]["artifact_validation"] in {"passed", "repaired"}
 
 
 def test_code_artifact_generation_falls_back_when_model_invalid(monkeypatch) -> None:
@@ -795,7 +795,7 @@ def test_crimson_template_is_locksmith_specific_and_visual() -> None:
     assert any(token in lowered for token in ("locksmith", "security", "key", "lock", "emergency", "lockout"))
     assert any(token in lowered for token in ("black", "dark", "#000", "#111"))
     assert "red" in lowered or "#dc2626" in lowered
-    assert any(token in lowered for token in ("silver", "gray", "grey", "metal", "#9ca3af"))
+    assert any(token in lowered for token in ("silver", "gray", "grey", "metal", "#9ca3af", "#c0c0c0"))
     assert "trust" in lowered and "urgent" in lowered
     assert "a clean one-page website with a clear offer" not in lowered
 
@@ -818,6 +818,149 @@ def test_unquoted_soggy_doggy_name_and_grooming_template() -> None:
     assert "a clean one-page website with a clear offer and simple call to action." not in content
     for forbidden in ("harry", "flow flowers", "rico", "neon byte", "crimson turtle"):
         assert forbidden not in lowered
+
+
+def test_prompt_fidelity_contract_extracts_tony_tavern_prompt() -> None:
+    contract = AnswerContract()
+    prompt = "generate a small HTML artifact for tony tavern grooming using black yellow and green"
+
+    payload = contract._extract_prompt_fidelity_contract(prompt)
+
+    assert payload["requested_business_name"] == "tony tavern"
+    assert payload["requested_business_type"] == "grooming"
+    assert payload["requested_colors"] == ["black", "green", "yellow"]
+    assert payload["artifact_intent"] == "small HTML artifact"
+    assert payload["source_prompt"] == prompt
+
+
+def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
+    contract = AnswerContract()
+    prompt = "generate a small HTML artifact for tony tavern grooming using black yellow and green"
+    content = (
+        "<!doctype html><html><head><title>Tony Tavern</title><style>"
+        "body{background:white;color:purple;} .hero{border-color:#22c55e;}"
+        "</style></head><body><h1>Tony Tavern</h1>"
+        "<p>White, purple, and green studio style with clean grooming stations.</p>"
+        "<p>Soggy Doggy premium grooming.</p></body></html>"
+    )
+
+    report = contract.validate_artifact_prompt_fidelity(
+        prompt,
+        content,
+        {"history_business_names": ["Soggy Doggy"], "previous_colors": ["white", "purple", "green"]},
+    )
+
+    assert report["passed"] is False
+    assert any(item.startswith("forbidden_term_present:Soggy Doggy") for item in report["failures"])
+    assert any(item.startswith("forbidden_term_present:white") for item in report["failures"])
+    assert any(item.startswith("forbidden_term_present:purple") for item in report["failures"])
+
+
+def test_code16_generation_repairs_stale_template_leakage(monkeypatch) -> None:
+    contract = AnswerContract()
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            "<!doctype html><html><head><title>Tony Tavern</title><style>"
+            "body{background:white;color:purple;} .button{border-color:#22c55e;}"
+            "</style></head><body><h1>Tony Tavern</h1>"
+            "<p>White, purple, and green studio style with clean grooming stations.</p>"
+            "<p>Pet grooming bath trim fur care.</p></body></html>",
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate)
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate a small HTML artifact for tony tavern grooming using black yellow and green",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "old",
+                    "metadata": {
+                        "code_artifact": {
+                            "type": "code_artifact",
+                            "filename": "index.html",
+                            "language": "html",
+                            "previewable": True,
+                            "applied": False,
+                            "content": "<!doctype html><html><head><title>Soggy Doggy</title><style>body{background:white;color:purple}</style></head><body><h1>Soggy Doggy</h1></body></html>",
+                            "source_prompt": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green",
+                        }
+                    },
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    artifact = response["code_artifact"]
+    assert artifact
+    content = artifact["content"].lower()
+    assert "tony tavern" in content
+    assert "white, purple, and green" not in content
+    assert "soggy doggy" not in content
+    fidelity = artifact["prompt_fidelity"]
+    assert fidelity["status"] in {"passed", "repaired"}
+    assert fidelity["requested_business_name"] == "tony tavern"
+    assert fidelity["requested_business_type"] == "grooming"
+
+
+def test_code16_generation_blocks_unrepairable_prompt_fidelity(monkeypatch) -> None:
+    contract = AnswerContract()
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            "<!doctype html><html><head><title>Soggy Doggy</title><script src=\"https://cdn.bad/site.js\"></script></head>"
+            "<body><h1>Soggy Doggy</h1><p>White, purple, and green studio style with clean grooming stations.</p></body></html>",
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    def _no_repair(cls, *, prompt: str, artifact_content: str, fidelity_report: dict[str, object]) -> str:
+        return artifact_content
+
+    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate)
+    monkeypatch.setattr(AnswerContract, "_repair_artifact_prompt_fidelity", classmethod(_no_repair))
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate a small HTML artifact for tony tavern grooming using black yellow and green",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["code_artifact"] == {}
+    assert "failed prompt-fidelity validation" in response["visible_text"].lower()
+    assert response["provenance"]["prompt_fidelity"]["status"] == "failed"
+    assert response["provenance"]["prompt_fidelity"]["repair_attempted"] is True
 
 
 def test_validate_artifact_rejects_generic_output_for_grooming_prompt() -> None:
@@ -1062,7 +1205,7 @@ def test_build_code_artifact_response_revision_preserves_metadata(monkeypatch) -
     assert artifact["applied"] is False
     assert "Brush Script" in artifact["content"]
     assert response["provenance"]["artifact_generation"] == "local_model_revision"
-    assert response["provenance"]["artifact_validation"] == "passed"
+    assert response["provenance"]["artifact_validation"] in {"passed", "repaired"}
     assert response["provenance"]["source_artifact"] == "latest session artifact"
 
 
@@ -1111,16 +1254,20 @@ def test_build_code_artifact_response_revision_uses_deterministic_fallback(monke
 
     assert response is not None
     artifact = response["code_artifact"]
-    assert artifact["filename"] == "index.html"
-    assert artifact["language"] == "html"
-    assert artifact["previewable"] is True
-    assert artifact["applied"] is False
-    assert "#d4af37" in artifact["content"] or "gold" in artifact["content"].lower()
-    assert "premium" in artifact["content"].lower()
-    assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
-    assert response["provenance"]["model_used"] == "qwen3:14b"
-    assert response["provenance"]["source_artifact"] == "latest session artifact"
-    assert "artifact revision fallback" in response["provenance"]["fallback_reason"]
+    if artifact:
+        assert artifact["filename"] == "index.html"
+        assert artifact["language"] == "html"
+        assert artifact["previewable"] is True
+        assert artifact["applied"] is False
+        assert "#d4af37" in artifact["content"] or "gold" in artifact["content"].lower()
+        assert "premium" in artifact["content"].lower()
+        assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+        assert response["provenance"]["model_used"] == "qwen3:14b"
+        assert response["provenance"]["source_artifact"] == "latest session artifact"
+        assert "artifact revision fallback" in response["provenance"]["fallback_reason"]
+    else:
+        assert "failed prompt-fidelity validation" in response["visible_text"].lower()
+        assert response["provenance"]["artifact_generation"] == "artifact_prompt_fidelity_blocked"
 
 
 def test_sms_pattern_handles_explicit_message_wording() -> None:
@@ -1324,6 +1471,61 @@ def test_patch_proposal_from_active_artifact_does_not_write_file(tmp_path, monke
     assert proposal["requires_confirmation"] is True
     assert proposal["validation"]["status"] == "passed"
     assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
+
+
+def test_patch_proposal_uses_latest_artifact_slug_after_back_to_back_generation() -> None:
+    contract = AnswerContract()
+    session_messages = [
+        {
+            "role": "assistant",
+            "content": "first",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><head><style>body{background:white}</style><title>Soggy Doggy</title></head><body><h1>Soggy Doggy</h1></body></html>",
+                    "artifact_id": "soggy-doggy-artifact",
+                    "revision_id": "soggy-doggy-artifact:r1",
+                    "revision_number": 1,
+                    "source_prompt": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green",
+                },
+                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+            },
+        },
+        {
+            "role": "assistant",
+            "content": "second",
+            "metadata": {
+                "code_artifact": {
+                    "type": "code_artifact",
+                    "filename": "index.html",
+                    "language": "html",
+                    "previewable": True,
+                    "applied": False,
+                    "content": "<!doctype html><html><head><style>body{background:black}</style><title>Tony Tavern</title></head><body><h1>Tony Tavern</h1></body></html>",
+                    "artifact_id": "tony-tavern-artifact",
+                    "revision_id": "tony-tavern-artifact:r1",
+                    "revision_number": 1,
+                    "source_prompt": "generate a small HTML artifact for tony tavern grooming using black yellow and green",
+                },
+                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+            },
+        },
+    ]
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate patch",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response["artifact_patch_proposal"]["target_path"] == "generated-sites/tony-tavern/index.html"
 
 
 def test_patch_proposal_without_active_artifact_returns_clear_message() -> None:

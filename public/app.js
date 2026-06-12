@@ -2152,12 +2152,32 @@ class Xv7UI {
     const patchProposal = this.collectArtifactPatchProposal(meta);
     const patchValidation = patchProposal?.validation?.status || policy.validation || '-';
     const patchTargetPath = patchProposal?.target_path || policy.target_path || '-';
+    const primaryArtifact = Array.isArray(meta.code_artifacts) && meta.code_artifacts.length
+      ? meta.code_artifacts[0]
+      : (meta.code_artifact && typeof meta.code_artifact === 'object' ? meta.code_artifact : null);
+    const promptFidelity = policy.prompt_fidelity && typeof policy.prompt_fidelity === 'object'
+      ? policy.prompt_fidelity
+      : (primaryArtifact?.prompt_fidelity && typeof primaryArtifact.prompt_fidelity === 'object'
+          ? primaryArtifact.prompt_fidelity
+          : {});
+    const promptFidelityStatus = promptFidelity.status || '-';
+    const promptFidelityBusinessName = promptFidelity.requested_business_name || '-';
+    const promptFidelityBusinessType = promptFidelity.requested_business_type || '-';
+    const promptFidelityColors = Array.isArray(promptFidelity.requested_colors) && promptFidelity.requested_colors.length
+      ? promptFidelity.requested_colors.join(', ')
+      : '-';
+    const promptFidelityRepairAttempted = this.boolText(promptFidelity.repair_attempted);
 
     const fields = [
       ['intent_class', policy.intent_class || meta.intent_class],
       ['speech_act', meta.speech_act || '-'],
       ['response_mode', policy.response_mode || meta.response_mode || '-'],
       ['artifact_generation', artifactGeneration],
+      ['prompt_fidelity_status', promptFidelityStatus],
+      ['prompt_fidelity_business', promptFidelityBusinessName],
+      ['prompt_fidelity_type', promptFidelityBusinessType],
+      ['prompt_fidelity_colors', promptFidelityColors],
+      ['prompt_fidelity_repair_attempted', promptFidelityRepairAttempted],
       ['revision_mode', revisionMode],
       ['revision_number', revisionNumber],
       ['source_artifact', sourceArtifact],

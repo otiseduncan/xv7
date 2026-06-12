@@ -122,7 +122,7 @@ def _make_fake_model_html(prompt: str) -> str:
     name = _extract_business_name(prompt)
     lowered = prompt.lower()
     colors: list[str] = []
-    for token in ("pink", "cream", "gold", "black", "silver", "blue", "purple", "cyan", "red", "green", "white"):
+    for token in ("pink", "cream", "gold", "yellow", "black", "silver", "blue", "purple", "cyan", "red", "green", "white"):
         if token in lowered:
             colors.append(token)
     color_css = ", ".join(colors) if colors else "slate, sky"
@@ -937,6 +937,99 @@ def test_unquoted_soggy_doggy_prompt_is_prompt_aware(monkeypatch, tmp_path: Path
     for forbidden in ("harry", "flow", "rico", "neon", "crimson"):
         assert forbidden not in lowered
     assert provenance.get("artifact_generation") in {"local_model", "deterministic_prompt_template_fallback"}
+
+
+def test_code16_tony_tavern_fidelity_gate_blocks_stale_palette(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    artifact = payload["messages"][-1]["metadata"]["code_artifact"]
+    content = str(artifact.get("content", "")).lower()
+    fidelity = artifact.get("prompt_fidelity", {})
+    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+
+    assert "tony tavern" in content
+    assert "groom" in content
+    assert "black" in content or "#070707" in content
+    assert "yellow" in content or "#facc15" in content or "#fbbf24" in content
+    assert "green" in content or "#22c55e" in content
+    assert "soggy doggy" not in content
+    assert "white, purple, and green" not in content
+    assert fidelity.get("status") in {"passed", "repaired"}
+    assert fidelity.get("requested_business_name", "").lower() == "tony tavern"
+    assert fidelity.get("requested_business_type") == "grooming"
+    assert provenance.get("prompt_fidelity", {}).get("status") in {"passed", "repaired"}
+
+
+def test_code16_soggy_then_tony_back_to_back_prevents_leakage_and_patch_targets_latest(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    soggy = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+    )
+    assert soggy.status_code == 200
+    soggy_content = soggy.json()["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+    assert "soggy doggy" in soggy_content
+    assert "tony tavern" not in soggy_content
+
+    tony = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"},
+    )
+    assert tony.status_code == 200
+    tony_content = tony.json()["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+    assert "tony tavern" in tony_content
+    assert "soggy doggy" not in tony_content
+    assert "white, purple, and green" not in tony_content
+
+    patch = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate patch"},
+    )
+    assert patch.status_code == 200
+    proposal = patch.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]
+    assert proposal.get("target_path") == "generated-sites/tony-tavern/index.html"
+
+
+def test_code16_color_refinement_changes_palette_terms(monkeypatch, tmp_path: Path) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    initial = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"},
+    )
+    assert initial.status_code == 200
+
+    refined = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change colors to red and gold"},
+    )
+    assert refined.status_code == 200
+    content = refined.json()["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+
+    assert "red" in content or "#dc2626" in content
+    assert "gold" in content or "#d4af37" in content
+    assert "tony tavern" in content
+    assert "soggy doggy" not in content
 
 
 def test_generation_validation_failure_returns_clear_answer(monkeypatch, tmp_path: Path) -> None:
