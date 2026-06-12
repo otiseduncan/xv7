@@ -2,6 +2,8 @@
 
 This file is the practical task board for getting Xoduz to operate like a coding assistant.
 
+Primary map: `docs/CODE_LANE_INDEX.md`
+
 ## Milestone: CODE-01 Workspace Context Map
 
 Status: not started
@@ -126,6 +128,87 @@ Status: not started
 - [ ] User must approve before commit.
 - [ ] If tests are failing, warning is explicit.
 
+## Milestone: CODE-13 Operator Command Center
+
+Status: not started
+
+### Required implementation
+
+- [ ] Add calm command center panel for operator loop controls.
+- [ ] Show mode: normal/operator/approval pending.
+- [ ] Show workspace root and last action receipt.
+- [ ] Show pending action queue summary.
+- [ ] Keep advanced details behind disclosure.
+- [ ] Keep read-only actions usable without approval.
+- [ ] Block mutation actions without explicit approval.
+- [ ] Add tests for unavailable/offline honest states.
+
+### Acceptance
+
+- [ ] Layout and backend data contract are defined.
+- [ ] Safe action states are enforced.
+- [ ] Unavailable states are explicit and honest.
+- [ ] UI remains calm by default.
+
+## Milestone: CODE-18 Context Source Router
+
+Status: not started
+
+### Required implementation
+
+- [ ] Define source routing table for answer selection.
+- [ ] Add confidence levels (high/medium/low).
+- [ ] Enforce inspect-first rules for repo/CI/test-state prompts.
+- [ ] Add clarification and unavailable branches.
+- [ ] Add compact source pins/receipts (no proof spam).
+- [ ] Add tests for routing decisions.
+
+### Acceptance
+
+- [ ] Routing table is implemented/documented.
+- [ ] Confidence policy is visible and testable.
+- [ ] No-inspection-required cases are blocked from guessing.
+- [ ] Example prompts route to expected sources.
+
+## Milestone: CODE-19 Operator UI Action Queue
+
+Status: not started
+
+### Required implementation
+
+- [ ] Add pending mutation queue in UI/runtime state.
+- [ ] Include fields: action id/name, targets, risk, reason, diff preview, tests, approval status, timestamps.
+- [ ] Support actions: approve/reject/edit request/read-only preview/apply.
+- [ ] Ensure queue survives refresh when possible.
+- [ ] Deny expired or unapproved applies.
+- [ ] Add queue state transition tests.
+
+### Acceptance
+
+- [ ] Schema is implemented/documented.
+- [ ] UI states are compact and clear.
+- [ ] Expired/missing approval denial is explicit.
+- [ ] Mutation never runs from suggestion alone.
+
+## Milestone: CODE-20 Beta Readiness Gate
+
+Status: not started
+
+### Required implementation
+
+- [ ] Define beta-readiness checklist by gate domain.
+- [ ] Add statuses: required/partial/optional/blocked/verified.
+- [ ] Add minimum beta bar and hard blockers.
+- [ ] Attach concrete verification commands/checks.
+- [ ] Add reporting format for readiness status.
+
+### Acceptance
+
+- [ ] Beta readiness is testable, not vibe-based.
+- [ ] Minimum beta bar is explicit.
+- [ ] Blockers are explicit.
+- [ ] Commands/checks are runnable.
+
 ## Milestone: APP-01 First App Builder Flow
 
 Status: blocked until CODE-01 through CODE-04 exist
@@ -155,3 +238,17 @@ spec -> implementation -> tests -> local gate -> CI -> roadmap update
 ```
 
 No more pushing feature code without a test target and a known fallback plan.
+
+## Coherent Build Order (Current)
+
+1. CODE-01 Workspace Context Map
+2. CODE-02 Patch Planner
+3. CODE-03 Approved Patch Apply
+4. CODE-04 Test Runner
+5. CODE-05 Diff Summary
+6. CODE-06 Commit Helper
+7. CODE-13 Operator Command Center
+8. CODE-18 Context Source Router
+9. CODE-19 Operator UI Action Queue
+10. CODE-20 Beta Readiness Gate
+11. APP-01 First App Builder Flow

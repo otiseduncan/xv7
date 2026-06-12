@@ -1,8 +1,10 @@
 # CODE-21 — Session Notes
 
-This file reserves the next CODE lane for implementation session notes.
+This file tracks implementation-session continuity for the CODE lane.
 
-The focus is to keep the work loop simple:
+## Current loop target
+
+The focus remains:
 
 1. inspect
 2. plan
@@ -11,4 +13,20 @@ The focus is to keep the work loop simple:
 5. validate
 6. report
 
-More detail can be added in the next pass.
+## Docs mop-up note
+
+This docs mop-up pass created:
+
+- `docs/CODE_13_OPERATOR_COMMAND_CENTER_PROMPT.md`
+- `docs/CODE_18_CONTEXT_SOURCE_ROUTER_PROMPT.md`
+- `docs/CODE_19_OPERATOR_UI_ACTION_QUEUE_PROMPT.md`
+- `docs/CODE_20_BETA_READINESS_GATE_PROMPT.md`
+- `docs/CODE_LANE_INDEX.md`
+
+## Next implementation start
+
+Next implementation should start with:
+
+- CODE-01 Workspace Context Map
+
+Then continue with CODE-02 and CODE-03 before running the gauntlet in `docs/CODE_OPERATOR_GAUNTLET.md`.

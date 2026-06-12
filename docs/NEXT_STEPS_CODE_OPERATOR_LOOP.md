@@ -4,6 +4,16 @@ This is the next build lane after the COMM-06 Brain Records stabilization work.
 
 The goal is to turn Xoduz from a chat UI with memory/context into a controlled local builder that can inspect the repo, plan a change, apply approved patches, run tests, and report exactly what happened.
 
+Main map: `docs/CODE_LANE_INDEX.md`
+
+## Current next move
+
+1. Finish docs mop-up.
+2. Implement CODE-01.
+3. Implement CODE-02.
+4. Implement CODE-03.
+5. Run CODE operator gauntlet.
+
 ## North-star target
 
 A normal user request like this:
