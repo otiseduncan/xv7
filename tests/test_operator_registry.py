@@ -11,6 +11,7 @@ EXPECTED_ACTIONS = {
     "repo_status",
     "repo_recent_commits",
     "workspace_map",
+    "patch_plan",
     "list_project_files",
     "read_project_file",
     "runtime_health",
@@ -52,6 +53,27 @@ def test_run_action_requires_target_for_read_project_file() -> None:
         run_action(
             "read_project_file",
             action_id="OP-20260611-0002",
+            repo_root=Path.cwd(),
+            target=None,
+        )
+
+
+def test_run_action_patch_plan_with_goal() -> None:
+    result = run_action(
+        "patch_plan",
+        action_id="OP-20260611-0003",
+        repo_root=Path.cwd(),
+        target="Implement CODE-02 Patch Planner",
+    )
+    assert result.status == "success"
+    assert result.action_name == "patch_plan"
+
+
+def test_run_action_patch_plan_requires_target() -> None:
+    with pytest.raises(ValueError, match="requires a target goal"):
+        run_action(
+            "patch_plan",
+            action_id="OP-20260611-0004",
             repo_root=Path.cwd(),
             target=None,
         )

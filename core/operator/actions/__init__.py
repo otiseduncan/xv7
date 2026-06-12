@@ -19,9 +19,11 @@ from core.operator.actions.runtime import (
     logs_summary,
     runtime_health,
 )
+from core.operator.actions.patch_plan import patch_plan
 from core.operator.actions.workspace import workspace_map
 
 __all__ = [
+    "patch_plan",
     "docker_compose_ps",
     "list_project_files",
     "logs_summary",

@@ -25,6 +25,7 @@ from core.operator.actions.runtime import (
     logs_summary,
     runtime_health,
 )
+from core.operator.actions.patch_plan import patch_plan
 from core.operator.actions.workspace import workspace_map
 from core.operator.schema import OperatorActionResult
 
@@ -42,7 +43,10 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         "repo_recent_commits": OperatorActionSpec(
             "repo_recent_commits", "read_only", repo_recent_commits
         ),
-        "workspace_map": OperatorActionSpec("workspace_map", "read_only", workspace_map),
+        "workspace_map": OperatorActionSpec(
+            "workspace_map", "read_only", workspace_map
+        ),
+        "patch_plan": OperatorActionSpec("patch_plan", "read_only", patch_plan),
         "list_project_files": OperatorActionSpec(
             "list_project_files", "read_only", list_project_files
         ),
@@ -92,4 +96,8 @@ def run_action(
         if not target:
             raise ValueError("read_project_file requires a target path")
         return spec.handler(action_id=action_id, repo_root=repo_root, path=target)
+    if action_name == "patch_plan":
+        if not target:
+            raise ValueError("patch_plan requires a target goal")
+        return spec.handler(action_id=action_id, repo_root=repo_root, goal=target)
     return spec.handler(action_id=action_id, repo_root=repo_root)

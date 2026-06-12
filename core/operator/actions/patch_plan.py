@@ -84,38 +84,53 @@ KEYWORD_FILE_HINTS: tuple[tuple[tuple[str, ...], list[str]], ...] = (
     (("apply", "patch", "approval", "code-03"), CODE_LANE_FILES["code-03"]),
     (("test runner", "run tests", "validation", "code-04"), CODE_LANE_FILES["code-04"]),
     (("diff", "report", "summary", "code-05"), CODE_LANE_FILES["code-05"]),
-    (("commit", "git commit", "code-06"), [
-        "core/operator/actions/commit_helper.py",
-        "core/operator/registry.py",
-        "tests/test_operator_commit_helper.py",
-        "docs/CODE_06_COMMIT_HELPER_PROMPT.md",
-    ]),
-    (("app builder", "scaffold", "template", "generated app"), [
-        "core/operator/actions/app_builder.py",
-        "core/operator/app_templates.py",
-        "tests/test_operator_app_builder.py",
-        "docs/CODE_07_APP_BUILDER_MODE_PROMPT.md",
-        "docs/CODE_15_APP_TEMPLATE_REGISTRY_PROMPT.md",
-    ]),
-    (("brain", "memory", "workflow learning", "records"), [
-        "core/brain/manager.py",
-        "core/brain/records.py",
-        "tests/test_runtime_brain_records_api.py",
-        "docs/CODE_12_MEMORY_TO_WORKFLOW_PROMOTION_PROMPT.md",
-    ]),
-    (("ui", "button", "panel", "command center", "frontend"), [
-        "public/app.js",
-        "public/index.html",
-        "public/styles.css",
-        "public/app.test.js",
-        "docs/CODE_13_OPERATOR_COMMAND_CENTER_PROMPT.md",
-    ]),
-    (("bridge", "local bridge", "host scan"), [
-        "local_bridge/app.py",
-        "core/operator/actions/host_scan.py",
-        "tests/test_operator_readonly_actions.py",
-        "docs/CODE_14_LOCAL_BRIDGE_HEALTH_PROMPT.md",
-    ]),
+    (
+        ("commit", "git commit", "code-06"),
+        [
+            "core/operator/actions/commit_helper.py",
+            "core/operator/registry.py",
+            "tests/test_operator_commit_helper.py",
+            "docs/CODE_06_COMMIT_HELPER_PROMPT.md",
+        ],
+    ),
+    (
+        ("app builder", "scaffold", "template", "generated app"),
+        [
+            "core/operator/actions/app_builder.py",
+            "core/operator/app_templates.py",
+            "tests/test_operator_app_builder.py",
+            "docs/CODE_07_APP_BUILDER_MODE_PROMPT.md",
+            "docs/CODE_15_APP_TEMPLATE_REGISTRY_PROMPT.md",
+        ],
+    ),
+    (
+        ("brain", "memory", "workflow learning", "records"),
+        [
+            "core/brain/manager.py",
+            "core/brain/records.py",
+            "tests/test_runtime_brain_records_api.py",
+            "docs/CODE_12_MEMORY_TO_WORKFLOW_PROMOTION_PROMPT.md",
+        ],
+    ),
+    (
+        ("ui", "button", "panel", "command center", "frontend"),
+        [
+            "public/app.js",
+            "public/index.html",
+            "public/styles.css",
+            "public/app.test.js",
+            "docs/CODE_13_OPERATOR_COMMAND_CENTER_PROMPT.md",
+        ],
+    ),
+    (
+        ("bridge", "local bridge", "host scan"),
+        [
+            "local_bridge/app.py",
+            "core/operator/actions/host_scan.py",
+            "tests/test_operator_readonly_actions.py",
+            "docs/CODE_14_LOCAL_BRIDGE_HEALTH_PROMPT.md",
+        ],
+    ),
 )
 
 
@@ -177,15 +192,25 @@ def _mutation_required(goal: str) -> bool:
 def _risk(goal: str, files: list[str], mutation_required: bool) -> tuple[str, str]:
     lowered = goal.lower()
     if any(keyword in lowered for keyword in RISK_HIGH_KEYWORDS):
-        return "high", "Goal mentions high-risk runtime, destructive, credential, deployment, or Docker behavior."
+        return (
+            "high",
+            "Goal mentions high-risk runtime, destructive, credential, deployment, or Docker behavior.",
+        )
     if any(path.startswith(("core/", "local_bridge/")) for path in files):
-        return "medium", "Plan likely touches runtime/operator code and requires targeted tests."
-    if not mutation_required or any(keyword in lowered for keyword in RISK_LOW_KEYWORDS):
+        return (
+            "medium",
+            "Plan likely touches runtime/operator code and requires targeted tests.",
+        )
+    if not mutation_required or any(
+        keyword in lowered for keyword in RISK_LOW_KEYWORDS
+    ):
         return "low", "Plan is read-only or docs/test focused."
     return "medium", "Plan requires repository changes and approval before mutation."
 
 
-def _proposed_changes(goal: str, files: list[str], mutation_required: bool) -> list[str]:
+def _proposed_changes(
+    goal: str, files: list[str], mutation_required: bool
+) -> list[str]:
     lowered = goal.lower()
     changes: list[str] = []
     if "code-02" in lowered or "patch plan" in lowered or "planner" in lowered:
@@ -220,9 +245,13 @@ def _proposed_changes(goal: str, files: list[str], mutation_required: bool) -> l
         )
 
     if not mutation_required:
-        changes.append("Keep this as plan-only unless the operator explicitly approves a later mutation step.")
+        changes.append(
+            "Keep this as plan-only unless the operator explicitly approves a later mutation step."
+        )
     if "docs/CODE_LANE_INDEX.md" in files:
-        changes.append("Update CODE lane index/status only after implementation is verified.")
+        changes.append(
+            "Update CODE lane index/status only after implementation is verified."
+        )
     return changes
 
 
@@ -254,11 +283,17 @@ def _tests_to_run(files: list[str], workspace: dict) -> list[str]:
 
 def _questions(goal: str, files: list[str]) -> list[str]:
     if not goal:
-        return ["What should be planned? Provide the feature, bug, or CODE lane target."]
-    if len(goal.split()) <= 2 and not any(goal.lower().startswith(f"code-{n:02d}") for n in range(1, 22)):
+        return [
+            "What should be planned? Provide the feature, bug, or CODE lane target."
+        ]
+    if len(goal.split()) <= 2 and not any(
+        goal.lower().startswith(f"code-{n:02d}") for n in range(1, 22)
+    ):
         return ["The goal is short. Confirm the desired behavior before patching."]
     if not files:
-        return ["No likely files were identified. Run workspace_map and inspect the repo first."]
+        return [
+            "No likely files were identified. Run workspace_map and inspect the repo first."
+        ]
     return []
 
 
@@ -313,7 +348,9 @@ def patch_plan(
             "workspace_summary": {
                 "branch": workspace_info.get("branch", "unknown"),
                 "dirty_file_count": workspace_info.get("dirty_file_count", 0),
-                "detected_stack_labels": workspace_info.get("detected_stack_labels", []),
+                "detected_stack_labels": workspace_info.get(
+                    "detected_stack_labels", []
+                ),
                 "limitations": workspace_info.get("limitations", []),
             },
         },

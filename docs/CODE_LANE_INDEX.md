@@ -17,7 +17,7 @@ Use this page first when asking: "what is next?"
 | ID | Title | Status | Short Description |
 | --- | --- | --- | --- |
 | CODE-01 | Workspace Context Map | implemented | Read-only workspace inspection and stack map. |
-| CODE-02 | Patch Planner | partial | Read-only planner action and direct tests landed; registry/chat routing still needs local VS Code wiring. |
+| CODE-02 | Patch Planner | implemented | Read-only planner action fully wired into operator registry; ready for action queue integration. |
 | CODE-03 | Approved Patch Apply | prompt written | Approval-gated patch application inside repo root. |
 | CODE-04 | Test Runner | prompt written | Standardized local validation runner and result receipts. |
 | CODE-05 | Diff Summary | prompt written | Compact changed-file summary with risks and next step. |
