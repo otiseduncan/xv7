@@ -306,7 +306,9 @@ def _planning_scope(goal: str) -> dict[str, object]:
 def _likely_files(goal: str, workspace: dict) -> list[str]:
     scope = _planning_scope(goal)
     scope_files = scope.get("files", [])
-    likely = [str(item) for item in scope_files] if isinstance(scope_files, list) else []
+    likely = (
+        [str(item) for item in scope_files] if isinstance(scope_files, list) else []
+    )
     lowered = goal.lower()
 
     if not likely:
