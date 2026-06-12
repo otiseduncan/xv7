@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from typing import Any
 
@@ -9,109 +10,37 @@ from core.brain.schema import BrainLayer, BrainRecord
 class AnswerContract:
     """Conversation quality guardrails for proof-aware record-grounded answers."""
 
+    ROADMAP_NOT_WIRED = "That module is not wired yet and remains on the XV7 roadmap."
+
     CODE_ARTIFACT_PATTERN = re.compile(r"\b(generate|create|build|draft|write|return|make)\b")
     CODE_ARTIFACT_HINT_PATTERN = re.compile(
         r"\b(code artifact|filename|previewable|do not apply it to the repo|do not apply to the repo|"
-        r"one-page website|landing page|html|css|javascript|typescript|python|website)\b"
+        r"one-page website|landing page|html|css|javascript|typescript|python)\b"
     )
 
     REMINDER_PATTERN = re.compile(
         r"\b(remind me|set (?:me )?(?:a )?reminder|create (?:a )?reminder|add (?:it )?to (?:my )?calendar|schedule (?:it|this|that))\b"
     )
+    HARDWARE_SCAN_PATTERN = re.compile(
+        r"\b(cpu|gpu|processor|graphics|vram|disk|disks|disc|discs|drive|drives|ports?|processes|services|docker|container|vscode|vs code|hardware|system scan|host scan|system info|temperature sensor|thermal|fan|hardware temp|system temperature)\b"
+    )
+    SMS_PATTERN = re.compile(r"\b(text|sms|send a text|send text|message someone)\b")
+    EMAIL_SEND_PATTERN = re.compile(r"\b(send|compose|write).{0,40}\bemail\b|\bsend email\b")
+    EMAIL_PATTERN = re.compile(r"\b(email|inbox|mail)\b")
+    WEATHER_PATTERN = re.compile(r"\b(weather|forecast|temperature|rain|snow|humidity)\b")
+    BIRTHDAY_PATTERN = re.compile(r"\b(birthday|birth day|bday)\b")
+    CONTACT_PATTERN = re.compile(r"\b(contact|call|phone number|reach out)\b")
+    FAMILY_PATTERN = re.compile(r"\b(family|mom|mother|dad|father|sister|brother|spouse|partner|child|children)\b")
+    MEDICAL_PATTERN = re.compile(r"\b(medical|health|history|condition|diagnosis|medication)\b")
+    WEB_LOOKUP_PATTERN = re.compile(r"\b(look up|lookup|search|find|browse|official website|website)\b")
     CALENDAR_PATTERN = re.compile(r"\b(calendar|schedule|meeting|appointment|event)\b")
     APPOINTMENT_PATTERN = re.compile(
         r"\b(appointment|meeting|event|doctor visit|doctor appointment)\b"
     )
-    WEATHER_PATTERN = re.compile(
-        r"\b(weather|forecast|outside temp|outside temperature|local forecast|climate|weather conditions)\b"
-    )
-    HARDWARE_SCAN_PATTERN = re.compile(
-        r"\b(cpu|gpu|processor|graphics|vram|disk|disks|disc|discs|drive|drives|ports?|processes|services|docker|container|vscode|vs code|hardware|system scan|host scan|system info|temperature sensor)\b"
-    )
-    EMAIL_PATTERN = re.compile(r"\b(email|gmail|imap|inbox|mailbox|outlook|mail)\b")
-    EMAIL_SEND_PATTERN = re.compile(
-        r"\b(send|draft|write|compose)\b.*\b(email|gmail|mail)\b|\b(email|gmail|mail)\b.*\b(send|draft|write|compose)\b"
-    )
-    SMS_PATTERN = re.compile(
-        r"\b(text someone|send (?:a )?text|text message|sms|message someone|send (?:them|someone) a message)\b"
-    )
-    WEB_LOOKUP_PATTERN = re.compile(
-        r"\b(web|website|browse|browser|internet|search online|look up|lookup|google)\b"
-    )
-    CONTACT_PATTERN = re.compile(
-        r"\b(contact|contacts|address book|phone number|call|text message|sms)\b"
-    )
-    FAMILY_PATTERN = re.compile(
-        r"\b(family|wife|husband|kids|children|parents|mom|mother|dad|father|siblings)\b"
-    )
-    MEDICAL_PATTERN = re.compile(
-        r"\b(medical|health|history|doctor|medication|diagnosis)\b"
-    )
-    BIRTHDAY_PATTERN = re.compile(r"\b(birthday|anniversary|important date)\b")
-
-    ROADMAP_NOT_WIRED = "That belongs in my roadmap, but the tool is not wired yet."
 
     @staticmethod
-    def _normalize(question: str) -> str:
-        return " ".join(question.lower().strip().split())
-
-    @staticmethod
-    def _latest_model_tag(session_metadata: dict[str, Any]) -> str | None:
-        receipt = session_metadata.get("model_use_receipt")
-        if not isinstance(receipt, dict):
-            return None
-
-        selection_source = str(receipt.get("model_selection_source", "")).lower()
-        if selection_source in {"brain_records", "brain_policy", "policy_only"}:
-            return None
-
-        tag = receipt.get("model_tag")
-        if not isinstance(tag, str) or not tag.strip():
-            return None
-        cleaned = tag.strip()
-        if cleaned.lower() == "xv7-brain-records":
-            return None
-        return cleaned
-
-    @staticmethod
-    def _last_verified_operator_model(verified: BrainRecord | None) -> str | None:
-        if verified is None:
-            return None
-
-        for fact in verified.facts:
-            lowered = fact.statement.lower()
-            if (
-                "operator readiness" not in lowered
-                and "operator_readiness_report" not in lowered
-            ):
-                continue
-
-            match = re.search(r"\b([a-z0-9_.-]+:[a-z0-9_.-]+)\b", fact.statement)
-            if match:
-                return match.group(1)
-        return None
-
-    @staticmethod
-    def _has_live_repo_check_proof(session_metadata: dict[str, Any]) -> bool:
-        proof = session_metadata.get("live_repo_check")
-        if isinstance(proof, bool):
-            return proof
-
-        checks = session_metadata.get("tool_results")
-        if isinstance(checks, list):
-            for item in checks:
-                if (
-                    isinstance(item, dict)
-                    and str(item.get("type", "")).lower() == "repo_check"
-                ):
-                    return True
-        return False
-
-    @staticmethod
-    def _facts(record: BrainRecord | None) -> list[str]:
-        if record is None:
-            return []
-        return [fact.statement for fact in record.facts]
+    def _normalize(text: str) -> str:
+        return re.sub(r"\s+", " ", text.strip().lower())
 
     @staticmethod
     def _find_layer_record(
@@ -120,10 +49,17 @@ class AnswerContract:
         return records_by_layer.get(layer)
 
     @staticmethod
-    def _extract_user_name(memory: BrainRecord | None) -> str | None:
-        if memory is None:
+    def _facts(record: BrainRecord | None) -> list[str]:
+        if record is None:
+            return []
+        return [fact.statement for fact in record.facts]
+
+    @staticmethod
+    def _extract_user_name(record: BrainRecord | None) -> str | None:
+        if record is None:
             return None
-        for fact in memory.facts:
+
+        for fact in record.facts:
             text = fact.statement.strip()
             lowered = text.lower()
             if "otis duncan" in lowered:
@@ -174,62 +110,74 @@ class AnswerContract:
             text = text[0].upper() + text[1:]
         return text
 
-    def is_code_artifact_request(self, question: str) -> bool:
-        normalized = self._normalize(question)
-        strong_artifact_hints = (
-            "code artifact",
-            "filename",
-            "previewable",
-            "do not apply it to the repo",
-            "do not apply to the repo",
-            "html",
-            "css",
-            "javascript",
-            "typescript",
-            "python",
-        )
-        if any(token in normalized for token in strong_artifact_hints):
-            return True
+    @staticmethod
+    def _has_live_repo_check_proof(session_metadata: dict[str, Any]) -> bool:
+        proof = session_metadata.get("live_repo_check")
+        if isinstance(proof, bool):
+            return proof
 
-        explicit_lookup_hints = (
-            "look up",
-            "lookup",
-            "search online",
-            "google",
-            "browse",
-            "official website",
-        )
-        if any(token in normalized for token in explicit_lookup_hints):
-            return False
-
-        has_generation_verb = bool(self.CODE_ARTIFACT_PATTERN.search(normalized))
-        has_build_target = any(
-            token in normalized
-            for token in (
-                "website",
-                "webpage",
-                "landing page",
-                "one-page",
-                "single-page",
-                "html",
-                "css",
-                "javascript",
-                "typescript",
-                "python",
-            )
-        )
-        return has_generation_verb and has_build_target
+        checks = session_metadata.get("tool_results")
+        if isinstance(checks, list):
+            for item in checks:
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("type", "")).lower() == "repo_check"
+                ):
+                    return True
+        return False
 
     @staticmethod
-    def _code_artifact_language(normalized: str) -> str:
-        if "python" in normalized:
-            return "python"
-        if "typescript" in normalized:
+    def _latest_model_tag(session_metadata: dict[str, Any]) -> str | None:
+        receipt = session_metadata.get("model_use_receipt")
+        if not isinstance(receipt, dict):
+            return None
+
+        selection_source = str(receipt.get("model_selection_source", "")).lower()
+        if selection_source in {"brain_records", "brain_policy", "policy_only"}:
+            return None
+
+        tag = receipt.get("model_tag")
+        if not isinstance(tag, str) or not tag.strip():
+            return None
+        cleaned = tag.strip()
+        if cleaned.lower() == "xv7-brain-records":
+            return None
+        return cleaned
+
+    @staticmethod
+    def _last_verified_operator_model(record: BrainRecord | None) -> str | None:
+        if record is None:
+            return None
+
+        for fact in record.facts:
+            lowered = fact.statement.lower()
+            if (
+                "operator readiness" not in lowered
+                and "operator_readiness_report" not in lowered
+            ):
+                continue
+
+            match = re.search(r"\b([a-z0-9_.-]+:[a-z0-9_.-]+)\b", fact.statement)
+            if match:
+                return match.group(1)
+        return None
+
+    @staticmethod
+    def is_code_artifact_request(normalized_question: str) -> bool:
+        has_hint = bool(AnswerContract.CODE_ARTIFACT_HINT_PATTERN.search(normalized_question))
+        has_action = bool(AnswerContract.CODE_ARTIFACT_PATTERN.search(normalized_question))
+        return has_hint and has_action
+
+    @staticmethod
+    def _code_artifact_language(normalized_question: str) -> str:
+        if "typescript" in normalized_question or re.search(r"\bts\b", normalized_question):
             return "typescript"
-        if "javascript" in normalized:
+        if "javascript" in normalized_question or re.search(r"\bjs\b", normalized_question):
             return "javascript"
-        if "css" in normalized:
+        if "css" in normalized_question:
             return "css"
+        if "python" in normalized_question:
+            return "python"
         return "html"
 
     @staticmethod
@@ -245,54 +193,283 @@ class AnswerContract:
         return "index.html"
 
     @staticmethod
-    def _default_code_artifact_content(filename: str, language: str) -> str:
+    def _clean_artifact_label(text: str) -> str:
+        value = re.sub(r"\s+", " ", text.strip())
+        return value.strip(" .,:;\"'“”‘’")
+
+    @classmethod
+    def _extract_artifact_name(cls, question: str) -> str | None:
+        patterns = [
+            r"one-page\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]\s+website",
+            r"one-page\s+([^,.]+?)\s+website",
+            r"for\s+([^,.]+?)\s+website",
+            r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, question, flags=re.IGNORECASE)
+            if not match:
+                continue
+            candidate = cls._clean_artifact_label(match.group(1))
+            if candidate:
+                return candidate
+        return None
+
+    @staticmethod
+    def _artifact_business_category(question: str, name: str | None) -> str:
+        text = f"{question} {name or ''}".lower()
+        if any(token in text for token in ("hot dog", "hotdog", "cart", "food truck", "food cart", "concession")):
+            return "hot_dog_cart"
+        if any(token in text for token in ("flower", "florist", "bouquet", "bouquets", "blossom", "bloom", "petal")):
+            return "florist"
+        if any(token in text for token in ("detail", "detailing", "car wash", "auto detail", "mobile detailing", "vehicle")):
+            return "detailing"
+        if any(token in text for token in ("arcade", "gaming", "game", "retro", "neon byte", "pixel", "high score")):
+            return "arcade"
+        return "generic"
+
+    @staticmethod
+    def _artifact_style_profile(question: str, category: str) -> dict[str, str]:
+        text = question.lower()
+        style = {
+            "accent": "#fbbf24",
+            "accent_2": "#fb7185",
+            "font_stack": '"Segoe UI", system-ui, sans-serif',
+            "hero_transform": "none",
+        }
+
+        if category == "hot_dog_cart":
+            style.update({"accent": "#fbbf24", "accent_2": "#fb7185", "font_stack": '"Segoe UI", system-ui, sans-serif'})
+        elif category == "florist":
+            style.update({"accent": "#f59e0b", "accent_2": "#ec4899", "font_stack": 'Georgia, "Times New Roman", serif'})
+        elif category == "detailing":
+            style.update({"accent": "#38bdf8", "accent_2": "#22d3ee", "font_stack": '"Segoe UI", system-ui, sans-serif'})
+        elif category == "arcade":
+            style.update({"accent": "#a855f7", "accent_2": "#22d3ee", "font_stack": '"Trebuchet MS", "Arial Black", sans-serif', "hero_transform": "uppercase"})
+
+        if any(token in text for token in ("purple", "violet", "magenta")):
+            style["accent"] = "#a855f7"
+        if any(token in text for token in ("cyan", "aqua", "teal")):
+            style["accent_2"] = "#22d3ee"
+        if any(token in text for token in ("bright", "neon")):
+            style["accent"] = style.get("accent", "#fbbf24")
+        if any(token in text for token in ("elegant", "luxury")):
+            style["font_stack"] = 'Georgia, "Times New Roman", serif'
+        if any(token in text for token in ("retro", "futuristic")):
+            style["font_stack"] = '"Trebuchet MS", "Arial Black", sans-serif'
+        if any(token in text for token in ("clean", "playful")) and category != "arcade":
+            style["font_stack"] = '"Segoe UI", system-ui, sans-serif'
+
+        return style
+
+    @staticmethod
+    def _format_business_name(name: str | None, fallback: str) -> str:
+        value = (name or "").strip()
+        return value or fallback
+
+    @classmethod
+    def _build_business_site_template(cls, question: str) -> dict[str, Any]:
+        business_name = cls._extract_artifact_name(question)
+        category = cls._artifact_business_category(question, business_name)
+        display_name = cls._format_business_name(business_name, "Local Business Website")
+        style = cls._artifact_style_profile(question, category)
+
+        if category == "hot_dog_cart":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Fresh dogs, fast service, neighborhood flavor.",
+                "lead": f"A one-page local website for {display_name} with quick pickup, bold toppings, and a friendly street-side feel.",
+                "primary_cta": "See the menu",
+                "secondary_cta": "Plan your visit",
+                "highlight_title": "Menu Highlights",
+                "highlights": [
+                    ("Classic Cart Dog", "Mustard, relish, onion"),
+                    ("Chicago-Style Dog", "Pickle, tomato, sport peppers"),
+                    ("Loaded Chili Dog", "Cheese, onion, jalapeno"),
+                ],
+                "info_title": "Location & Hours",
+                "info_lines": [
+                    "Main Street corner near the park.",
+                    "Mon-Sat, 11:00 AM - 7:00 PM",
+                    "Sunday by event schedule",
+                ],
+                "action_title": "Order Ahead",
+                "action_body": "Call ahead, swing by for pickup, or ask about catering for local events.",
+                "action_label": "Call Now",
+            }
+
+        if category == "florist":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Fresh blooms, thoughtful arrangements, same-day smiles.",
+                "lead": f"A one-page florist website for {display_name} with bouquets, seasonal stems, and delivery-ready service.",
+                "primary_cta": "Browse bouquets",
+                "secondary_cta": "Schedule delivery",
+                "highlight_title": "Featured Arrangements",
+                "highlights": [
+                    ("Seasonal Bouquets", "Hand-tied color stories for every room"),
+                    ("Event Florals", "Weddings, showers, and celebrations"),
+                    ("Daily Bloom Bar", "Fresh picks ready to go"),
+                ],
+                "info_title": "Shop Info",
+                "info_lines": [
+                    "Neighborhood studio with local pickup.",
+                    "Mon-Sat, 9:00 AM - 6:00 PM",
+                    "Same-day delivery available in town",
+                ],
+                "action_title": "Send Flowers",
+                "action_body": "Choose a bouquet, add a note, and let the blooms do the talking.",
+                "action_label": "Order Flowers",
+            }
+
+        if category == "detailing":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Mobile shine, showroom finish, driveway convenience.",
+                "lead": f"A one-page mobile detailing website for {display_name} with on-site wash, interior refresh, and protective finishes.",
+                "primary_cta": "Book a detail",
+                "secondary_cta": "View packages",
+                "highlight_title": "Detailing Packages",
+                "highlights": [
+                    ("Interior Reset", "Vacuum, wipe-down, glass, and trim"),
+                    ("Exterior Wash", "Paint-safe wash and wheel cleaning"),
+                    ("Protection Add-On", "Sealant for longer-lasting shine"),
+                ],
+                "info_title": "Service Area",
+                "info_lines": [
+                    "Mobile appointments at home or work.",
+                    "Mon-Sat, 8:00 AM - 6:00 PM",
+                    "Serving cars, trucks, and SUVs",
+                ],
+                "action_title": "Schedule Service",
+                "action_body": "Pick a package, choose a time, and get a clean ride without the wait.",
+                "action_label": "Book Now",
+            }
+
+        if category == "arcade":
+            return {
+                "display_name": display_name,
+                "style": style,
+                "hero": "Play fast, chase high scores, and keep the neon glowing.",
+                "lead": f"A one-page arcade website for {display_name} with cabinets, tournaments, and a bold retro-futuristic feel.",
+                "primary_cta": "Start playing",
+                "secondary_cta": "See the games",
+                "highlight_title": "Featured Games",
+                "highlights": [
+                    ("Pixel Runner", "Fast reflexes, bright lights, leaderboard chase"),
+                    ("Neon Drift", "Racing lanes with glowing city vibes"),
+                    ("Boss Battle", "High-score challenge for night owls"),
+                ],
+                "info_title": "Arcade Info",
+                "info_lines": [
+                    "Open late with classic cabinets and modern favorites.",
+                    "Friday-Sunday tournaments and free-play nights.",
+                    "Bring friends, grab tokens, and push the high score.",
+                ],
+                "action_title": "Join the Game",
+                "action_body": "Drop in, power up, and claim a spot on the scoreboard.",
+                "action_label": "Play Now",
+            }
+
+        return {
+            "display_name": display_name,
+            "style": style,
+            "hero": "A clean one-page website with a clear offer and simple call to action.",
+            "lead": f"A one-page business website for {display_name} with a bold hero, useful details, and a clear next step.",
+            "primary_cta": "Explore services",
+            "secondary_cta": "Get in touch",
+            "highlight_title": "Key Services",
+            "highlights": [
+                ("Service One", "Simple summary of the main offer"),
+                ("Service Two", "Supporting option or package"),
+                ("Service Three", "Another helpful detail for visitors"),
+            ],
+            "info_title": "Business Info",
+            "info_lines": [
+                "Local service with a friendly, direct approach.",
+                "Open by appointment or posted hours.",
+                "Reach out for pricing, availability, or booking.",
+            ],
+            "action_title": "Contact Us",
+            "action_body": "Call, email, or send a quick message to get started.",
+            "action_label": "Contact",
+        }
+
+    @staticmethod
+    def _default_code_artifact_content(filename: str, language: str, question: str) -> str:
         if language == "html":
-            return """<!doctype html>
-<html lang="en">
+            template = AnswerContract._build_business_site_template(question)
+            display_name = html.escape(str(template["display_name"]), quote=False)
+            hero = html.escape(str(template["hero"]), quote=False)
+            lead = html.escape(str(template["lead"]), quote=False)
+            highlight_title = html.escape(str(template["highlight_title"]), quote=False)
+            info_title = html.escape(str(template["info_title"]), quote=False)
+            action_title = html.escape(str(template["action_title"]), quote=False)
+            action_body = html.escape(str(template["action_body"]), quote=False)
+            primary_cta = html.escape(str(template["primary_cta"]), quote=False)
+            secondary_cta = html.escape(str(template["secondary_cta"]), quote=False)
+            action_label = html.escape(str(template["action_label"]), quote=False)
+            highlights = "".join(
+                f'<li><span>{html.escape(str(left), quote=False)}</span><span class="muted">{html.escape(str(right), quote=False)}</span></li>'
+                for left, right in template["highlights"]
+            )
+            info_lines = "".join(
+                f'<p class="muted">{html.escape(str(line), quote=False)}</p>' for line in template["info_lines"]
+            )
+            style = template["style"]
+            accent = str(style["accent"])
+            accent_2 = str(style["accent_2"])
+            font_stack = str(style["font_stack"])
+            hero_transform = str(style["hero_transform"])
+            return f"""<!doctype html>
+<html lang=\"en\">
     <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Harry's Hot Dog Cart</title>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>{display_name}</title>
         <style>
-            :root {
+            :root {{
                 color-scheme: dark;
                 --bg: #07111f;
                 --panel: rgba(10, 19, 34, 0.92);
                 --text: #f3f7fb;
                 --muted: #b7c5d7;
-                --accent: #fbbf24;
-                --accent-2: #fb7185;
+                --accent: {accent};
+                --accent-2: {accent_2};
                 --border: rgba(122, 214, 255, 0.18);
-            }
-            * { box-sizing: border-box; }
-            body {
+                --font-stack: {font_stack};
+            }}
+            * {{ box-sizing: border-box; }}
+            body {{
                 margin: 0;
                 min-height: 100vh;
-                font-family: "Segoe UI", system-ui, sans-serif;
+                font-family: var(--font-stack);
                 color: var(--text);
                 background:
-                    radial-gradient(circle at top, rgba(251, 191, 36, 0.16), transparent 36%),
+                    radial-gradient(circle at top, color-mix(in srgb, var(--accent) 22%, transparent), transparent 36%),
                     linear-gradient(180deg, #0a1323 0%, #07111f 52%, #050b14 100%);
-            }
-            .page {
+            }}
+            .page {{
                 min-height: 100vh;
                 display: grid;
                 place-items: center;
                 padding: 24px;
-            }
-            .card {
+            }}
+            .card {{
                 width: min(960px, 100%);
                 background: var(--panel);
                 border: 1px solid var(--border);
                 border-radius: 28px;
                 overflow: hidden;
                 box-shadow: 0 30px 70px rgba(0, 0, 0, 0.35);
-            }
-            .hero {
+            }}
+            .hero {{
                 padding: 40px 28px 28px;
-                background: linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(251, 113, 133, 0.12));
-            }
-            .eyebrow {
+                background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent-2) 14%, transparent));
+            }}
+            .eyebrow {{
                 display: inline-flex;
                 padding: 8px 12px;
                 border-radius: 999px;
@@ -301,27 +478,28 @@ class AnswerContract:
                 font-size: 0.82rem;
                 letter-spacing: 0.08em;
                 text-transform: uppercase;
-            }
-            h1 {
+            }}
+            h1 {{
                 margin: 18px 0 12px;
                 font-size: clamp(2.4rem, 7vw, 4.8rem);
                 line-height: 0.95;
                 letter-spacing: -0.05em;
-            }
-            .lead {
+                text-transform: {hero_transform};
+            }}
+            .lead {{
                 max-width: 62ch;
                 margin: 0;
                 color: var(--muted);
                 font-size: clamp(1rem, 2.2vw, 1.15rem);
                 line-height: 1.6;
-            }
-            .hero-actions {
+            }}
+            .hero-actions {{
                 display: flex;
                 flex-wrap: wrap;
                 gap: 12px;
                 margin-top: 24px;
-            }
-            .button {
+            }}
+            .button {{
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
@@ -330,86 +508,78 @@ class AnswerContract:
                 border-radius: 999px;
                 text-decoration: none;
                 font-weight: 700;
-            }
-            .button.primary {
+            }}
+            .button.primary {{
                 color: #111827;
-                background: linear-gradient(135deg, #fbbf24, #fb7185);
-            }
-            .button.secondary {
+                background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            }}
+            .button.secondary {{
                 color: var(--text);
                 border: 1px solid rgba(255, 255, 255, 0.14);
                 background: rgba(255, 255, 255, 0.05);
-            }
-            .grid {
+            }}
+            .grid {{
                 display: grid;
                 gap: 20px;
                 padding: 28px;
                 grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            }
-            .panel {
+            }}
+            .panel {{
                 padding: 20px;
                 border-radius: 22px;
                 background: rgba(255, 255, 255, 0.04);
                 border: 1px solid rgba(255, 255, 255, 0.08);
-            }
-            .panel h2 {
+            }}
+            .panel h2 {{
                 margin: 0 0 10px;
                 font-size: 1.1rem;
-            }
-            .menu-list {
+            }}
+            .menu-list {{
                 margin: 0;
                 padding: 0;
                 list-style: none;
                 display: grid;
                 gap: 10px;
-            }
-            .menu-list li {
+            }}
+            .menu-list li {{
                 display: flex;
                 justify-content: space-between;
                 gap: 16px;
                 padding-bottom: 10px;
                 border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
-            }
-            .muted { color: var(--muted); }
-            @media (max-width: 640px) {
-                .hero, .grid { padding-left: 18px; padding-right: 18px; }
-                .button { width: 100%; }
-            }
+            }}
+            .muted {{ color: var(--muted); }}
+            @media (max-width: 640px) {{
+                .hero, .grid {{ padding-left: 18px; padding-right: 18px; }}
+                .button {{ width: 100%; }}
+            }}
         </style>
     </head>
     <body>
-        <main class="page">
-            <section class="card">
-                <header class="hero">
-                    <div class="eyebrow">Harry's Hot Dog Cart</div>
-                    <h1>Hot dogs, quick service, neighborhood comfort.</h1>
-                    <p class="lead">
-                        A one-page local website for Harry's Hot Dog Cart with bold flavor, fast ordering, and a friendly street-side feel.
-                    </p>
-                    <div class="hero-actions">
-                        <a class="button primary" href="#menu">See the menu</a>
-                        <a class="button secondary" href="#visit">Plan your visit</a>
+        <main class=\"page\">
+            <section class=\"card\">
+                <header class=\"hero\">
+                    <div class=\"eyebrow\">{display_name}</div>
+                    <h1>{hero}</h1>
+                    <p class=\"lead\">{lead}</p>
+                    <div class=\"hero-actions\">
+                        <a class=\"button primary\" href=\"#highlights\">{primary_cta}</a>
+                        <a class=\"button secondary\" href=\"#info\">{secondary_cta}</a>
                     </div>
                 </header>
-                <section class="grid">
-                    <article class="panel" id="menu">
-                        <h2>Menu Highlights</h2>
-                        <ul class="menu-list">
-                            <li><span>Classic Cart Dog</span><span class="muted">Mustard, relish, onion</span></li>
-                            <li><span>Chicago-Style Dog</span><span class="muted">Pickle, tomato, sport peppers</span></li>
-                            <li><span>Loaded Chili Dog</span><span class="muted">Cheese, onion, jalapeno</span></li>
-                        </ul>
+                <section class=\"grid\">
+                    <article class=\"panel\" id=\"highlights\">
+                        <h2>{highlight_title}</h2>
+                        <ul class=\"menu-list\">{highlights}</ul>
                     </article>
-                    <article class="panel" id="visit">
-                        <h2>Location & Hours</h2>
-                        <p class="muted">Main Street corner near the park.</p>
-                        <p class="muted">Mon-Sat, 11:00 AM - 7:00 PM</p>
-                        <p class="muted">Sunday by event schedule</p>
+                    <article class=\"panel\" id=\"info\">
+                        <h2>{info_title}</h2>
+                        {info_lines}
                     </article>
-                    <article class="panel">
-                        <h2>Order Ahead</h2>
-                        <p class="muted">Call ahead, swing by for pickup, or ask about catering for local events.</p>
-                        <a class="button primary" href="tel:+15555550123">Call Harry</a>
+                    <article class=\"panel\">
+                        <h2>{action_title}</h2>
+                        <p class=\"muted\">{action_body}</p>
+                        <a class=\"button primary\" href=\"#highlights\">{action_label}</a>
                     </article>
                 </section>
             </section>
@@ -424,19 +594,24 @@ class AnswerContract:
 }
 """
 
+        display_name = cls._format_business_name(
+            cls._extract_artifact_name(question),
+            "Local Business Website" if language == "html" else "Draft Artifact",
+        )
+
         if language == "javascript":
-            return "const brand = \"Harry's Hot Dog Cart\";\nconsole.log(brand);"
+            return f'const brand = "{display_name}";\nconsole.log(brand);'
 
         if language == "typescript":
-            return "const brand: string = \"Harry's Hot Dog Cart\";\nconsole.log(brand);"
+            return f'const brand: string = "{display_name}";\nconsole.log(brand);'
 
         if language == "python":
-            return """def main() -> None:
-        print(\"Harry's Hot Dog Cart\")
+            return f"""def main() -> None:
+    print(\"{display_name}\")
 
 
 if __name__ == \"__main__\":
-        main()
+    main()
 """
 
         return f"# Draft artifact for {filename}\n"
@@ -456,7 +631,7 @@ if __name__ == \"__main__\":
                 "language": language,
                 "previewable": language == "html",
                 "applied": False,
-                "content": self._default_code_artifact_content(filename, language),
+                "content": self._default_code_artifact_content(filename, language, question),
             },
             "context_receipt": {
                 "compact": "Memory: -; Knowledge: -; Focus: -; Proof: code-artifact-draft",
@@ -1094,3 +1269,4 @@ if __name__ == \"__main__\":
             return "Missing required record: knowledge."
 
         return None
+

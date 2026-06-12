@@ -1346,6 +1346,8 @@ class Xv7UI {
       receiptSummary: [],
     };
 
+    const hasCodeArtifacts = role === 'assistant' && this.collectCodeArtifacts(messageMetadata).length > 0;
+
     if (role === 'assistant') {
       copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
       this.appendCodeArtifacts(article, messageMetadata);
@@ -1373,7 +1375,13 @@ class Xv7UI {
     }
 
     this.els.chatTimeline.append(article);
-    this.els.chatTimeline.scrollTop = this.els.chatTimeline.scrollHeight;
+    if (hasCodeArtifacts) {
+      if (typeof article.scrollIntoView === 'function') {
+        article.scrollIntoView({ block: 'start', inline: 'nearest' });
+      }
+    } else {
+      this.els.chatTimeline.scrollTop = this.els.chatTimeline.scrollHeight;
+    }
     this.visibleConversation.push(copyPayload);
 
     return article;

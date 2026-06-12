@@ -461,12 +461,56 @@ def test_code_artifact_generation_prompt_emits_code_artifact_payload(
 
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
     assert assistant_payload.get("code_artifact", {}).get("filename") == "index.html"
+    assert assistant_payload.get("policy_provenance", {}).get(
+        "artifact_generation"
+    ) == "deterministic_prompt_template"
     assert assistant_payload.get("memory_receipts") == []
     assert assistant_payload.get("operator_receipts") == []
     assert assistant_payload.get("learned_record_id") is None
 
     after_files = sorted(path.name for path in memory_dir.glob("XV7-MEMORY-*.json"))
     assert after_files == before_files
+
+
+def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    cases = [
+        (
+            "Generate a small HTML code artifact for a one-page \"Harry's Hot Dog Cart\" website.",
+            ["Harry's Hot Dog Cart", "#fbbf24", "#fb7185"],
+        ),
+        (
+            "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website.",
+            ["Flow Flowers", "Fresh blooms", "#f59e0b", "#ec4899", "Georgia"],
+        ),
+        (
+            "Generate a small HTML code artifact for a one-page \"Rico's Detailing\" website.",
+            ["Rico's Detailing", "showroom finish", "#38bdf8", "#22d3ee"],
+        ),
+        (
+            "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website with purple, cyan, retro, and futuristic energy.",
+            ["Neon Byte Arcade", "high scores", "#a855f7", "#22d3ee", "uppercase"],
+        ),
+    ]
+
+    seen_contents: list[str] = []
+    for prompt, required_fragments in cases:
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            headers={"X-XV7-API-Key": "test-secret"},
+            json={"raw_text": prompt},
+        )
+        assert response.status_code == 200
+        content = response.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+        seen_contents.append(content)
+        for fragment in required_fragments:
+            assert fragment in content
+        if "Harry's Hot Dog Cart" not in prompt:
+            assert "Harry's Hot Dog Cart" not in content
+
+    assert len(set(seen_contents)) == len(cases)
 
 
 def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Path) -> None:

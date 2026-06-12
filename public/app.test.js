@@ -1213,6 +1213,9 @@ describe('ModelProfileControl', () => {
   it('renders an inline code artifact card inside the assistant chat flow', async () => {
     global.fetch = createRuntimeFetchMock();
 
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
     const ui = new Xv7UI();
     await flushAsync();
 
@@ -1246,6 +1249,7 @@ describe('ModelProfileControl', () => {
       'Download',
       'Preview',
     ]);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', inline: 'nearest' });
     expect(timelineCards[1].querySelectorAll('.code-artifact-header')).toHaveLength(1);
     expect(timelineCards[1].querySelectorAll('.code-artifact-footer')).toHaveLength(1);
     expect(timelineCards[1].querySelector('.code-artifact-footer-copy')?.textContent).toContain('not been applied to the repo');
@@ -1313,6 +1317,9 @@ describe('ModelProfileControl', () => {
 
     const ui = new Xv7UI();
     await flushAsync();
+
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
 
     document.getElementById('promptInput').value = 'Generate a small HTML code artifact for a one-page website.';
     document.getElementById('sendButton').click();
@@ -1512,6 +1519,9 @@ describe('ModelProfileControl', () => {
       return fetchMock(input, init);
     });
 
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
     const ui = new Xv7UI();
     await flushAsync();
 
@@ -1534,6 +1544,7 @@ describe('ModelProfileControl', () => {
       'Preview',
     ]);
     expect(artifactCard.querySelector('.code-artifact-footer-copy')?.textContent).toContain('not been applied to the repo');
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', inline: 'nearest' });
     expect(cards[2].textContent || '').toContain('After artifact');
   });
 

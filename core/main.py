@@ -3206,6 +3206,7 @@ async def add_session_message(
                 "answer_source": "brain_policy",
                 "policy_source": "answer_contract",
                 "brain_answer_source": "code_artifact_request",
+                "artifact_generation": "deterministic_prompt_template",
                 "request_id": str(uuid4()),
                 "session_id": str(session_id),
                 "runtime_model_inference_proven": False,
