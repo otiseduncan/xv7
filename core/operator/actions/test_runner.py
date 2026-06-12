@@ -296,3 +296,6 @@ def test_runner(
         safety=OperatorSafety(allowed=True),
         receipt_label=f"test_runner {action_id}",
     )
+
+
+setattr(test_runner, "__test__", False)
