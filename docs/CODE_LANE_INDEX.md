@@ -18,7 +18,7 @@ Use this page first when asking: "what is next?"
 | --- | --- | --- | --- |
 | CODE-01 | Workspace Context Map | implemented | Read-only workspace inspection and stack map. |
 | CODE-02 | Patch Planner | implemented | Read-only planner action fully wired into operator registry; ready for action queue integration. |
-| CODE-03 | Approved Patch Apply | prompt written | Approval-gated patch application inside repo root. |
+| CODE-03 | Approved Patch Apply | implemented | Approval-gated patch application inside repo root; no commit or push. |
 | CODE-04 | Test Runner | prompt written | Standardized local validation runner and result receipts. |
 | CODE-05 | Diff Summary | prompt written | Compact changed-file summary with risks and next step. |
 | CODE-06 | Commit Helper | prompt written | Approval-gated commit helper with safety warnings. |
@@ -64,13 +64,15 @@ Use this page first when asking: "what is next?"
 
 ## What To Do Next
 
-Current next recommended implementation target: finish CODE-02 registry/export/chat wiring, then run the targeted CODE-02 tests.
+Current next recommended implementation target: CODE-04 Test Runner.
 
 CODE-01 is implemented as a read-only workspace map action with registry exposure and tests.
 
-CODE-02 now has the core read-only `patch_plan` action and direct unit coverage. The remote writer could not safely update registry/export files because those files include sensitive operator/scan strings, so finish the small registry/export wiring in VS Code before marking CODE-02 implemented.
+CODE-02 is implemented as a read-only `patch_plan` action with registry exposure and tests.
 
-After CODE-01 through CODE-03 are implemented and stable, run the gauntlet in:
+CODE-03 is implemented as an approval-gated `apply_approved_patch` action. It denies unapproved changes, rejects outside-root paths, writes only inside the repo root, returns changed files and compact diff data, and never commits or pushes.
+
+After CODE-01 through CODE-05 are implemented and stable, run the gauntlet in:
 
 - docs/CODE_OPERATOR_GAUNTLET.md
 
