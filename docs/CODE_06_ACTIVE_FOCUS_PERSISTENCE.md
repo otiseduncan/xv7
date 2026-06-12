@@ -22,7 +22,7 @@ The runtime can be configured so focus mutations try to save into the canonical 
 
 ```bash
 pytest tests/test_brain_records.py tests/test_operator_chat_integration.py
-pytest tests/test_active_focus_persistence.py
+pytest tests/test_active_focus_runtime_store.py
 pytest
 ```
 

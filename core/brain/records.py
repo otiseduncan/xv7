@@ -19,6 +19,8 @@ class BrainRecordLoader:
     ) -> None:
         env_path = os.getenv("XV7_BRAIN_RECORDS_PATH")
         runtime_env_path = os.getenv("XV7_BRAIN_RUNTIME_RECORDS_PATH")
+        runtime_fallback_env_path = os.getenv("XV7_BRAIN_RUNTIME_FALLBACK_PATH")
+        allow_seed_writes = os.getenv("XV7_ALLOW_BRAIN_SEED_WRITES") == "1"
         if records_dir is not None:
             self.records_dir = records_dir
         elif env_path:
@@ -29,11 +31,47 @@ class BrainRecordLoader:
         if runtime_records_dir is not None:
             self.runtime_records_dir = runtime_records_dir
         elif runtime_env_path:
-            self.runtime_records_dir = Path(runtime_env_path)
+            runtime_path = Path(runtime_env_path)
+            if self._same_path(runtime_path, self.records_dir) and not allow_seed_writes:
+                if runtime_fallback_env_path:
+                    self.runtime_records_dir = Path(runtime_fallback_env_path)
+                else:
+                    self.runtime_records_dir = Path("data/brain/runtime_records")
+            else:
+                self.runtime_records_dir = runtime_path
         elif records_dir is not None:
             self.runtime_records_dir = self.records_dir
         else:
             self.runtime_records_dir = Path("data/brain/runtime_records")
+
+    @staticmethod
+    def _same_path(left: Path, right: Path) -> bool:
+        try:
+            return left.resolve(strict=False) == right.resolve(strict=False)
+        except OSError:
+            return left.absolute() == right.absolute()
+
+    def _prepare_runtime_record_store(self) -> None:
+        try:
+            self.runtime_records_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(
+                f"runtime record store is unavailable: {self.runtime_records_dir}"
+            ) from exc
+
+        if not self.runtime_records_dir.is_dir():
+            raise RuntimeError(
+                f"runtime record store is not a directory: {self.runtime_records_dir}"
+            )
+
+        probe_path = self.runtime_records_dir / ".xv7-write-test"
+        try:
+            probe_path.write_text("xv7\n", encoding="utf-8")
+            probe_path.unlink()
+        except OSError as exc:
+            raise RuntimeError(
+                f"runtime record store is not writable: {self.runtime_records_dir}"
+            ) from exc
 
     @staticmethod
     def _load_dir_records(records_dir: Path) -> dict[str, BrainRecord]:
@@ -49,14 +87,14 @@ class BrainRecordLoader:
 
     def load_records(self) -> list[BrainRecord]:
         merged_records = self._load_dir_records(self.records_dir)
-        if self.runtime_records_dir != self.records_dir:
+        if not self._same_path(self.runtime_records_dir, self.records_dir):
             merged_records.update(self._load_dir_records(self.runtime_records_dir))
         return [merged_records[record_id] for record_id in sorted(merged_records)]
 
     def load_records_with_source(self) -> list[tuple[BrainRecord, str, Path]]:
         seed_records = self._load_dir_records(self.records_dir)
         runtime_records: dict[str, BrainRecord] = {}
-        if self.runtime_records_dir != self.records_dir:
+        if not self._same_path(self.runtime_records_dir, self.records_dir):
             runtime_records = self._load_dir_records(self.runtime_records_dir)
 
         merged: dict[str, tuple[BrainRecord, str, Path]] = {}
@@ -82,7 +120,9 @@ class BrainRecordLoader:
         runtime_path = self.runtime_records_dir / f"{record_id}.json"
         seed_path = self.records_dir / f"{record_id}.json"
 
-        if runtime_path.exists() and self.runtime_records_dir != self.records_dir:
+        if runtime_path.exists() and not self._same_path(
+            self.runtime_records_dir, self.records_dir
+        ):
             payload = json.loads(runtime_path.read_text(encoding="utf-8"))
             return BrainRecord.model_validate(payload), "runtime_override", runtime_path
 
@@ -147,13 +187,32 @@ class BrainRecordLoader:
         return self.runtime_records_dir / f"{record_id}.json"
 
     def _save_record(self, record: BrainRecord) -> None:
-        self.runtime_records_dir.mkdir(parents=True, exist_ok=True)
+        self._prepare_runtime_record_store()
         payload = record.model_dump(mode="json")
         path = self._runtime_record_path(record.record_id)
-        path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        temp_path = path.with_name(f".{path.name}.tmp")
+        try:
+            temp_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temp_path.replace(path)
+            saved_payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"failed to write runtime record store record: {record.record_id}"
+            ) from exc
+        finally:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+
+        if saved_payload.get("record_id") != record.record_id:
+            raise RuntimeError(
+                f"runtime record store verification failed for {record.record_id}"
+            )
 
     def save_runtime_override(self, record: BrainRecord) -> BrainRecord:
         self._save_record(record)
@@ -331,6 +390,7 @@ class BrainRecordLoader:
 
     def apply_active_focus_instruction(self, focus_summary: str) -> BrainRecord:
         cleaned_summary = " ".join(focus_summary.strip().split())
+        self._prepare_runtime_record_store()
         records = self.load_records()
 
         active_focus_records = [
@@ -342,6 +402,7 @@ class BrainRecordLoader:
             [self._focus_index(record.record_id) for record in records],
             default=0,
         )
+        next_record_id = f"XV7-FOCUS-{max_focus_index + 1:04d}"
 
         for record in active_focus_records:
             archived_tags = list(record.tags)
@@ -352,11 +413,12 @@ class BrainRecordLoader:
                 update={
                     "status": "archived",
                     "tags": archived_tags,
+                    "relevance_state": "superseded",
+                    "superseded_by": next_record_id,
                 }
             )
             self._save_record(archived)
 
-        next_record_id = f"XV7-FOCUS-{max_focus_index + 1:04d}"
         new_record = BrainRecord.model_validate(
             {
                 "record_id": next_record_id,
