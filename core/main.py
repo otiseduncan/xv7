@@ -3243,10 +3243,6 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
-    pending_commit_proposal = brain_context_manager.answer_contract._latest_pending_commit_proposal(
-        session_state.messages,
-        session_state.metadata,
-    )
     normalized_for_commit_check = _normalize_intent_text(payload.raw_text)
     is_explicit_commit_approval = brain_context_manager.answer_contract._is_commit_approval_request(
         normalized_for_commit_check
