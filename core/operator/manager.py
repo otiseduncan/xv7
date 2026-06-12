@@ -133,6 +133,9 @@ class OperatorManager:
             "/run-tests": SlashCommandSpec(
                 "/run-tests", "read_only_scan", "low", "read_only"
             ),
+            "/build-task": SlashCommandSpec(
+                "/build-task", "planning", "low", "operator"
+            ),
             "/vscode-open-workspace": SlashCommandSpec(
                 "/vscode-open-workspace",
                 "vscode_read_only",
@@ -700,6 +703,35 @@ class OperatorManager:
             stderr="Action not implemented yet.",
         )
 
+    def _build_task_plan_result(
+        self, command_preview: str, args: list[str]
+    ) -> OperatorActionResult:
+        goal = " ".join(args).strip()
+        if not goal:
+            return self._build_result(
+                action_name="build_task",
+                status="failed",
+                command_preview=command_preview,
+                target=str(self.repo_root),
+                stderr="Missing build task request. Usage: /build-task <natural-language request>",
+            )
+
+        try:
+            return run_action(
+                "patch_plan",
+                action_id=self._next_action_id(),
+                repo_root=self.repo_root,
+                target=goal,
+            )
+        except ValueError as exc:
+            return self._build_result(
+                action_name="build_task",
+                status="failed",
+                command_preview=command_preview,
+                target=str(self.repo_root),
+                stderr=str(exc),
+            )
+
     def _execute_mutation(self, slash: str, args: list[str]) -> OperatorActionResult:
         if slash == "/delete-file":
             if not args:
@@ -976,6 +1008,22 @@ class OperatorManager:
                 "executed": False,
             }
 
+        if slash == "/build-task" and not operator_mode:
+            result = self._build_result(
+                action_name="build_task",
+                status="denied",
+                mode_override="operator",
+                command_preview=normalized,
+                target=str(self.repo_root),
+                stderr="/build-task requires Operator Mode.",
+            )
+            return {
+                "answer": "/build-task requires Operator Mode. No files were changed. No tests were run. No commit or push occurred.",
+                "result": result,
+                "pending_action": None,
+                "executed": False,
+            }
+
         if spec.mode != "read_only" and not operator_mode:
             result = self._build_result(
                 action_name=slash.strip("/"),
@@ -990,6 +1038,15 @@ class OperatorManager:
                 "result": result,
                 "pending_action": None,
                 "executed": False,
+            }
+
+        if slash == "/build-task":
+            result = self._build_task_plan_result(normalized, args)
+            return {
+                "answer": self._build_answer("build_task", result),
+                "result": result,
+                "pending_action": None,
+                "executed": True,
             }
 
         if spec.mode == "read_only":
@@ -1585,6 +1642,51 @@ class OperatorManager:
         return None
 
     def _build_answer(self, action_name: str, result: OperatorActionResult) -> str:
+        if action_name in {"build_task", "patch_plan"}:
+            data = result.data if isinstance(result.data, dict) else {}
+            goal = str(data.get("goal", "")).strip() or "(missing goal)"
+            likely_files = data.get("likely_files", [])
+            if not isinstance(likely_files, list):
+                likely_files = []
+            likely_files = [str(item) for item in likely_files if str(item).strip()]
+            tests_to_run = data.get("tests_to_run", [])
+            if not isinstance(tests_to_run, list):
+                tests_to_run = []
+            tests_to_run = [str(item) for item in tests_to_run if str(item).strip()]
+            risk = str(data.get("risk", "unknown")).strip() or "unknown"
+            risk_reason = (
+                str(data.get("risk_reason", "No risk notes available.")).strip()
+                or "No risk notes available."
+            )
+            workspace_summary = (
+                data.get("workspace_summary", {})
+                if isinstance(data.get("workspace_summary", {}), dict)
+                else {}
+            )
+            branch = str(workspace_summary.get("branch", "unknown")).strip() or "unknown"
+            dirty_count = int(workspace_summary.get("dirty_file_count", 0) or 0)
+
+            inspect_text = ", ".join(likely_files[:10]) if likely_files else "(none)"
+            change_text = ", ".join(likely_files[:10]) if likely_files else "(none)"
+            tests_text = ", ".join(tests_to_run[:8]) if tests_to_run else "(none)"
+            next_step = (
+                "prepare a patch payload"
+                if bool(data.get("mutation_required", False))
+                else "use VS Code/Copilot to implement the plan"
+            )
+
+            return (
+                "Build Plan\n"
+                f"Task summary: {goal}\n"
+                f"Files/directories inspected or recommended for inspection: {inspect_text}\n"
+                f"Likely files to change: {change_text}\n"
+                f"Tests to add/update: {tests_text}\n"
+                f"Validation commands: {tests_text}\n"
+                f"Risk notes: risk={risk}; {risk_reason}; branch={branch}; dirty_file_count={dirty_count}.\n"
+                "No files were changed. No tests were run. No commit or push occurred.\n"
+                f"Next valid operator step: {next_step} or use VS Code/Copilot to implement the plan."
+            )
+
         if action_name == "docker_compose_ps" and result.status == "failed":
             return (
                 "Container status cannot be proven from inside xv7-core because Docker CLI/socket is unavailable. "

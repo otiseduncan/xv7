@@ -259,6 +259,89 @@ def test_read_only_scan_works_without_operator_mode(
     assert "scan_ports" in calls
 
 
+def test_build_task_is_listed_and_requires_operator_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    commands = client.get(
+        "/operator/commands",
+        headers={"X-XV7-API-Key": "test-secret"},
+        params={"operator_mode": True},
+    )
+    assert commands.status_code == 200
+    listed = commands.json().get("commands", [])
+    build_task = next((item for item in listed if item.get("slash") == "/build-task"), None)
+    assert build_task is not None
+    assert build_task.get("mode") == "operator"
+    assert build_task.get("enabled") is True
+
+    denied = _stage(
+        client,
+        session_id,
+        "/build-task Implement Code 9 endpoint and tests",
+        operator_mode=False,
+    )
+    assert denied["executed"] is False
+    assert denied["pending_action"] is None
+    assert denied["receipt"]["status"] == "denied"
+    answer = str(denied["answer"]).lower()
+    assert "/build-task requires operator mode" in answer
+    assert "no files were changed" in answer
+    assert "no tests were run" in answer
+    assert "no commit or push occurred" in answer
+
+
+def test_build_task_accepts_natural_language_and_returns_structured_plan_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    files_before = {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+
+    payload = _stage(
+        client,
+        session_id,
+        "/build-task Build Code 9 endpoint, add tests, and prepare validation plan",
+        operator_mode=True,
+    )
+
+    assert payload["executed"] is True
+    assert payload["pending_action"] is None
+    assert payload["receipt"]["status"] == "success"
+    assert payload["receipt"]["read_only"] is True
+
+    answer = str(payload["answer"]).lower()
+    assert "build plan" in answer
+    assert "task summary:" in answer
+    assert "files/directories inspected or recommended for inspection:" in answer
+    assert "likely files to change:" in answer
+    assert "tests to add/update:" in answer
+    assert "validation commands:" in answer
+    assert "risk notes:" in answer
+    assert "no files were changed. no tests were run. no commit or push occurred." in answer
+    assert "next valid operator step:" in answer
+    assert (
+        "prepare a patch payload" in answer
+        or "use vs code/copilot to implement the plan" in answer
+    )
+
+    files_after = {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert files_after == files_before
+
+
 def test_apply_patch_requires_confirmation_then_executes_when_confirmed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

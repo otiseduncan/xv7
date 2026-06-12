@@ -992,6 +992,45 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert memory_after == memory_before
 
 
+def test_build_task_stage_returns_plan_and_does_not_save_learning_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    runtime_dir = tmp_path / "brain_runtime_records"
+    knowledge_before = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
+    memory_before = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
+
+    staged = client.post(
+        "/operator/stage",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "session_id": session_id,
+            "command_text": "/build-task Build a Code 9 endpoint with tests and validation steps",
+            "operator_mode": True,
+        },
+    )
+    assert staged.status_code == 200
+    payload = staged.json()
+    assert payload.get("executed") is True
+    assert payload.get("pending_action") is None
+    assert payload.get("receipt", {}).get("status") == "success"
+    assert payload.get("receipt", {}).get("read_only") is True
+
+    answer = str(payload.get("answer", "")).lower()
+    assert "build plan" in answer
+    assert "task summary:" in answer
+    assert "no files were changed. no tests were run. no commit or push occurred." in answer
+    assert "next valid operator step:" in answer
+
+    knowledge_after = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
+    memory_after = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
+    assert knowledge_after == knowledge_before
+    assert memory_after == memory_before
+
+
 def test_failed_apply_patch_follow_up_cannot_claim_fake_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
