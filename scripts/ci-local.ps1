@@ -39,7 +39,7 @@ Invoke-CiStep -Title 'Lint & Type Check' -Command {
 }
 
 Invoke-CiStep -Title 'Unit & Integration Tests' -Command {
-    Invoke-Python312 'python -m pip install -r core/requirements.txt && python -m pytest tests/ -v --tb=short --asyncio-mode=auto'
+    Invoke-Python312 'apt-get update && apt-get install -y git && python -m pip install -r core/requirements.txt && python -m pytest tests/ -v --tb=short --asyncio-mode=auto'
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
