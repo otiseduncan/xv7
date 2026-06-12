@@ -10,6 +10,7 @@ from core.operator.registry import build_operator_registry, run_action
 EXPECTED_ACTIONS = {
     "repo_status",
     "repo_recent_commits",
+    "workspace_map",
     "list_project_files",
     "read_project_file",
     "runtime_health",
