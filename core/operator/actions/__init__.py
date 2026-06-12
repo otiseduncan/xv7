@@ -1,3 +1,4 @@
+from core.operator.actions.apply_patch import apply_approved_patch
 from core.operator.actions.files import list_project_files, read_project_file
 from core.operator.actions.environment import operator_environment
 from core.operator.actions.host_scan import (
@@ -23,6 +24,7 @@ from core.operator.actions.patch_plan import patch_plan
 from core.operator.actions.workspace import workspace_map
 
 __all__ = [
+    "apply_approved_patch",
     "patch_plan",
     "docker_compose_ps",
     "list_project_files",
@@ -45,4 +47,4 @@ __all__ = [
     "runtime_health",
     "workspace_map",
 ]
-# Operator read-only action implementations.
+# Operator action implementations.
