@@ -28,6 +28,7 @@ from core.operator.actions.runtime import (
     runtime_health,
 )
 from core.operator.actions.patch_plan import patch_plan
+from core.operator.actions.test_runner import test_runner
 from core.operator.actions.workspace import workspace_map
 from core.operator.schema import OperatorActionResult
 
@@ -52,6 +53,7 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         "apply_approved_patch": OperatorActionSpec(
             "apply_approved_patch", "operator", apply_approved_patch
         ),
+        "test_runner": OperatorActionSpec("test_runner", "read_only", test_runner),
         "list_project_files": OperatorActionSpec(
             "list_project_files", "read_only", list_project_files
         ),
@@ -98,6 +100,18 @@ def _target_json(target: str | None, action_name: str) -> dict:
     return payload
 
 
+def _test_runner_payload(target: str | None) -> dict:
+    if not target:
+        return {"preset": "ci_core"}
+    try:
+        payload = json.loads(target)
+    except json.JSONDecodeError:
+        return {"preset": target}
+    if not isinstance(payload, dict):
+        raise ValueError("test_runner target JSON must be an object")
+    return payload
+
+
 def run_action(
     action_name: str,
     *,
@@ -120,4 +134,13 @@ def run_action(
     if action_name == "apply_approved_patch":
         payload = _target_json(target, action_name)
         return spec.handler(action_id=action_id, repo_root=repo_root, patch=payload)
+    if action_name == "test_runner":
+        payload = _test_runner_payload(target)
+        return spec.handler(
+            action_id=action_id,
+            repo_root=repo_root,
+            preset=str(payload.get("preset", "ci_core")),
+            test_target=payload.get("test_target"),
+            timeout_seconds=int(payload.get("timeout_seconds", 120)),
+        )
     return spec.handler(action_id=action_id, repo_root=repo_root)
