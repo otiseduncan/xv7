@@ -79,12 +79,6 @@ PRESET_COMMANDS: dict[str, list[Command]] = {
 }
 
 
-DISPLAY_COMMANDS: dict[str, list[str]] = {
-    preset: [_display_command(command) for command in commands]
-    for preset, commands in PRESET_COMMANDS.items()
-}
-
-
 def _display_command(command: Command) -> str:
     display_parts = ["python" if part == sys.executable else part for part in command]
     return " ".join(display_parts)
@@ -167,13 +161,8 @@ def _commands_for_preset(preset: str, test_target: str | None) -> list[Command] 
 
 
 def _display_commands_for_preset(preset: str, test_target: str | None) -> list[str]:
-    if preset == "single_pytest":
-        target = test_target or ""
-        return [
-            "python -m pytest "
-            f"{target} -v --tb=short --asyncio-mode=auto"
-        ]
-    return DISPLAY_COMMANDS.get(preset, [])
+    commands = _commands_for_preset(preset, test_target) or []
+    return [_display_command(command) for command in commands]
 
 
 def _normalize_preset(preset: str | None) -> str:
