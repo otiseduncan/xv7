@@ -16,6 +16,7 @@ import httpx
 from core.brain import site_bundle as sb
 from core.brain.artifact_fidelity_manager import ArtifactFidelityManager
 from core.brain.code_artifact_builder import CodeArtifactBuilder
+from core.brain.commit_proposal_manager import CommitProposalManager
 from core.brain.intent_router import IntentRouter
 from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
@@ -1315,91 +1316,26 @@ class AnswerContract:
 
         # No applied patch in session — fall back to generic git status scan
         if not git_available:
-            return {
-                "type": "commit_proposal",
-                "proposal_id": proposal_id,
-                "question": question,
-                "branch": "unknown",
-                "applied": False,
-                "committed": False,
-                "push_performed": False,
-                "requires_confirmation": True,
-                "included_files": [],
-                "excluded_files": [],
-                "status_lines": [],
-                "change_lines": [],
-                "diff_stat": "",
-                "proposed_commit_message": "",
-                "git_available": False,
-                "visible_text": (
-                    "Git is not available in this environment. "
-                    "I cannot prepare a commit proposal without a Git workspace. "
-                    "No commit was created and no push was performed."
-                ),
-            }
+            return CommitProposalManager.build_no_git_proposal(
+                question=question,
+                proposal_id=proposal_id,
+            )
 
         status_proc = cls._run_git(
             root, ["status", "--porcelain", "--untracked-files=all"]
         )
         diff_stat_proc = cls._run_git(root, ["diff", "--stat"])
 
-        raw_status_lines = [
-            line.strip() for line in status_proc.stdout.splitlines() if line.strip()
-        ]
-        included_files: list[str] = []
-        excluded_files: list[str] = []
-        change_lines: list[str] = []
-        for line in raw_status_lines:
-            if len(line) < 4:
-                continue
-            path_text = line[3:].strip()
-            if " -> " in path_text:
-                path_text = path_text.split(" -> ", 1)[-1].strip()
-            normalized_path = path_text.replace("\\", "/")
-            if cls._is_blocked_commit_target(normalized_path):
-                excluded_files.append(normalized_path)
-                continue
-            included_files.append(normalized_path)
-            change_lines.append(f"{line[:2]} {normalized_path}")
-
-        proposed_commit_message = (
-            f"chore: update {Path(included_files[0]).stem}"
-            if len(included_files) == 1
-            else "chore: local repository changes"
-        )
-        visible_lines = []
-        if included_files:
-            visible_lines.append(
-                f"I prepared a commit proposal for {len(included_files)} file(s) on branch {branch}. No files were changed, no commit was created, and no push was performed."
-            )
-        else:
-            visible_lines.append(
-                "I checked the repository and did not find any safe changes to include in a commit proposal. No files were changed and no commit was created."
-            )
-        if excluded_files:
-            visible_lines.append(
-                f"Excluded blocked paths: {', '.join(excluded_files[:5])}."
-            )
-
-        return {
-            "type": "commit_proposal",
-            "proposal_id": proposal_id,
-            "question": question,
-            "branch": branch,
-            "applied": False,
-            "committed": False,
-            "push_performed": False,
-            "requires_confirmation": True,
-            "included_files": included_files,
-            "excluded_files": excluded_files,
-            "status_lines": raw_status_lines,
-            "change_lines": change_lines,
-            "diff_stat": (
+        return CommitProposalManager.build_status_scan_proposal(
+            question=question,
+            branch=branch,
+            status_output=status_proc.stdout,
+            diff_stat=(
                 diff_stat_proc.stdout.strip() if diff_stat_proc.returncode == 0 else ""
             ),
-            "proposed_commit_message": proposed_commit_message,
-            "visible_text": " ".join(visible_lines),
-        }
+            proposal_id=proposal_id,
+            is_blocked=cls._is_blocked_commit_target,
+        )
 
     @classmethod
     def _apply_commit_proposal(
