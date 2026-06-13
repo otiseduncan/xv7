@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
+from enum import StrEnum
 
 from core.brain import site_bundle as sb
 
-IntentMode = Literal[
-    "normal",
-    "preview_artifact",
-    "code_artifact",
-    "site_bundle",
-    "sandbox_build",
-    "artifact_edit",
-    "protected_repo_mutation",
-]
+
+class IntentKind(StrEnum):
+    NORMAL = "normal"
+    PREVIEW_ARTIFACT = "preview_artifact"
+    CODE_ARTIFACT = "code_artifact"
+    SITE_BUNDLE = "site_bundle"
+    SANDBOX_BUILD = "sandbox_build"
+    ARTIFACT_EDIT = "artifact_edit"
+    PROTECTED_REPO_MUTATION = "protected_repo_mutation"
 
 
 @dataclass(frozen=True)
@@ -22,7 +22,7 @@ class IntentDecision:
     """Normalized routing decision for user prompts before answer composition."""
 
     normalized_text: str
-    mode: IntentMode
+    kind: IntentKind
     has_explicit_artifact_intent: bool = False
     is_preview_artifact_request: bool = False
     is_code_artifact_request: bool = False
@@ -31,6 +31,10 @@ class IntentDecision:
     is_artifact_edit_request: bool = False
     is_repo_mutation_build_prompt: bool = False
     prioritize_artifact_over_build_guard: bool = False
+
+    @property
+    def mode(self) -> IntentKind:
+        return self.kind
 
 
 class IntentRouter:
@@ -87,7 +91,9 @@ class IntentRouter:
     ARTIFACT_CONTENT_PATTERN = re.compile(
         r"\b(headline|cta|button text|buttons|copy|wording|services section|specials section|specials page|main headline|rewrite|rewrite the homepage|rewrite homepage|say)\b"
     )
-    ARTIFACT_TARGETED_PATTERN = re.compile(r"\b(only|keep the layout|keep the content|preserve)\b")
+    ARTIFACT_TARGETED_PATTERN = re.compile(
+        r"\b(only|keep the layout|keep the content|preserve)\b"
+    )
 
     @staticmethod
     def normalize(text: str) -> str:
@@ -170,7 +176,9 @@ class IntentRouter:
         if any(
             marker in normalized_text
             for marker in (" in the repo", " into the repo", " to the repo")
-        ) and not re.search(r"\b(do not|don't)\s+(apply|write|save)\b", normalized_text):
+        ) and not re.search(
+            r"\b(do not|don't)\s+(apply|write|save)\b", normalized_text
+        ):
             return True
         return False
 
@@ -225,23 +233,23 @@ class IntentRouter:
         code_artifact = cls.is_code_artifact_request(normalized)
         prioritize_artifact = cls.prioritize_artifact_over_build_guard(normalized)
 
-        mode: IntentMode = "normal"
+        kind = IntentKind.NORMAL
         if repo_mutation:
-            mode = "protected_repo_mutation"
-        elif sandbox_build:
-            mode = "sandbox_build"
-        elif artifact_edit:
-            mode = "artifact_edit"
+            kind = IntentKind.PROTECTED_REPO_MUTATION
         elif site_bundle:
-            mode = "site_bundle"
+            kind = IntentKind.SITE_BUNDLE
+        elif sandbox_build:
+            kind = IntentKind.SANDBOX_BUILD
+        elif artifact_edit:
+            kind = IntentKind.ARTIFACT_EDIT
         elif code_artifact:
-            mode = "code_artifact"
+            kind = IntentKind.CODE_ARTIFACT
         elif preview_artifact:
-            mode = "preview_artifact"
+            kind = IntentKind.PREVIEW_ARTIFACT
 
         return IntentDecision(
             normalized_text=normalized,
-            mode=mode,
+            kind=kind,
             has_explicit_artifact_intent=explicit_artifact,
             is_preview_artifact_request=preview_artifact,
             is_code_artifact_request=code_artifact,
