@@ -47,7 +47,9 @@ def test_extract_patch_proposal_from_metadata_accepts_valid_payload() -> None:
     proposal = _proposal()
     metadata = {"artifact_patch_proposal": proposal}
 
-    assert PatchProposalManager.extract_patch_proposal_from_metadata(metadata) == proposal
+    assert (
+        PatchProposalManager.extract_patch_proposal_from_metadata(metadata) == proposal
+    )
 
 
 def test_extract_patch_proposal_from_metadata_rejects_invalid_payloads() -> None:

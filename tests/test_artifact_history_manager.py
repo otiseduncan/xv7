@@ -86,7 +86,9 @@ def test_artifact_history_reads_metadata_and_assistant_messages() -> None:
         },
     ]
 
-    history = ArtifactHistoryManager.artifact_history(session_messages, session_metadata)
+    history = ArtifactHistoryManager.artifact_history(
+        session_messages, session_metadata
+    )
 
     assert [item["artifact"]["filename"] for item in history] == [
         "first.html",
@@ -120,9 +122,15 @@ def test_latest_assistant_artifact_prefers_history_then_last_payload() -> None:
     assert artifact["filename"] == "latest.html"
     assert source == "latest session artifact"
 
-    fallback_artifact, fallback_source = ArtifactHistoryManager.latest_assistant_artifact(
-        None,
-        {"last_assistant_payload": {"code_artifact": _artifact(filename="fallback.html")}},
+    fallback_artifact, fallback_source = (
+        ArtifactHistoryManager.latest_assistant_artifact(
+            None,
+            {
+                "last_assistant_payload": {
+                    "code_artifact": _artifact(filename="fallback.html")
+                }
+            },
+        )
     )
 
     assert fallback_artifact is not None
