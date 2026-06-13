@@ -2731,6 +2731,108 @@ def test_simple_website_prompt_returns_renderable_code_artifact_payload() -> Non
     assert response.get("site_bundle", {}) == {}
 
 
+def test_delegated_website_artifact_path_plans_without_sandbox_write(
+    monkeypatch, tmp_path
+) -> None:
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    contract = AnswerContract()
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            (
+                "Build a full multi-page website for Harry's Hot Dog Cart "
+                "with menu, specials, hours, and contact. "
+                "Use black, gold, and white. "
+                "Include email harry@example.com. "
+                "Add SEO keywords: hot dogs, catering."
+            ),
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    assert response.get("code_artifact") == {}
+    site_bundle_data = response.get("site_bundle")
+    assert isinstance(site_bundle_data, dict), "expected site bundle payload"
+    assert site_bundle_data.get("artifact_type") == "site_bundle"
+    assert site_bundle_data.get("delivery_mode") is None
+    assert response.get("provenance", {}).get("delivery_mode") == "chat_artifact"
+    assert not sandbox_root.exists()
+
+    project_plan = site_bundle_data.get("project_plan")
+    assert isinstance(project_plan, dict)
+    assert project_plan.get("slug") == "harrys-hot-dog-cart"
+
+    content_block_plan = site_bundle_data.get("content_block_plan")
+    assert isinstance(content_block_plan, dict)
+    assert content_block_plan.get("profile") == "food"
+    blocks = content_block_plan.get("blocks")
+    assert isinstance(blocks, list)
+    assert [block.get("kind") for block in blocks] == [
+        "hero",
+        "menu",
+        "specials",
+        "hours",
+        "contact",
+    ]
+
+    style_plan = site_bundle_data.get("style_plan")
+    assert isinstance(style_plan, dict)
+    assert style_plan.get("colors") == ["black", "gold", "white"]
+
+    build_plan = site_bundle_data.get("build_plan")
+    assert isinstance(build_plan, dict)
+    assert build_plan.get("ready") is True
+    assert build_plan.get("business_type") == "food"
+    assert build_plan.get("project") == {
+        "name": "Harry's Hot Dog Cart",
+        "slug": "harrys-hot-dog-cart",
+    }
+    assert build_plan.get("style", {}).get("colors") == [
+        "black",
+        "gold",
+        "white",
+    ]
+    assert build_plan.get("contact", {}).get("email") == "harry@example.com"
+    assert "catering" in build_plan.get("seo", {}).get("keywords", [])
+
+    bundle_plan = site_bundle_data.get("bundle_plan")
+    assert isinstance(bundle_plan, dict)
+    assert bundle_plan.get("entrypoint") == "index.html"
+    assert "pages/menu.html" in bundle_plan.get("html_files", [])
+
+    visible_response_plan = site_bundle_data.get("visible_response_plan")
+    assert isinstance(visible_response_plan, dict)
+    assert visible_response_plan.get("ready_for_user") is True
+    assert "index.html" in visible_response_plan.get("created_files", [])
+
+    follow_up = asyncio.run(
+        contract.build_code_artifact_response(
+            "Write it to the sandbox",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": response.get("visible_text", ""),
+                    "metadata": {"site_bundle": site_bundle_data},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert follow_up is not None
+    follow_up_bundle = follow_up.get("site_bundle")
+    assert isinstance(follow_up_bundle, dict)
+    assert follow_up_bundle.get("delivery_mode") == "sandbox_write"
+    assert follow_up.get("provenance", {}).get("delivery_mode") == "sandbox_write"
+    written_paths = follow_up_bundle.get("sandbox_written_paths")
+    assert isinstance(written_paths, list) and written_paths
+    assert sandbox_root.exists()
+    assert (sandbox_root / "harrys-hot-dog-cart" / "index.html").exists()
+
+
 def test_site_bundle_generation_preserves_requested_products_and_faq_pages(
     monkeypatch, tmp_path
 ) -> None:

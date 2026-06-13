@@ -2420,6 +2420,18 @@ class AnswerContract:
         is_site_bundle_generation = sb.is_site_bundle_request(normalized)
         is_sandbox_build_request = self._is_sandbox_build_request(normalized)
         has_artifact_edit_intent = self._looks_like_artifact_edit(normalized)
+        explicit_sandbox_delivery_request = bool(
+            re.search(
+                r"\b(write|export|save)\b.*\b(sandbox|files?|folder|disk)\b|"
+                r"\b(build|generate|create)\b.*\b(to files|as files|file bundle|project files|sandbox)\b",
+                normalized,
+            )
+        )
+        is_site_bundle_sandbox_delivery_request = (
+            latest_artifact is not None
+            and latest_artifact.get("artifact_type") == "site_bundle"
+            and explicit_sandbox_delivery_request
+        )
         has_explicit_artifact_generation_language = bool(
             self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized)
         )
@@ -2452,13 +2464,16 @@ class AnswerContract:
             and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized)
             and not is_generation
             and not is_site_bundle_generation
-        )
+        ) or is_site_bundle_sandbox_delivery_request
         latest_delivery_mode = (
             str(latest_artifact.get("delivery_mode") or "")
             if isinstance(latest_artifact, dict)
             else ""
         )
         deliver_to_sandbox = is_sandbox_build_request or (
+            is_refinement_request and latest_delivery_mode == "sandbox_write"
+        )
+        site_bundle_deliver_to_sandbox = explicit_sandbox_delivery_request or (
             is_refinement_request and latest_delivery_mode == "sandbox_write"
         )
         is_commit_proposal_request = self._is_commit_proposal_request(normalized)
@@ -3358,7 +3373,7 @@ class AnswerContract:
                 "source_prompt": question.strip(),
                 "site_bundle": {"files": _files},
             }
-            if deliver_to_sandbox:
+            if site_bundle_deliver_to_sandbox:
                 written_relative, written_absolute = self._write_sandbox_bundle(
                     project_slug=_slug,
                     bundle_files=_files,
@@ -3390,7 +3405,7 @@ class AnswerContract:
                 "visible_text": (
                     f"Built a {len(_html_pages)}-page website for {_biz} in {self._sandbox_root() / _slug}. "
                     "You can review and preview the generated files inline."
-                    if deliver_to_sandbox
+                    if site_bundle_deliver_to_sandbox
                     else f"Here is a {len(_html_pages)}-page website artifact for {_biz}. You can review and preview the generated files inline."
                 ),
                 "code_artifact": {},
@@ -3421,7 +3436,7 @@ class AnswerContract:
                     "visible_response_plan": _visible_response_plan,
                     "file_count": len(_files),
                     "delivery_mode": "sandbox_write"
-                    if deliver_to_sandbox
+                    if site_bundle_deliver_to_sandbox
                     else "chat_artifact",
                 },
             }
@@ -3561,7 +3576,7 @@ class AnswerContract:
                 "source_prompt": source_prompt,
                 "site_bundle": {"files": _files},
             }
-            if deliver_to_sandbox:
+            if site_bundle_deliver_to_sandbox:
                 written_relative, written_absolute = self._write_sandbox_bundle(
                     project_slug=_slug,
                     bundle_files=_files,
@@ -3592,7 +3607,7 @@ class AnswerContract:
             return {
                 "visible_text": (
                     f"Updated the sandbox website in {self._sandbox_root() / _slug} and refreshed the inline preview."
-                    if deliver_to_sandbox
+                    if site_bundle_deliver_to_sandbox
                     else 'Updated the active site bundle revision and preserved all pages/content. Review it here, then say "write this to the sandbox" when it is ready.'
                 ),
                 "code_artifact": {},
@@ -3612,7 +3627,7 @@ class AnswerContract:
                     "slug": _slug,
                     "file_count": len(_files),
                     "delivery_mode": "sandbox_write"
-                    if deliver_to_sandbox
+                    if site_bundle_deliver_to_sandbox
                     else "chat_artifact",
                 },
             }
