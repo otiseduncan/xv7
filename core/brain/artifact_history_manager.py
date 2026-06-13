@@ -13,7 +13,9 @@ class ArtifactHistoryManager:
     @staticmethod
     def extract_business_name_from_html(content: str) -> str | None:
         title_match = re.search(
-            r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL
+            r"<title[^>]*>(.*?)</title>",
+            content,
+            flags=re.IGNORECASE | re.DOTALL,
         )
         if title_match:
             value = html.unescape(re.sub(r"\s+", " ", title_match.group(1))).strip()
@@ -21,7 +23,9 @@ class ArtifactHistoryManager:
                 return value
 
         h1_match = re.search(
-            r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL
+            r"<h1[^>]*>(.*?)</h1>",
+            content,
+            flags=re.IGNORECASE | re.DOTALL,
         )
         if h1_match:
             raw = re.sub(r"<[^>]+>", "", h1_match.group(1))
