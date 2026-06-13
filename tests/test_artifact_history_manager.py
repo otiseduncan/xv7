@@ -20,7 +20,8 @@ def _artifact(
 def test_extract_business_name_from_html_prefers_title_then_h1() -> None:
     assert (
         ArtifactHistoryManager.extract_business_name_from_html(
-            "<html><head><title>Harry&apos;s Hot Dog Cart</title></head><body><h1>Other</h1></body></html>"
+            "<html><head><title>Harry&apos;s Hot Dog Cart</title></head>"
+            "<body><h1>Other</h1></body></html>"
         )
         == "Harry's Hot Dog Cart"
     )
@@ -73,8 +74,16 @@ def test_artifact_history_reads_metadata_and_assistant_messages() -> None:
         ]
     }
     session_messages = [
-        {"role": "user", "metadata": {"code_artifact": _artifact(filename="ignored.html")}},
-        {"role": "assistant", "metadata": {"code_artifact": _artifact(filename="second.html", artifact_id="second")}},
+        {
+            "role": "user",
+            "metadata": {"code_artifact": _artifact(filename="ignored.html")},
+        },
+        {
+            "role": "assistant",
+            "metadata": {
+                "code_artifact": _artifact(filename="second.html", artifact_id="second")
+            },
+        },
     ]
 
     history = ArtifactHistoryManager.artifact_history(session_messages, session_metadata)
@@ -96,11 +105,15 @@ def test_latest_assistant_artifact_prefers_history_then_last_payload() -> None:
         ]
     }
     session_messages = [
-        {"role": "assistant", "metadata": {"code_artifact": _artifact(filename="latest.html")}}
+        {
+            "role": "assistant",
+            "metadata": {"code_artifact": _artifact(filename="latest.html")},
+        }
     ]
 
     artifact, source = ArtifactHistoryManager.latest_assistant_artifact(
-        session_messages, session_metadata
+        session_messages,
+        session_metadata,
     )
 
     assert artifact is not None
@@ -123,7 +136,9 @@ def test_prompt_fidelity_history_metadata_dedupes_names_and_colors() -> None:
             "role": "assistant",
             "metadata": {
                 "code_artifact": _artifact(
-                    source_prompt="Generate a website for Harry's Hot Dog Cart using red and white",
+                    source_prompt=(
+                        "Generate a website for Harry's Hot Dog Cart using red and white"
+                    ),
                     prompt_fidelity={
                         "requested_business_name": "Harry's Hot Dog Cart",
                         "requested_colors": ["red", "white", "red"],
