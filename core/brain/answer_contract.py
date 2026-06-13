@@ -15,6 +15,7 @@ import httpx
 
 from core.brain import site_bundle as sb
 from core.brain.intent_router import IntentRouter
+from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
@@ -1881,9 +1882,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _sandbox_root() -> Path:
-        configured = str(os.getenv("XV7_SANDBOX_ROOT", "")).strip()
-        root = Path(configured) if configured else Path("X:/xoduz-sandbox")
-        return root.resolve()
+        return SandboxWriteManager.sandbox_root()
 
     @classmethod
     def _safe_slug(cls, raw: str | None, fallback: str) -> str:
@@ -1897,23 +1896,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _sanitize_filename(filename: str, language: str) -> str:
-        language_defaults = {
-            "html": "index.html",
-            "css": "styles.css",
-            "javascript": "app.js",
-            "typescript": "app.ts",
-            "python": "main.py",
-        }
-        fallback = language_defaults.get(language.lower(), "artifact.txt")
-        candidate = str(filename or "").strip().split("/")[-1].split("\\")[-1]
-        candidate = re.sub(r"[^A-Za-z0-9._-]", "", candidate)
-        if not candidate:
-            candidate = fallback
-        _, ext = os.path.splitext(candidate)
-        expected_ext = os.path.splitext(fallback)[1]
-        if expected_ext and ext.lower() != expected_ext.lower():
-            candidate = os.path.splitext(candidate)[0] + expected_ext
-        return candidate
+        return SandboxWriteManager.sanitize_filename(filename, language)
 
     @staticmethod
     def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -2191,22 +2174,10 @@ if __name__ == \"__main__\":
         root: Path,
         target_path: str,
     ) -> tuple[Path | None, str | None]:
-        target_rel = Path(str(target_path or "").replace("\\", "/"))
-        if not str(target_path or "").strip():
-            return None, "target path is empty"
-        if target_rel.is_absolute() or ".." in target_rel.parts:
-            return None, "target path is unsafe"
-        normalized_target = str(target_rel).replace("\\", "/")
-        if cls._is_blocked_patch_target(normalized_target):
-            return None, "target path is blocked by safety policy"
-
-        resolved = (root / target_rel).resolve()
-        root_resolved = root.resolve()
-        try:
-            resolved.relative_to(root_resolved)
-        except ValueError:
-            return None, "target path escapes sandbox root"
-        return resolved, None
+        return SandboxWriteManager.resolve_safe_target(
+            root=root,
+            target_path=target_path,
+        )
 
     @classmethod
     def _sandbox_relative_file_path(
@@ -2215,10 +2186,11 @@ if __name__ == \"__main__\":
         project_slug: str,
         filename: str,
     ) -> str:
-        clean_filename = cls._sanitize_filename(
-            filename, cls._code_artifact_language(filename)
+        return SandboxWriteManager.relative_file_path(
+            project_slug=project_slug,
+            filename=filename,
+            language=cls._code_artifact_language(filename),
         )
-        return f"{project_slug}/{clean_filename}"
 
     @classmethod
     def _write_sandbox_file(
@@ -2228,17 +2200,12 @@ if __name__ == \"__main__\":
         filename: str,
         content: str,
     ) -> tuple[str, str]:
-        sandbox_root = cls._sandbox_root()
-        relative_path = f"{project_slug}/{filename}"
-        target, error = cls._resolve_safe_sandbox_target(
-            root=sandbox_root,
-            target_path=relative_path,
+        return SandboxWriteManager.write_file(
+            project_slug=project_slug,
+            filename=filename,
+            content=content,
+            language=cls._code_artifact_language(filename),
         )
-        if target is None:
-            raise RuntimeError(error or "sandbox_target_invalid")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        return relative_path.replace("\\", "/"), str(target)
 
     @classmethod
     def _write_sandbox_bundle(
@@ -2247,28 +2214,10 @@ if __name__ == \"__main__\":
         project_slug: str,
         bundle_files: list[dict[str, Any]],
     ) -> tuple[list[str], list[str]]:
-        sandbox_root = cls._sandbox_root()
-        written_relative: list[str] = []
-        written_absolute: list[str] = []
-        for item in bundle_files:
-            if not isinstance(item, dict):
-                continue
-            path = str(item.get("path") or "").replace("\\", "/")
-            content = str(item.get("content") or "")
-            if not path or not sb.is_safe_bundle_path(path):
-                continue
-            relative_path = f"{project_slug}/{path}"
-            target, error = cls._resolve_safe_sandbox_target(
-                root=sandbox_root,
-                target_path=relative_path,
-            )
-            if target is None:
-                raise RuntimeError(error or f"sandbox_target_invalid:{relative_path}")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-            written_relative.append(relative_path)
-            written_absolute.append(str(target))
-        return written_relative, written_absolute
+        return SandboxWriteManager.write_bundle(
+            project_slug=project_slug,
+            bundle_files=bundle_files,
+        )
 
     @classmethod
     def _verify_applied_patch_content(
