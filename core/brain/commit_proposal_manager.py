@@ -91,13 +91,14 @@ class CommitProposalManager:
         visible_lines: list[str] = []
         if included_files:
             visible_lines.append(
-                f"I prepared a commit proposal for {len(included_files)} file(s) on branch {branch}. "
-                "No files were changed, no commit was created, and no push was performed."
+                f"I prepared a commit proposal for {len(included_files)} file(s) "
+                f"on branch {branch}. No files were changed, no commit was created, "
+                "and no push was performed."
             )
         else:
             visible_lines.append(
-                "I checked the repository and did not find any safe changes to include in a commit proposal. "
-                "No files were changed and no commit was created."
+                "I checked the repository and did not find any safe changes to include "
+                "in a commit proposal. No files were changed and no commit was created."
             )
         if excluded_files:
             visible_lines.append(
