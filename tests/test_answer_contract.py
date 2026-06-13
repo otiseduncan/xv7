@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 
+from core.brain import site_bundle as sb
 from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer
@@ -884,6 +885,62 @@ def test_sandbox_build_phrases_bypass_build_guard_but_repo_mutation_does_not() -
 
     protected_case = contract._normalize("create a website in the repo and commit it")
     assert contract._prioritize_artifact_over_build_guard(protected_case) is False
+
+
+def test_site_bundle_requested_pages_force_index_and_preserve_common_pages() -> None:
+    prompt = (
+        "Create a multi-page website for Riverbend Kayak & Paddle Co. "
+        "Include Menu, Specials, Catering, Locations, About, and Contact."
+    )
+
+    pages = sb.default_pages_for_business("Riverbend Kayak & Paddle Co", prompt)
+
+    assert pages[:7] == [
+        "index.html",
+        "menu.html",
+        "specials.html",
+        "catering.html",
+        "locations.html",
+        "about.html",
+        "contact.html",
+    ]
+    assert pages[-2:] == ["assets/site.css", "assets/site.js"]
+
+
+def test_site_bundle_uses_relative_asset_paths() -> None:
+    pages = ["index.html", "menu.html", "assets/site.css", "assets/site.js"]
+
+    files = sb.build_bundle_files(
+        business_name="Riverbend Kayak & Paddle Co",
+        slug="riverbend-kayak-paddle-co",
+        pages=pages,
+        style_hints={"colors": [], "styles": []},
+        question="Generate a website preview.",
+    )
+    index_html = next(item["content"] for item in files if item["path"] == "index.html")
+
+    assert 'href="assets/site.css"' in index_html
+    assert 'src="assets/site.js"' in index_html
+    assert 'href="/assets/site.css"' not in index_html
+    assert 'src="/assets/site.js"' not in index_html
+
+
+def test_sandbox_target_resolution_uses_safe_path_containment(tmp_path) -> None:
+    root = tmp_path / "sandbox"
+
+    target, error = AnswerContract._resolve_safe_sandbox_target(
+        root=root,
+        target_path="demo/index.html",
+    )
+    assert error is None
+    assert target == (root / "demo/index.html").resolve()
+
+    escaped, error = AnswerContract._resolve_safe_sandbox_target(
+        root=root,
+        target_path="../sandbox-evil/index.html",
+    )
+    assert escaped is None
+    assert error == "target path is unsafe"
 
 
 def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:

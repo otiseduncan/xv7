@@ -64,8 +64,12 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
     """Return the default file list for the detected business category."""
     requested_pages = extract_requested_page_paths(question)
     if requested_pages:
+        pages = [
+            "index.html",
+            *[page for page in requested_pages if page != "index.html"],
+        ]
         return [
-            *requested_pages,
+            *pages,
             "assets/site.css",
             "assets/site.js",
         ]
@@ -106,6 +110,17 @@ _NAV_LABELS: dict[str, str] = {
     "contact": "Contact",
     "services": "Services",
     "gallery": "Gallery",
+    "specials": "Specials",
+    "catering": "Catering",
+    "locations": "Locations",
+    "pricing": "Pricing",
+    "reviews": "Reviews",
+    "portfolio": "Portfolio",
+    "booking": "Booking",
+    "aftercare": "Aftercare",
+    "rentals": "Rentals",
+    "safety": "Safety",
+    "guided-tours": "Guided Tours",
 }
 
 
@@ -155,6 +170,24 @@ def normalize_page_path(label: str) -> str:
         "gallery": "gallery.html",
         "photo gallery": "gallery.html",
         "photos": "gallery.html",
+        "specials": "specials.html",
+        "deals": "specials.html",
+        "offers": "specials.html",
+        "catering": "catering.html",
+        "locations": "locations.html",
+        "location": "locations.html",
+        "pricing": "pricing.html",
+        "prices": "pricing.html",
+        "reviews": "reviews.html",
+        "testimonials": "reviews.html",
+        "portfolio": "portfolio.html",
+        "booking": "booking.html",
+        "book": "booking.html",
+        "aftercare": "aftercare.html",
+        "rentals": "rentals.html",
+        "safety": "safety.html",
+        "guided tours": "guided-tours.html",
+        "tours": "guided-tours.html",
     }
     low = label.strip().lower()
     if low in _ov:
@@ -181,6 +214,24 @@ def extract_requested_page_paths(question: str) -> list[str]:
         ("gallery", "gallery"),
         ("menu", "menu"),
         ("events", "events"),
+        ("specials", "specials"),
+        ("deals", "specials"),
+        ("offers", "specials"),
+        ("catering", "catering"),
+        ("locations", "locations"),
+        ("location", "locations"),
+        ("pricing", "pricing"),
+        ("prices", "pricing"),
+        ("reviews", "reviews"),
+        ("testimonials", "reviews"),
+        ("portfolio", "portfolio"),
+        ("booking", "booking"),
+        ("book", "booking"),
+        ("aftercare", "aftercare"),
+        ("rentals", "rentals"),
+        ("safety", "safety"),
+        ("guided tours", "guided tours"),
+        ("tours", "guided tours"),
     ]
 
     lowered = question.lower()
@@ -245,8 +296,8 @@ def build_bundle_files(
     nav_html = build_nav_html(pages)
     css_path = next((p for p in pages if p.endswith(".css")), None)
     js_path = next((p for p in pages if p.endswith(".js")), None)
-    link_tag = f'<link rel="stylesheet" href="/{css_path}">' if css_path else ""
-    script_tag = f'<script src="/{js_path}" defer></script>' if js_path else ""
+    link_tag = f'<link rel="stylesheet" href="{css_path}">' if css_path else ""
+    script_tag = f'<script src="{js_path}" defer></script>' if js_path else ""
 
     def _page(path: str) -> str:
         lbl = page_label(path)

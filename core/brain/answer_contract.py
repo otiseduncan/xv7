@@ -295,7 +295,9 @@ class AnswerContract:
         if AnswerContract.WEBSITE_BUILD_ARTIFACT_PATTERN.search(normalized_question):
             return not sb.is_site_bundle_request(normalized_question)
 
-        if AnswerContract._is_preview_artifact_request(normalized_question) and re.search(
+        if AnswerContract._is_preview_artifact_request(
+            normalized_question
+        ) and re.search(
             r"\b(website|site|page|design|homepage|landing page)\b",
             normalized_question,
             flags=re.IGNORECASE,
@@ -932,9 +934,7 @@ class AnswerContract:
                     ", ".join(str(color) for color in requested_colors),
                     quote=False,
                 )
-                info_lines += (
-                    f'<p class="muted">Requested palette: {palette_text}</p>'
-                )
+                info_lines += f'<p class="muted">Requested palette: {palette_text}</p>'
             style = template["style"]
             accent = str(style["accent"])
             accent_2 = str(style["accent_2"])
@@ -2292,7 +2292,9 @@ if __name__ == \"__main__\":
 
         resolved = (root / target_rel).resolve()
         root_resolved = root.resolve()
-        if not str(resolved).startswith(str(root_resolved)):
+        try:
+            resolved.relative_to(root_resolved)
+        except ValueError:
             return None, "target path escapes sandbox root"
         return resolved, None
 
@@ -2303,7 +2305,9 @@ if __name__ == \"__main__\":
         project_slug: str,
         filename: str,
     ) -> str:
-        clean_filename = cls._sanitize_filename(filename, cls._code_artifact_language(filename))
+        clean_filename = cls._sanitize_filename(
+            filename, cls._code_artifact_language(filename)
+        )
         return f"{project_slug}/{clean_filename}"
 
     @classmethod
@@ -3838,7 +3842,7 @@ if __name__ == \"__main__\":
             specials_markup = (
                 '<section class="xv7-specials" aria-label="Specials">'
                 "<h2>Specials</h2>"
-                "<p class=\"muted\">Limited-time cart favorites and combo deals available this week.</p>"
+                '<p class="muted">Limited-time cart favorites and combo deals available this week.</p>'
                 "<ul><li>Classic Dog Combo</li><li>Loaded Chili Dog Special</li><li>Family Pack Deal</li></ul>"
                 "</section>"
             )
@@ -4329,7 +4333,11 @@ if __name__ == \"__main__\":
             and not is_generation
             and not is_site_bundle_generation
         )
-        latest_delivery_mode = str(latest_artifact.get("delivery_mode") or "") if isinstance(latest_artifact, dict) else ""
+        latest_delivery_mode = (
+            str(latest_artifact.get("delivery_mode") or "")
+            if isinstance(latest_artifact, dict)
+            else ""
+        )
         deliver_to_sandbox = is_sandbox_build_request or (
             is_refinement_request and latest_delivery_mode == "sandbox_write"
         )
@@ -5027,9 +5035,7 @@ if __name__ == \"__main__\":
                     "filename": str(file_item.get("path") or ""),
                     "language": str(file_item.get("language") or "html"),
                     "content": str(file_item.get("content") or ""),
-                    "previewable": str(file_item.get("path") or "").endswith(
-                        ".html"
-                    ),
+                    "previewable": str(file_item.get("path") or "").endswith(".html"),
                     "applied": False,
                 }
                 for file_item in _files
@@ -5104,7 +5110,9 @@ if __name__ == \"__main__\":
                     "business_name": _biz,
                     "slug": _slug,
                     "file_count": len(_files),
-                    "delivery_mode": "sandbox_write" if deliver_to_sandbox else "chat_artifact",
+                    "delivery_mode": "sandbox_write"
+                    if deliver_to_sandbox
+                    else "chat_artifact",
                 },
             }
 
@@ -5218,9 +5226,7 @@ if __name__ == \"__main__\":
                     "filename": str(file_item.get("path") or ""),
                     "language": str(file_item.get("language") or "html"),
                     "content": str(file_item.get("content") or ""),
-                    "previewable": str(file_item.get("path") or "").endswith(
-                        ".html"
-                    ),
+                    "previewable": str(file_item.get("path") or "").endswith(".html"),
                     "applied": False,
                 }
                 for file_item in _files
@@ -5277,7 +5283,7 @@ if __name__ == \"__main__\":
                 "visible_text": (
                     f"Updated the sandbox website in {self._sandbox_root() / _slug} and refreshed the inline preview."
                     if deliver_to_sandbox
-                    else "Updated the active site bundle revision and preserved all pages/content. Use \"generate a patch for this site\" to prepare files for writing."
+                    else 'Updated the active site bundle revision and preserved all pages/content. Review it here, then say "write this to the sandbox" when it is ready.'
                 ),
                 "code_artifact": {},
                 "code_artifacts": _code_artifacts,
@@ -5295,7 +5301,9 @@ if __name__ == \"__main__\":
                     "business_name": _biz,
                     "slug": _slug,
                     "file_count": len(_files),
-                    "delivery_mode": "sandbox_write" if deliver_to_sandbox else "chat_artifact",
+                    "delivery_mode": "sandbox_write"
+                    if deliver_to_sandbox
+                    else "chat_artifact",
                 },
             }
 
@@ -5725,12 +5733,19 @@ if __name__ == \"__main__\":
         sandbox_target_path = None
         applied_flag = False
         if deliver_to_sandbox:
-            sandbox_relative_path = str(
-                latest_artifact.get("sandbox_relative_path") or f"{project_slug}/{filename}"
-            ) if latest_artifact is not None else f"{project_slug}/{filename}"
-            project_slug = str(
-                latest_artifact.get("sandbox_project_slug") or project_slug
-            ) if latest_artifact is not None else project_slug
+            sandbox_relative_path = (
+                str(
+                    latest_artifact.get("sandbox_relative_path")
+                    or f"{project_slug}/{filename}"
+                )
+                if latest_artifact is not None
+                else f"{project_slug}/{filename}"
+            )
+            project_slug = (
+                str(latest_artifact.get("sandbox_project_slug") or project_slug)
+                if latest_artifact is not None
+                else project_slug
+            )
             sandbox_relative_path, sandbox_target_path = self._write_sandbox_file(
                 project_slug=project_slug,
                 filename=filename,
@@ -5747,7 +5762,9 @@ if __name__ == \"__main__\":
         return {
             "visible_text": (
                 f"Updated the sandbox file at {sandbox_target_path} and refreshed the inline preview."
-                if (is_refinement_request and deliver_to_sandbox and sandbox_target_path)
+                if (
+                    is_refinement_request and deliver_to_sandbox and sandbox_target_path
+                )
                 else f"Built the sandbox file at {sandbox_target_path} and rendered it inline."
                 if (deliver_to_sandbox and sandbox_target_path)
                 else f"Here is a revised {language.upper()} artifact for {filename}."
