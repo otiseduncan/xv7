@@ -12,13 +12,13 @@ from typing import Final
 
 
 _EMAIL_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?<![\w.+-])([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w.+-])"
+    r"(?<![\w.+-])([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w+-])"
 )
 _PHONE_RE: Final[re.Pattern[str]] = re.compile(
     r"(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)"
 )
 _ADDRESS_HINT_RE: Final[re.Pattern[str]] = re.compile(
-    r"\b(address|location|located at|visit us|come see us|storefront|office)\b",
+    r"\b(address|location|located at|visit us|come see us|storefront)\b",
     re.IGNORECASE,
 )
 _CONTACT_FORM_RE: Final[re.Pattern[str]] = re.compile(
@@ -39,7 +39,7 @@ class WebsiteContactPlanManager:
         seen: set[str] = set()
         result: list[str] = []
         for value in values:
-            normalized = value.strip()
+            normalized = value.strip().rstrip(".,;:!?)]}")
             key = normalized.lower()
             if not normalized or key in seen:
                 continue
