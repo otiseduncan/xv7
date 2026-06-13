@@ -260,6 +260,12 @@ class IntentRouter:
             return False
         if cls.is_repo_mutation_build_prompt(normalized_text):
             return False
+        # Code artifact and site-bundle requests are chat-artifact delivery by default;
+        # sandbox export is only triggered by explicit write/export/save intent.
+        if cls.is_code_artifact_request(normalized_text):
+            return False
+        if sb.is_site_bundle_request(normalized_text):
+            return False
         has_action = bool(cls.SANDBOX_BUILD_ACTION_PATTERN.search(normalized_text))
         has_target = bool(cls.SANDBOX_BUILD_TARGET_PATTERN.search(normalized_text))
         return has_action and has_target

@@ -140,6 +140,11 @@ class AnswerContract:
     ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN = re.compile(
         r"\b(run full tests|run pytest|run npm test|run full validation|run the full validation suite)\b"
     )
+    ARTIFACT_SANDBOX_LOCATION_PATTERN = re.compile(
+        r"\b(show me where the files went|where did the files go|where are the files|where are the sandbox files|"
+        r"where was it saved|where did it save|what is the sandbox path|show me the sandbox path|show me the file path|"
+        r"where are the generated files|where did the site go|show me where it was written|where were the files written)\b"
+    )
     TYPOGRAPHY_BLACKLETTER_PATTERN = re.compile(
         r"\b(old english font|blackletter|gothic font|fraktur|medieval font|biker-bar style font|biker bar style font)\b"
     )
@@ -498,6 +503,10 @@ class AnswerContract:
         return bool(
             cls.ARTIFACT_POST_APPLY_FULL_TEST_GUARD_PATTERN.search(normalized_question)
         )
+
+    @classmethod
+    def _is_sandbox_location_query(cls, normalized_question: str) -> bool:
+        return bool(cls.ARTIFACT_SANDBOX_LOCATION_PATTERN.search(normalized_question))
 
     @classmethod
     def _is_commit_proposal_request(cls, normalized_question: str) -> bool:
@@ -2416,6 +2425,57 @@ class AnswerContract:
         source_artifact_label = (
             "latest session artifact" if latest_artifact is not None else None
         )
+
+        # ─── Sandbox location fast-path ─────────────────────────────────────────────
+        if self._is_sandbox_location_query(normalized):
+            if latest_artifact is not None:
+                sandbox_project_path = str(
+                    latest_artifact.get("sandbox_project_path") or ""
+                ).strip()
+                sandbox_written_paths: list[str] = [
+                    str(p)
+                    for p in (latest_artifact.get("sandbox_written_paths") or [])
+                    if str(p).strip()
+                ]
+                if sandbox_project_path:
+                    file_lines = (
+                        "\n".join(f"  - {p}" for p in sandbox_written_paths[:8])
+                        if sandbox_written_paths
+                        else "  (paths not recorded)"
+                    )
+                    return {
+                        "visible_text": (
+                            f"The sandbox files are in: {sandbox_project_path}\n\n"
+                            f"Written files:\n{file_lines}"
+                        ),
+                        "code_artifact": {},
+                        "artifact_patch_proposal": {},
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-location",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_generation": "sandbox_location_query",
+                            "sandbox_project_path": sandbox_project_path,
+                            "sandbox_written_paths": sandbox_written_paths,
+                        },
+                    }
+            return {
+                "visible_text": "The last artifact was delivered as a chat preview. No sandbox files were written.",
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-location",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "sandbox_location_query",
+                    "delivery_mode": "chat_artifact",
+                },
+            }
+
         is_generation = self.is_code_artifact_request(normalized)
         is_site_bundle_generation = sb.is_site_bundle_request(normalized)
         is_sandbox_build_request = self._is_sandbox_build_request(normalized)

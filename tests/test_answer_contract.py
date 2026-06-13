@@ -879,9 +879,13 @@ def test_site_bundle_intent_prioritizes_artifact_over_build_guard() -> None:
 def test_sandbox_build_phrases_bypass_build_guard_but_repo_mutation_does_not() -> None:
     contract = AnswerContract()
 
+    # Plain website build prompt: classified as code_artifact, NOT sandbox_build.
+    # sandbox_build only fires for explicit write/export-to-sandbox intent.
     sandbox_case = contract._normalize("build me a website for another business")
     assert contract._prioritize_artifact_over_build_guard(sandbox_case) is True
-    assert contract._is_sandbox_build_request(sandbox_case) is True
+    # Code-artifact classification takes priority; sandbox build should NOT fire here.
+    assert contract.is_code_artifact_request(sandbox_case) is True
+    assert contract._is_sandbox_build_request(sandbox_case) is False
 
     protected_case = contract._normalize("create a website in the repo and commit it")
     assert contract._prioritize_artifact_over_build_guard(protected_case) is False
@@ -3036,3 +3040,117 @@ def test_site_bundle_unsafe_apply_is_blocked(monkeypatch, tmp_path) -> None:
     )
     assert len(written) == 0, "unsafe paths must not be written"
     assert len(errors) > 0
+
+
+# ─── Code 22 manual validation regression tests ────────────────────────────────
+
+
+def test_plain_website_build_routes_to_chat_artifact_not_sandbox(
+    monkeypatch, tmp_path
+) -> None:
+    """Prompt 1: 'Build me a website for Harry'_s Hot Dog Cart.'
+    Expected: chat artifact only, no sandbox write, no Operator denial."""
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    contract = AnswerContract()
+    normalized = contract._normalize("Build me a website for Harry's Hot Dog Cart.")
+    # Code artifact classification must take priority over sandbox build.
+    assert contract.is_code_artifact_request(normalized) is True
+    assert contract._is_sandbox_build_request(normalized) is False
+    assert contract._prioritize_artifact_over_build_guard(normalized) is True
+    assert contract._is_repo_mutation_build_prompt(normalized) is False
+
+
+def test_explicit_sandbox_write_is_not_repo_mutation() -> None:
+    """Prompt 5: 'Write it to the sandbox.' must not be classified as repo mutation."""
+    from core.operator.manager import OperatorManager
+    import tempfile
+
+    contract = AnswerContract()
+    normalized = contract._normalize("Write it to the sandbox.")
+    # Must not be classified as repo mutation.
+    assert contract._is_repo_mutation_build_prompt(normalized) is False
+
+    # Operator manager must NOT deny sandbox write intent.
+    with tempfile.TemporaryDirectory() as tmp:
+        manager = OperatorManager(repo_root=__import__("pathlib").Path(tmp))
+        result = manager.try_handle_chat("Write it to the sandbox.")
+        # try_handle_chat returns None (routes to artifact layer) or an OperatorExecution
+        # whose answer does NOT claim this is a repo mutation.
+        if result is not None:
+            assert "implementation/repo mutation task" not in result.answer.lower()
+            assert "repo mutation" not in result.answer.lower()
+
+
+def test_sandbox_location_query_returns_fast_path_from_artifact_state(
+    monkeypatch, tmp_path
+) -> None:
+    """Prompt 6: 'Show me where the files went.' must return fast from artifact state."""
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    contract = AnswerContract()
+    normalized = contract._normalize("Show me where the files went.")
+    assert contract._is_sandbox_location_query(normalized) is True
+
+    fake_sandbox_path = str(tmp_path / "sandbox" / "harrys-hot-dog-cart")
+    fake_written = [
+        str(tmp_path / "sandbox" / "harrys-hot-dog-cart" / "index.html"),
+    ]
+    fake_artifact: dict = {
+        "artifact_type": "site_bundle",
+        "delivery_mode": "sandbox_write",
+        "sandbox_project_path": fake_sandbox_path,
+        "sandbox_written_paths": fake_written,
+    }
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "Show me where the files went.",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "Site bundle generated.",
+                    "metadata": {"site_bundle": fake_artifact},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    visible = str(response.get("visible_text") or "").lower()
+    # Must report the sandbox path.
+    assert "harrys-hot-dog-cart" in visible
+    # Must NOT tell the user Operator Mode is required for sandbox files.
+    assert "operator mode" not in visible
+    # Must NOT claim a repo commit occurred.
+    assert "commit" not in visible
+
+
+def test_repo_mutation_prompt_still_protected() -> None:
+    """Prompt: 'Commit this to the repo.' must still require Operator Mode."""
+    contract = AnswerContract()
+    normalized = contract._normalize("Commit this to the repo.")
+    assert contract._is_repo_mutation_build_prompt(normalized) is True
+    assert contract._prioritize_artifact_over_build_guard(normalized) is False
+
+
+def test_sandbox_build_does_not_fire_for_plain_website_prompts() -> None:
+    """is_sandbox_build_request must return False for plain website generation prompts
+    so they route to the chat artifact lane, not the sandbox write lane."""
+    contract = AnswerContract()
+    plain_website_prompts = [
+        "Build me a website for Harry's Hot Dog Cart.",
+        "build me a website for another business",
+        "create a website for Tony's Tavern",
+        "make a website for local coffee shop",
+    ]
+    for prompt in plain_website_prompts:
+        normalized = contract._normalize(prompt)
+        assert contract._is_sandbox_build_request(normalized) is False, (
+            f"Expected is_sandbox_build_request=False for: {prompt!r}"
+        )
+        assert contract.is_code_artifact_request(normalized) is True, (
+            f"Expected is_code_artifact_request=True for: {prompt!r}"
+        )
