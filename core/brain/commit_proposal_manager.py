@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -37,6 +38,7 @@ class CommitProposalManager:
         """Normalize a git porcelain path and unwrap rename destinations."""
 
         normalized = str(path_text or "").strip().replace("\\", "/")
+        normalized = re.sub(r"/+", "/", normalized)
         if " -> " in normalized:
             normalized = normalized.split(" -> ", 1)[-1].strip()
         return normalized
@@ -81,7 +83,11 @@ class CommitProposalManager:
         return "chore: local repository changes"
 
     @staticmethod
-    def visible_summary(branch: str, included_files: list[str], excluded_files: list[str]) -> str:
+    def visible_summary(
+        branch: str,
+        included_files: list[str],
+        excluded_files: list[str],
+    ) -> str:
         visible_lines: list[str] = []
         if included_files:
             visible_lines.append(
@@ -112,7 +118,8 @@ class CommitProposalManager:
 
         entries = cls.parse_status_lines(status_output)
         included_files, excluded_files, change_lines = cls.filter_safe_entries(
-            entries, is_blocked=is_blocked
+            entries,
+            is_blocked=is_blocked,
         )
         raw_status_lines = [entry.raw_status for entry in entries]
         return {
@@ -134,7 +141,11 @@ class CommitProposalManager:
         }
 
     @staticmethod
-    def build_no_git_proposal(*, question: str, proposal_id: str | None = None) -> dict[str, object]:
+    def build_no_git_proposal(
+        *,
+        question: str,
+        proposal_id: str | None = None,
+    ) -> dict[str, object]:
         return {
             "type": "commit_proposal",
             "proposal_id": proposal_id or f"commit-{uuid4().hex[:12]}",
