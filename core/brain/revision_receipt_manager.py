@@ -42,13 +42,17 @@ class RevisionReceiptManager:
         revised_content: str,
         revision_id: str | None = None,
     ) -> dict[str, Any]:
-        previous_artifact = previous_artifact if isinstance(previous_artifact, dict) else {}
+        previous_artifact = (
+            previous_artifact if isinstance(previous_artifact, dict) else {}
+        )
         resolved_revision_id = revision_id or cls.new_revision_id()
         return {
             "artifact_id": revised_artifact.get("artifact_id")
             or previous_artifact.get("artifact_id"),
-            "filename": revised_artifact.get("filename") or previous_artifact.get("filename"),
-            "language": revised_artifact.get("language") or previous_artifact.get("language"),
+            "filename": revised_artifact.get("filename")
+            or previous_artifact.get("filename"),
+            "language": revised_artifact.get("language")
+            or previous_artifact.get("language"),
             "revision_id": resolved_revision_id,
             "previous_revision_id": previous_artifact.get("revision_id"),
             "revision_number": cls.next_revision_number(previous_artifact),
@@ -63,7 +67,9 @@ class RevisionReceiptManager:
         changed: bool,
     ) -> str:
         if changed:
-            return f"Updated {filename}. Revision {revision_number} is ready for review."
+            return (
+                f"Updated {filename}. Revision {revision_number} is ready for review."
+            )
         return (
             f"I reviewed {filename}, but the requested change did not alter the artifact content. "
             f"Revision {revision_number} was recorded for traceability."
