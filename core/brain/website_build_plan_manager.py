@@ -219,6 +219,15 @@ class WebsiteBuildPlanManager:
                 "page_routes": [],
                 "warnings": [],
             }
+        page_routes: list[PageRoute] = []
+        for route in bundle_plan.get("page_routes", []):
+            page_route: PageRoute = {
+                "slug": WebsiteBuildPlanManager._clean_string(route.get("slug")),
+                "path": WebsiteBuildPlanManager._clean_string(route.get("path")),
+                "route": WebsiteBuildPlanManager._clean_string(route.get("route")),
+            }
+            if page_route["slug"] or page_route["path"] or page_route["route"]:
+                page_routes.append(page_route)
         return {
             "entrypoint": WebsiteBuildPlanManager._clean_string(
                 bundle_plan.get("entrypoint")
@@ -229,7 +238,7 @@ class WebsiteBuildPlanManager:
             "asset_files": WebsiteBuildPlanManager._dedupe_strings(
                 bundle_plan.get("asset_files")
             ),
-            "page_routes": list(bundle_plan.get("page_routes", [])),
+            "page_routes": page_routes,
             "warnings": WebsiteBuildPlanManager._dedupe_warnings(
                 bundle_plan.get("warnings")
             ),
