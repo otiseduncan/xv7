@@ -178,7 +178,11 @@ class WebsiteStylePlanManager:
             background = "black"
             foreground = "white"
         else:
-            background = primary if primary in {"black", "white"} else cls.DEFAULT_PALETTE["background"]
+            background = (
+                primary
+                if primary in {"black", "white"}
+                else cls.DEFAULT_PALETTE["background"]
+            )
             foreground = "white" if background == "black" else "black"
 
         return {
