@@ -62,6 +62,21 @@ class WebsitePagePlanManager:
         "complete site",
     )
 
+    PAGE_CONTEXT_TERMS: tuple[str, ...] = (
+        "add",
+        "build",
+        "create",
+        "include",
+        "including",
+        "make",
+        "page",
+        "pages",
+        "section",
+        "sections",
+        "site",
+        "with",
+    )
+
     @classmethod
     def normalize_title(cls, value: str | None) -> str:
         text = re.sub(r"\s+", " ", str(value or "").strip())
@@ -117,11 +132,33 @@ class WebsitePagePlanManager:
             for page in cls.build_page_plan(prompt)
         ]
 
-    @staticmethod
-    def _contains_alias(text: str, alias: str) -> bool:
+    @classmethod
+    def _contains_alias(cls, text: str, alias: str) -> bool:
         escaped = re.escape(alias).replace(r"\ ", r"\s+")
         pattern = rf"(?<![a-z0-9]){escaped}(?![a-z0-9])"
-        return re.search(pattern, text) is not None
+        for match in re.finditer(pattern, text):
+            if cls._has_page_request_boundary(text, match.start(), match.end()):
+                return True
+        return False
+
+    @classmethod
+    def _has_page_request_boundary(cls, text: str, start: int, end: int) -> bool:
+        before = text[:start].rstrip()
+        after = text[end:].lstrip()
+        before_token = before.split()[-1] if before.split() else ""
+        after_token = after.split()[0].strip(".,;:!?()[]{}") if after.split() else ""
+
+        if not after:
+            return True
+        if after[0] in {",", ";", ":", ".", "!", "?"}:
+            return True
+        if after.startswith(("and ", "or ", "plus ", "& ")):
+            return True
+        if after_token in {"page", "pages", "section", "sections"}:
+            return True
+        if before_token in cls.PAGE_CONTEXT_TERMS:
+            return True
+        return before.endswith((",", ";", ":", "&"))
 
     @staticmethod
     def _dedupe(values: list[str]) -> list[str]:
