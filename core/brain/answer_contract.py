@@ -21,7 +21,9 @@ from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.brain.session_signal_manager import SessionSignalManager
+from core.brain.website_page_plan_manager import WebsitePagePlanManager
 from core.brain.website_project_name_manager import WebsiteProjectNameManager
+from core.brain.website_style_plan_manager import WebsiteStylePlanManager
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
     resolve_model_for_runtime_role,
@@ -3082,6 +3084,12 @@ class AnswerContract:
             _biz = self._format_business_name(
                 self._extract_artifact_name(question), "Local Business Website"
             )
+            _project_plan = WebsiteProjectNameManager.build_project_name_payload(
+                question,
+                fallback=_biz,
+            )
+            _page_plan = WebsitePagePlanManager.build_manifest_pages(question)
+            _style_plan = WebsiteStylePlanManager.build_style_plan(question)
             _style = self._extract_style_hints(question)
             _slug = self._safe_slug(_biz, fallback="site-bundle")
             _pages = sb.default_pages_for_business(_biz, question)
@@ -3154,6 +3162,9 @@ class AnswerContract:
                 "route_manifest": _route_manifest,
                 "render_mode": "code_editor_preview",
                 "files": _files,
+                "project_plan": _project_plan,
+                "page_plan": _page_plan,
+                "style_plan": _style_plan,
                 "source_prompt": question.strip(),
                 "site_bundle": {"files": _files},
             }
@@ -3207,6 +3218,9 @@ class AnswerContract:
                     "revision_number": _rev,
                     "business_name": _biz,
                     "slug": _slug,
+                    "project_plan": _project_plan,
+                    "page_plan": _page_plan,
+                    "style_plan": _style_plan,
                     "file_count": len(_files),
                     "delivery_mode": "sandbox_write"
                     if deliver_to_sandbox
