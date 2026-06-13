@@ -21,6 +21,18 @@ from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.brain.session_signal_manager import SessionSignalManager
+from core.brain.website_build_plan_manager import (
+    BundlePlan as WebsiteBuildBundlePlan,
+    CallsToActionPlan as WebsiteBuildCallsToActionPlan,
+    ContactPlan as WebsiteBuildContactPlan,
+    ContentBlockPlan as WebsiteBuildContentBlockPlan,
+    ContentBlockPlanItem as WebsiteBuildContentBlockPlanItem,
+    PageRoute as WebsiteBuildPageRoute,
+    SeoPlan as WebsiteBuildSeoPlan,
+    StylePlan as WebsiteBuildStylePlan,
+    WebsiteBuildPlanManager,
+)
+from core.brain.website_bundle_assembly_manager import WebsiteBundleAssemblyManager
 from core.brain.website_contact_plan_manager import WebsiteContactPlanManager
 from core.brain.website_content_block_plan_manager import (
     WebsiteContentBlockPlanManager,
@@ -3166,6 +3178,144 @@ class AnswerContract:
                 and str(file_item.get("path") or "").strip()
                 and str(file_item.get("content") or "").strip()
             ]
+            _bundle_page_names = [
+                page[:-5] if page.endswith(".html") else page
+                for page in _pages
+                if page.endswith(".html")
+            ]
+            _bundle_asset_files = [
+                str(file_item.get("path") or "")
+                for file_item in _files
+                if isinstance(file_item, dict)
+                and str(file_item.get("path") or "").strip()
+                and not str(file_item.get("path") or "").endswith(".html")
+            ]
+            _bundle_plan_raw = WebsiteBundleAssemblyManager.plan_bundle(
+                pages=_bundle_page_names,
+                asset_files=_bundle_asset_files,
+            )
+            _build_style_plan: WebsiteBuildStylePlan = {}
+            _style_colors = [
+                str(color).strip()
+                for color in _style_plan.get("colors", [])
+                if str(color).strip()
+            ]
+            _style_notes = [
+                str(style).strip()
+                for style in _style_plan.get("styles", [])
+                if str(style).strip()
+            ]
+            _style_theme = str(_style_plan.get("theme") or "").strip()
+            if _style_colors:
+                _build_style_plan["colors"] = _style_colors
+            if _style_theme:
+                _build_style_plan["tone"] = _style_theme
+            if _style_notes:
+                _build_style_plan["notes"] = _style_notes
+
+            _cta_actions = _cta_plan.get("actions")
+            _cta_labels: list[str] = []
+            if isinstance(_cta_actions, list):
+                for action in _cta_actions:
+                    if not isinstance(action, dict):
+                        continue
+                    label = str(action.get("label") or "").strip()
+                    if label:
+                        _cta_labels.append(label)
+            _build_cta_plan: WebsiteBuildCallsToActionPlan = {}
+            if _cta_labels:
+                _build_cta_plan["primary"] = _cta_labels[0]
+                if len(_cta_labels) > 1:
+                    _build_cta_plan["secondary"] = _cta_labels[1:]
+
+            _build_contact_plan: WebsiteBuildContactPlan = {}
+            _primary_phone = str(_contact_plan.get("primary_phone") or "").strip()
+            _primary_email = str(_contact_plan.get("primary_email") or "").strip()
+            if _primary_phone:
+                _build_contact_plan["phone"] = _primary_phone
+            if _primary_email:
+                _build_contact_plan["email"] = _primary_email
+
+            _build_seo_plan: WebsiteBuildSeoPlan = {}
+            _seo_title = str(_seo_plan.get("title") or "").strip()
+            _seo_description = str(_seo_plan.get("description") or "").strip()
+            _seo_keywords_raw = _seo_plan.get("keywords")
+            _seo_keywords: list[str] = []
+            if isinstance(_seo_keywords_raw, list):
+                _seo_keywords = [
+                    str(keyword).strip()
+                    for keyword in _seo_keywords_raw
+                    if str(keyword).strip()
+                ]
+            if _seo_title:
+                _build_seo_plan["title"] = _seo_title
+            if _seo_description:
+                _build_seo_plan["description"] = _seo_description
+            if _seo_keywords:
+                _build_seo_plan["keywords"] = _seo_keywords
+
+            _build_content_blocks: list[WebsiteBuildContentBlockPlanItem] = []
+            for block in _content_block_plan.get("blocks", []):
+                build_block: WebsiteBuildContentBlockPlanItem = {
+                    "id": str(block.get("id") or "").strip(),
+                    "slug": str(block.get("slug") or "").strip(),
+                    "kind": str(block.get("kind") or "").strip(),
+                    "label": str(block.get("label") or "").strip(),
+                    "source": str(block.get("source") or "").strip(),
+                }
+                if build_block["id"] or build_block["slug"] or build_block["kind"]:
+                    _build_content_blocks.append(build_block)
+            _build_content_block_plan: WebsiteBuildContentBlockPlan = {
+                "profile": str(_content_block_plan.get("profile") or "").strip(),
+                "blocks": _build_content_blocks,
+            }
+
+            _build_page_routes: list[WebsiteBuildPageRoute] = []
+            for route in _bundle_plan_raw.get("page_routes", []):
+                page_route: WebsiteBuildPageRoute = {
+                    "slug": str(route.get("slug") or "").strip(),
+                    "path": str(route.get("path") or "").strip(),
+                    "route": str(route.get("route") or "").strip(),
+                }
+                if page_route["slug"] or page_route["path"] or page_route["route"]:
+                    _build_page_routes.append(page_route)
+            _build_bundle_plan: WebsiteBuildBundlePlan = {
+                "entrypoint": str(_bundle_plan_raw.get("entrypoint") or "").strip(),
+                "html_files": [
+                    str(path).strip()
+                    for path in _bundle_plan_raw.get("html_files", [])
+                    if str(path).strip()
+                ],
+                "asset_files": [
+                    str(path).strip()
+                    for path in _bundle_plan_raw.get("asset_files", [])
+                    if str(path).strip()
+                ],
+                "page_routes": _build_page_routes,
+                "warnings": [
+                    str(warning).strip()
+                    for warning in _bundle_plan_raw.get("warnings", [])
+                    if str(warning).strip()
+                ],
+            }
+            _build_sections = [
+                str(section.get("title") or "").strip()
+                for section in _section_plan
+                if isinstance(section, dict) and str(section.get("title") or "").strip()
+            ]
+            _build_plan = WebsiteBuildPlanManager.build_plan(
+                project_name=_biz,
+                project_slug=_slug,
+                business_type=str(_content_block_plan.get("profile") or ""),
+                pages=_bundle_page_names,
+                sections=_build_sections,
+                style_plan=_build_style_plan,
+                cta_plan=_build_cta_plan,
+                contact_plan=_build_contact_plan,
+                seo_plan=_build_seo_plan,
+                content_block_plan=_build_content_block_plan,
+                bundle_plan=_build_bundle_plan,
+            )
             _bundle_artifact: dict[str, Any] = {
                 "artifact_type": "site_bundle",
                 "artifact_id": _bundle_id,
@@ -3187,6 +3337,8 @@ class AnswerContract:
                 "cta_plan": _cta_plan,
                 "contact_plan": _contact_plan,
                 "seo_plan": _seo_plan,
+                "bundle_plan": _bundle_plan_raw,
+                "build_plan": _build_plan,
                 "source_prompt": question.strip(),
                 "site_bundle": {"files": _files},
             }
@@ -3248,6 +3400,8 @@ class AnswerContract:
                     "cta_plan": _cta_plan,
                     "contact_plan": _contact_plan,
                     "seo_plan": _seo_plan,
+                    "bundle_plan": _bundle_plan_raw,
+                    "build_plan": _build_plan,
                     "file_count": len(_files),
                     "delivery_mode": "sandbox_write"
                     if deliver_to_sandbox
