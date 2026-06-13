@@ -6,12 +6,15 @@ from core.brain.intent_router import IntentKind, IntentRouter
 
 
 ROUTING_CASES = [
-    "Generate a website for Harry's Hot Dog Cart. Use red, yellow, white, and black.",
-    "Build a website for Harry's Hot Dog Cart. Use red, yellow, white, and black.",
-    "Create a multi-page website for Riverbend Kayak & Paddle Co with Menu, Specials, About, and Contact.",
-    "Revise this site and make the Specials section more premium.",
-    "Create a website in the repo and commit it.",
-    "Generate a small HTML code artifact for Flow Flowers with filename index.html and previewable true.",
+    "Generate a website preview for Harry's Hot Dog Cart",
+    "Build me a website for another business",
+    "Create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors",
+    "Create a 5 page website for Tony's Tavern biker bar using black orange and yellow",
+    "Revise this site and make the colors black and gold",
+    "Create a website in the repo and commit it",
+    "Write this to the repo",
+    "Generate files for a Vite frontend project",
+    "Show me a preview of this landing page",
 ]
 
 
@@ -20,7 +23,7 @@ def test_intent_router_matches_current_answer_contract_routing_helpers() -> None
         normalized = AnswerContract._normalize(prompt)
         decision = IntentRouter.classify(prompt)
 
-        assert decision.normalized_text == normalized
+        assert decision.normalized_question == normalized
         assert (
             decision.has_explicit_artifact_intent
             == AnswerContract._has_explicit_artifact_intent(normalized)
@@ -54,26 +57,50 @@ def test_intent_router_matches_current_answer_contract_routing_helpers() -> None
 
 def test_intent_router_classifies_command_language_contract() -> None:
     assert (
-        IntentRouter.classify("Generate a website for Harry's Hot Dog Cart.").kind
+        IntentRouter.classify(
+            "Generate a website preview for Harry's Hot Dog Cart"
+        ).kind
         == IntentKind.CODE_ARTIFACT
     )
     assert (
-        IntentRouter.classify("Create a multi-page website for Riverbend Kayak.").kind
+        IntentRouter.classify("Build me a website for another business").kind
+        == IntentKind.SANDBOX_BUILD
+    )
+    assert (
+        IntentRouter.classify(
+            "Create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"
+        ).kind
+        == IntentKind.CODE_ARTIFACT
+    )
+    assert (
+        IntentRouter.classify(
+            "Create a 5 page website for Tony's Tavern biker bar using black orange and yellow"
+        ).kind
         == IntentKind.SITE_BUNDLE
     )
     assert (
-        IntentRouter.classify("Build a website for Harry's Hot Dog Cart.").kind
-        == IntentKind.SANDBOX_BUILD
-    )
-    assert (
-        IntentRouter.classify("Write a sandbox project for a Vite landing page.").kind
-        == IntentKind.SANDBOX_BUILD
-    )
-    assert (
-        IntentRouter.classify("Revise this site and add a Specials section.").kind
+        IntentRouter.classify(
+            "Revise this site and make the colors black and gold"
+        ).kind
         == IntentKind.ARTIFACT_EDIT
     )
     assert (
-        IntentRouter.classify("Create a website in the repo and commit it.").kind
+        IntentRouter.classify("Create a website in the repo and commit it").kind
         == IntentKind.PROTECTED_REPO_MUTATION
+    )
+    assert (
+        IntentRouter.classify("Write this to the repo").kind
+        == IntentKind.PROTECTED_REPO_MUTATION
+    )
+    assert (
+        IntentRouter.classify("Generate files for a Vite frontend project").kind
+        == IntentKind.SANDBOX_BUILD
+    )
+    assert (
+        IntentRouter.classify("Show me a preview of this landing page").kind
+        == IntentKind.CODE_ARTIFACT
+    )
+    assert (
+        IntentRouter.classify("What verified status is loaded?").kind
+        == IntentKind.NORMAL_QUESTION
     )

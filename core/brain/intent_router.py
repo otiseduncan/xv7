@@ -8,7 +8,7 @@ from core.brain import site_bundle as sb
 
 
 class IntentKind(StrEnum):
-    NORMAL = "normal"
+    NORMAL_QUESTION = "normal_question"
     PREVIEW_ARTIFACT = "preview_artifact"
     CODE_ARTIFACT = "code_artifact"
     SITE_BUNDLE = "site_bundle"
@@ -21,7 +21,7 @@ class IntentKind(StrEnum):
 class IntentDecision:
     """Normalized routing decision for user prompts before answer composition."""
 
-    normalized_text: str
+    normalized_question: str
     kind: IntentKind
     has_explicit_artifact_intent: bool = False
     is_preview_artifact_request: bool = False
@@ -31,6 +31,10 @@ class IntentDecision:
     is_artifact_edit_request: bool = False
     is_repo_mutation_build_prompt: bool = False
     prioritize_artifact_over_build_guard: bool = False
+
+    @property
+    def normalized_text(self) -> str:
+        return self.normalized_question
 
     @property
     def mode(self) -> IntentKind:
@@ -233,22 +237,22 @@ class IntentRouter:
         code_artifact = cls.is_code_artifact_request(normalized)
         prioritize_artifact = cls.prioritize_artifact_over_build_guard(normalized)
 
-        kind = IntentKind.NORMAL
+        kind = IntentKind.NORMAL_QUESTION
         if repo_mutation:
             kind = IntentKind.PROTECTED_REPO_MUTATION
         elif site_bundle:
             kind = IntentKind.SITE_BUNDLE
         elif sandbox_build:
             kind = IntentKind.SANDBOX_BUILD
-        elif artifact_edit:
-            kind = IntentKind.ARTIFACT_EDIT
         elif code_artifact:
             kind = IntentKind.CODE_ARTIFACT
+        elif artifact_edit:
+            kind = IntentKind.ARTIFACT_EDIT
         elif preview_artifact:
             kind = IntentKind.PREVIEW_ARTIFACT
 
         return IntentDecision(
-            normalized_text=normalized,
+            normalized_question=normalized,
             kind=kind,
             has_explicit_artifact_intent=explicit_artifact,
             is_preview_artifact_request=preview_artifact,
