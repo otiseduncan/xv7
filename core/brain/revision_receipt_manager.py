@@ -38,9 +38,12 @@ class RevisionReceiptManager:
         previous_artifact = previous_artifact if isinstance(previous_artifact, dict) else {}
         resolved_revision_id = revision_id or cls.new_revision_id()
         return {
-            "artifact_id": revised_artifact.get("artifact_id") or previous_artifact.get("artifact_id"),
-            "filename": revised_artifact.get("filename") or previous_artifact.get("filename"),
-            "language": revised_artifact.get("language") or previous_artifact.get("language"),
+            "artifact_id": revised_artifact.get("artifact_id")
+            or previous_artifact.get("artifact_id"),
+            "filename": revised_artifact.get("filename")
+            or previous_artifact.get("filename"),
+            "language": revised_artifact.get("language")
+            or previous_artifact.get("language"),
             "revision_id": resolved_revision_id,
             "previous_revision_id": previous_artifact.get("revision_id"),
             "revision_number": cls.next_revision_number(previous_artifact),
