@@ -3989,25 +3989,21 @@ describe('ModelProfileControl', () => {
     await flushAsync();
 
     const artifacts = [...document.querySelectorAll('.code-artifact-card')];
-    expect(artifacts.length).toBeGreaterThan(0);
-    const artifactNames = artifacts.map((card) => card.getAttribute('data-filename') || '');
-    expect(artifactNames).toContain('products.html');
-    expect(artifactNames).toContain('faq.html');
-    expect(artifactNames).not.toContain('services.html');
-    expect(artifactNames).not.toContain('gallery.html');
+    // Site bundle messages must NOT produce individual per-file code artifact cards.
+    expect(artifacts.length).toBe(0);
 
-    const indexCard = artifacts.find((card) => card.getAttribute('data-filename') === 'index.html');
-    expect(indexCard).toBeTruthy();
-    const codePane = indexCard.querySelector('.code-artifact-code-panel');
-    const previewPane = indexCard.querySelector('.code-artifact-preview-panel');
-    expect(codePane).toBeTruthy();
-    expect(previewPane).toBeTruthy();
+    // Instead, one unified site-bundle-card should be rendered.
+    const bundleCards = [...document.querySelectorAll('.site-bundle-card')];
+    expect(bundleCards.length).toBeGreaterThan(0);
+    const bundleCard = bundleCards[0];
 
-    const previewTab = indexCard.querySelector('.code-artifact-tab:nth-of-type(2)');
-    expect(previewTab).toBeTruthy();
-    previewTab.click();
-    expect(previewPane?.hidden).toBe(false);
-    expect(codePane?.hidden).toBe(true);
+    // The site bundle card file list must include products.html and faq.html.
+    const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
+    const filePaths = fileItems.map((li) => li.textContent.trim().split(' ')[0]);
+    expect(filePaths).toContain('products.html');
+    expect(filePaths).toContain('faq.html');
+    expect(filePaths).not.toContain('services.html');
+    expect(filePaths).not.toContain('gallery.html');
   });
 
   it('renders revised artifact content for premium + Specials follow-up prompts', async () => {

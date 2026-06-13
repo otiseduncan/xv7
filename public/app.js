@@ -1479,7 +1479,16 @@ class Xv7UI {
     if (role === 'assistant') {
       try {
         copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
-        this.appendCodeArtifacts(article, messageMetadata);
+        // Site bundle payloads use appendSiteBundleCard (called by the caller after this
+        // returns) — skip per-file card rendering to prevent duplicate individual cards.
+        const isSiteBundleMessage = (() => {
+          const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+          const sb = meta.site_bundle;
+          return sb && typeof sb === 'object' && sb.artifact_type === 'site_bundle';
+        })();
+        if (!isSiteBundleMessage) {
+          this.appendCodeArtifacts(article, messageMetadata);
+        }
         this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
         this.appendWhyThisAnswerDrawer(article, messageMetadata);
         if (messageMetadata && typeof messageMetadata === 'object') {
