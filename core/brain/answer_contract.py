@@ -24,6 +24,7 @@ from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.brain.session_signal_manager import SessionSignalManager
+from core.brain.website_project_name_manager import WebsiteProjectNameManager
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
     resolve_model_for_runtime_role,
@@ -528,13 +529,7 @@ class AnswerContract:
 
     @classmethod
     def _safe_slug(cls, raw: str | None, fallback: str) -> str:
-        base = cls._slugify_artifact_name(str(raw or "").strip())
-        if not base:
-            base = cls._slugify_artifact_name(fallback)
-        base = re.sub(r"-{2,}", "-", base).strip("-")
-        if len(base) > 48:
-            base = base[:48].rstrip("-")
-        return base or cls._slugify_artifact_name(fallback)
+        return WebsiteProjectNameManager.safe_folder_name(raw, fallback=fallback)
 
     @staticmethod
     def _sanitize_filename(filename: str, language: str) -> str:
