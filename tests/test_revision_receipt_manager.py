@@ -65,14 +65,21 @@ def test_build_revision_receipt_handles_missing_previous_artifact() -> None:
 
 
 def test_visible_revision_summary_for_changed_artifact() -> None:
-    assert RevisionReceiptManager.visible_revision_summary(
-        filename="index.html", revision_number=3, changed=True
-    ) == "Updated index.html. Revision 3 is ready for review."
+    assert (
+        RevisionReceiptManager.visible_revision_summary(
+            filename="index.html",
+            revision_number=3,
+            changed=True,
+        )
+        == "Updated index.html. Revision 3 is ready for review."
+    )
 
 
 def test_visible_revision_summary_for_unchanged_artifact() -> None:
     text = RevisionReceiptManager.visible_revision_summary(
-        filename="index.html", revision_number=3, changed=False
+        filename="index.html",
+        revision_number=3,
+        changed=False,
     )
 
     assert "did not alter the artifact content" in text
