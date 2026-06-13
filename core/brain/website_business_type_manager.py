@@ -33,7 +33,7 @@ class WebsiteBusinessTypeManager:
     BUSINESS_TYPES: ClassVar[dict[str, dict[str, object]]] = {
         "food_cart": {
             "label": "Food cart",
-            "hints": ("hot dog", "hotdog", "food cart", "food truck", "cart"),
+            "hints": ("hot dog", "hotdog", "food cart", "food truck"),
         },
         "restaurant": {
             "label": "Restaurant",
@@ -91,7 +91,9 @@ class WebsiteBusinessTypeManager:
         normalized_hint = cls.normalize_text(hint)
         if not normalized_hint:
             return False
-        pattern = re.compile(rf"(?<!\w){re.escape(normalized_hint)}(?!\w)")
+        escaped_hint = re.escape(normalized_hint)
+        plural_suffix = "" if normalized_hint.endswith("s") else "s?"
+        pattern = re.compile(rf"(?<!\w){escaped_hint}{plural_suffix}(?!\w)")
         return bool(pattern.search(normalized_prompt))
 
     @classmethod
