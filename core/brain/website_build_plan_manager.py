@@ -261,7 +261,7 @@ class WebsiteBuildPlanManager:
         bundle_plan: BundlePlan | None = None,
         warnings: Sequence[str] | None = None,
     ) -> WebsiteBuildPlanPayload:
-        project = {
+        project: ProjectPlan = {
             "name": cls._clean_string(project_name),
             "slug": cls._clean_string(project_slug),
         }
