@@ -227,6 +227,7 @@ def build_assistant_payload(
     warnings: list[str] | None = None,
     action_history_refs: list[str] | None = None,
     code_artifact: dict[str, Any] | None = None,
+    code_artifacts: list[dict[str, Any]] | None = None,
     artifact_patch_proposal: dict[str, Any] | None = None,
     site_bundle: dict[str, Any] | None = None,
     site_bundle_patch_proposals: list[dict[str, Any]] | None = None,
@@ -251,6 +252,7 @@ def build_assistant_payload(
         "warnings": warnings or [],
         "action_history_refs": action_history_refs or [],
         "code_artifact": code_artifact or {},
+        "code_artifacts": code_artifacts or [],
         "artifact_patch_proposal": artifact_patch_proposal or {},
         "site_bundle": site_bundle or {},
         "site_bundle_patch_proposals": site_bundle_patch_proposals or [],
@@ -871,9 +873,8 @@ def _classify_speech_act(question: str) -> str:
 
 def _build_task_guard_answer() -> str:
     return (
-        "This is a build task. Xoduz cannot execute natural-language build tasks directly yet. "
-        "Use VS Code/Copilot or provide a valid patch payload through /apply-patch. "
-        "Repo mutations require Operator Mode with staged slash command confirmation. "
+        "This build targets a protected location or protected mutation boundary. "
+        "Use Operator Mode for repo writes, writes outside the approved sandbox, destructive actions, commit/push, or other protected mutations. "
         "No files were changed. No tests were run. No commit or push occurred."
     )
 
@@ -2642,6 +2643,7 @@ async def add_session_message(
                 warnings=[],
                 action_history_refs=action_history_refs,
                 code_artifact=artifact_response.get("code_artifact"),
+                code_artifacts=artifact_response.get("code_artifacts"),
                 artifact_patch_proposal=artifact_response.get(
                     "artifact_patch_proposal"
                 ),
@@ -3500,6 +3502,7 @@ async def add_session_message(
                 if isinstance(item, dict) and str(item.get("action_id", ""))
             ],
             code_artifact=artifact_response.get("code_artifact"),
+            code_artifacts=artifact_response.get("code_artifacts"),
             artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
             site_bundle=artifact_response.get("site_bundle"),
             site_bundle_patch_proposals=artifact_response.get(

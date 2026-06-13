@@ -51,3 +51,6 @@ Thumbs.db
 # Node/Vitest generated artifacts
 node_modules/.vite/vitest/results.json
 node_modules/.vite/vitest/*.json
+node_modules
+# Local Python virtual environments
+.venv312/

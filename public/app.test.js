@@ -3931,4 +3931,188 @@ describe('ModelProfileControl', () => {
     expect(document.querySelector('.chat-render-error')).toBeTruthy();
   });
 
+  it('renders editor and preview panels for explicit products/faq site bundle prompts', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          visible_text: 'Here is a 5-page website artifact for Smoky Joe\'s Vape and CBD.',
+          site_bundle: {
+            artifact_type: 'site_bundle',
+            artifact_id: 'smoky-joes-vape-and-cbd-bundle',
+            title: "Smoky Joe's Vape and CBD",
+            slug: 'smoky-joes-vape-and-cbd',
+            entry: 'index.html',
+            active_file: 'index.html',
+            preview_entrypoint: 'index.html',
+            render_mode: 'code_editor_preview',
+            files: [
+              { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+              { path: 'products.html', language: 'html', content: '<!doctype html><html><body>products</body></html>' },
+              { path: 'about.html', language: 'html', content: '<!doctype html><html><body>about</body></html>' },
+              { path: 'faq.html', language: 'html', content: '<!doctype html><html><body>faq</body></html>' },
+              { path: 'contact.html', language: 'html', content: '<!doctype html><html><body>contact</body></html>' },
+              { path: 'assets/site.css', language: 'css', content: 'body { background: #050805; color: #d9ffe0; }' },
+              { path: 'assets/site.js', language: 'javascript', content: 'console.log("ready");' },
+            ],
+            route_manifest: [
+              { path: 'index.html', label: 'Home', route: '/', is_entry: true },
+              { path: 'products.html', label: 'Products', route: '/products.html', is_entry: false },
+              { path: 'about.html', label: 'About', route: '/about.html', is_entry: false },
+              { path: 'faq.html', label: 'FAQ', route: '/faq.html', is_entry: false },
+              { path: 'contact.html', label: 'Contact', route: '/contact.html', is_entry: false },
+            ],
+          },
+          metadata: {},
+          messages: [
+            {
+              role: 'user',
+              content: 'Build a multi-page website for Smoky Joe\'s Vape and CBD. Include Home, Products, About, FAQ, and Contact pages.',
+              metadata: {},
+            },
+            { role: 'assistant', content: 'Site artifact ready.', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value =
+      'Build a multi-page website for Smoky Joe\'s Vape and CBD. Include Home, Products, About, FAQ, and Contact pages.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const artifacts = [...document.querySelectorAll('.code-artifact-card')];
+    expect(artifacts.length).toBeGreaterThan(0);
+    const artifactNames = artifacts.map((card) => card.getAttribute('data-filename') || '');
+    expect(artifactNames).toContain('products.html');
+    expect(artifactNames).toContain('faq.html');
+    expect(artifactNames).not.toContain('services.html');
+    expect(artifactNames).not.toContain('gallery.html');
+
+    const indexCard = artifacts.find((card) => card.getAttribute('data-filename') === 'index.html');
+    expect(indexCard).toBeTruthy();
+    const codePane = indexCard.querySelector('.code-artifact-code-panel');
+    const previewPane = indexCard.querySelector('.code-artifact-preview-panel');
+    expect(codePane).toBeTruthy();
+    expect(previewPane).toBeTruthy();
+
+    const previewTab = indexCard.querySelector('.code-artifact-tab:nth-of-type(2)');
+    expect(previewTab).toBeTruthy();
+    previewTab.click();
+    expect(previewPane?.hidden).toBe(false);
+    expect(codePane?.hidden).toBe(true);
+  });
+
+  it('renders revised artifact content for premium + Specials follow-up prompts', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let messagePostCount = 0;
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        messagePostCount += 1;
+        if (messagePostCount === 1) {
+          return okJson({
+            session_id: 'session-1',
+            current_persona: 'default',
+            metadata: {},
+            messages: [
+              { role: 'user', content: "Build a one-page website for Harry's Hot Dogs.", metadata: {} },
+              {
+                role: 'assistant',
+                content: 'Here is a draft HTML artifact for index.html.',
+                metadata: {
+                  code_artifact: {
+                    type: 'code_artifact',
+                    filename: 'index.html',
+                    language: 'html',
+                    previewable: true,
+                    applied: false,
+                    content:
+                      "<!doctype html><html><body><main><h1>Harry's Hot Dogs</h1><p>Classic street-style hot dogs served fast.</p></main></body></html>",
+                  },
+                },
+              },
+            ],
+          });
+        }
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {},
+          messages: [
+            { role: 'user', content: "Build a one-page website for Harry's Hot Dogs.", metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Here is a draft HTML artifact for index.html.',
+              metadata: {
+                code_artifact: {
+                  type: 'code_artifact',
+                  filename: 'index.html',
+                  language: 'html',
+                  previewable: true,
+                  applied: false,
+                  content:
+                    "<!doctype html><html><body><main><h1>Harry's Hot Dogs</h1><p>Classic street-style hot dogs served fast.</p></main></body></html>",
+                },
+              },
+            },
+            { role: 'user', content: 'Make this site look more premium and add a Specials section.', metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Updated the draft artifact with premium styling and a Specials section.',
+              metadata: {
+                code_artifact: {
+                  type: 'code_artifact',
+                  filename: 'index.html',
+                  language: 'html',
+                  previewable: true,
+                  applied: false,
+                  content:
+                    "<!doctype html><html><body><main><h1 class='premium'>Harry's Hot Dogs</h1><p>Premium presentation.</p><section class='specials'><h2>Specials</h2><ul><li>Classic Dog Combo</li></ul></section></main></body></html>",
+                },
+              },
+            },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = "Build a one-page website for Harry's Hot Dogs.";
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Make this site look more premium and add a Specials section.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const artifacts = [...document.querySelectorAll('.code-artifact-card')];
+    expect(artifacts.length).toBeGreaterThan(1);
+
+    const latest = artifacts[artifacts.length - 1];
+    expect(latest.getAttribute('data-filename')).toBe('index.html');
+    expect((latest.textContent || '').toLowerCase()).toContain('specials');
+    expect((latest.textContent || '').toLowerCase()).toContain('premium');
+
+    const previewButton = [...latest.querySelectorAll('.code-artifact-button')].find((node) =>
+      (node.textContent || '').includes('Preview'),
+    );
+    previewButton?.click();
+    await flushAsync();
+
+    const iframe = latest.querySelector('iframe');
+    expect(iframe?.getAttribute('srcdoc') || '').toContain('Specials');
+    expect(iframe?.getAttribute('srcdoc') || '').toContain('premium');
+  });
+
 });

@@ -612,6 +612,44 @@ def test_code_artifact_generation_prompt_emits_code_artifact_payload(
     assert after_files == before_files
 
 
+def test_generate_website_prompt_emits_preview_code_artifact_payload(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _use_fake_local_model(monkeypatch)
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": (
+                "Generate a website for Harry's Hot Dog Cart. "
+                "Use red, yellow, white, and black. "
+                "Make it fun and professional."
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    metadata = message.get("metadata", {})
+    artifact = metadata.get("code_artifact", {})
+
+    assert artifact.get("type") == "code_artifact"
+    assert artifact.get("filename") == "index.html"
+    assert artifact.get("language") == "html"
+    assert artifact.get("previewable") is True
+    assert artifact.get("applied") is False
+    content = str(artifact.get("content") or "")
+    assert content.lstrip().lower().startswith("<!doctype html>")
+    assert "harry" in content.lower()
+
+    assert metadata.get("site_bundle", {}) == {}
+    assert "generate a patch for this site" not in str(message.get("content") or "").lower()
+
+
 def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
@@ -1363,6 +1401,95 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
     undo_prov = undo_payload["metadata"]["last_assistant_payload"]["policy_provenance"]
     assert undo_prov["artifact_generation"] == "artifact_undo"
     assert "Brush Script MT" not in undo_artifact["content"]
+
+
+def test_harry_site_revision_prompt_updates_existing_artifact_payload(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    base_html = (
+        "<!doctype html><html><head><title>Harry's Hot Dogs</title><style>"
+        "body{background:#fff7f0;color:#1f2937;font-family:Arial,sans-serif;}"
+        "</style></head><body><main><h1>Harry's Hot Dogs</h1>"
+        "<p>Classic street-style hot dogs served fast.</p>"
+        "</main></body></html>"
+    )
+    revised_html = (
+        "<!doctype html><html><head><title>Harry's Hot Dogs</title><style>"
+        "body{background:#111111;color:#f5e7b4;font-family:Georgia,serif;}"
+        ".premium{letter-spacing:0.02em;}"
+        ".specials{margin-top:1rem;padding:0.75rem;border:1px solid #d4af37;border-radius:10px;}"
+        "</style></head><body><main><h1 class='premium'>Harry's Hot Dogs</h1>"
+        "<p>Premium street-style hot dogs with elevated presentation.</p>"
+        "<section class='specials'><h2>Specials</h2><ul><li>Classic Dog Combo</li></ul></section>"
+        "</main></body></html>"
+    )
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str]:
+        return (base_html, "fake-code-model:test")
+
+    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+        lowered = question.lower()
+        source = str(source_artifact.get("content") or "")
+        if "premium" in lowered and "special" in lowered:
+            assert "Harry's Hot Dogs" in source
+            return (revised_html, "qwen3:14b", "http://ollama:11434")
+        return (source, "qwen3:14b", "http://ollama:11434")
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model",
+        _fake_revise,
+    )
+
+    create = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={
+            "raw_text": "Generate a one-page website for Harry's Hot Dogs with a modern street-food look.",
+        },
+    )
+    assert create.status_code == 200
+    create_artifact = create.json()["messages"][-1]["metadata"]["code_artifact"]
+    assert create_artifact["filename"] == "index.html"
+    assert "Harry's Hot Dogs" in create_artifact["content"]
+
+    revise = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Make this site look more premium and add a Specials section."},
+    )
+    assert revise.status_code == 200
+    revise_payload = revise.json()
+    revise_message = revise_payload["messages"][-1]
+    revise_artifact = revise_message["metadata"]["code_artifact"]
+    revise_content = revise_artifact["content"]
+    provenance = revise_payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+
+    assert "sms connector" not in revise_message["content"].lower()
+    assert revise_artifact["filename"] == "index.html"
+    assert revise_artifact["language"] == "html"
+    assert revise_artifact["previewable"] is True
+    assert revise_artifact["applied"] is False
+    assert "premium" in revise_content.lower()
+    assert "specials" in revise_content.lower()
+    assert "Harry's Hot Dogs" in revise_content
+    assert provenance.get("artifact_generation") == "local_model_revision"
+    assert provenance.get("revision_number") == 2
 
 
 def test_refinement_without_active_artifact_requests_context(monkeypatch, tmp_path: Path) -> None:
@@ -2220,9 +2347,77 @@ def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(monk
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_natural_language_build_prompt_does_not_mutate_repo(monkeypatch, tmp_path: Path) -> None:
+def test_preview_style_prompt_stays_in_chat_artifact_mode_without_sandbox_write(monkeypatch, tmp_path: Path) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
-    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            "<!doctype html><html><body><main><h1>Harry's Hot Dogs</h1><p>Street-style hot dogs, cart specials, and fast service.</p></main></body></html>",
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
+    session_id = _new_session(client)
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Show me a website mock up for Harry's Hot Dogs."},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    artifact = payload["messages"][-1]["metadata"].get("code_artifact", {})
+    assert artifact.get("type") == "code_artifact"
+    assert artifact.get("applied") is False
+    assert artifact.get("delivery_mode") == "chat_artifact"
+    assert not sandbox_root.exists()
+
+
+def test_natural_language_build_prompt_writes_to_sandbox_and_returns_renderable_artifact(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            "<!doctype html><html><body><main><h1>Another Business</h1><p>Sandbox build.</p></main></body></html>",
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+
     session_id = _new_session(client)
 
     response = client.post(
@@ -2235,10 +2430,83 @@ def test_natural_language_build_prompt_does_not_mutate_repo(monkeypatch, tmp_pat
     message = payload["messages"][-1]
     answer = str(message["content"]).lower()
     metadata = message["metadata"]
-    assert "build task" in answer
-    assert metadata.get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
-    assert metadata.get("code_artifact", {}) == {}
-    assert not (tmp_path / "generated-sites").exists()
+    artifact = metadata.get("code_artifact", {})
+    target_path = Path(str(artifact.get("sandbox_target_path") or ""))
+    assert "protected location" not in answer
+    assert metadata.get("policy_provenance", {}).get("brain_answer_source") != "implementation_task_guard"
+    assert artifact.get("type") == "code_artifact"
+    assert artifact.get("applied") is True
+    assert artifact.get("delivery_mode") == "sandbox_write"
+    assert target_path.exists()
+    assert str(sandbox_root.resolve()).lower() in str(target_path).lower()
+    assert "another business" in target_path.read_text(encoding="utf-8").lower()
+
+
+def test_sandbox_build_followup_revision_updates_latest_sandbox_target(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    async def _fake_generate(
+        self,
+        *,
+        question: str,
+        filename: str,
+        language: str,
+        previewable: bool,
+        apply_requested: bool,
+        business_name: str,
+        style_hints: dict[str, list[str]],
+        layout_hints: list[str],
+    ) -> tuple[str, str, str]:
+        return (
+            "<!doctype html><html><body><main><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p></main></body></html>",
+            "fake-code-model:test",
+            "http://127.0.0.1:11434",
+        )
+
+    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+        assert source_artifact.get("delivery_mode") == "sandbox_write"
+        return (
+            "<!doctype html><html><body><main><h1 class='premium'>Soggy Doggy</h1><p>Premium pet grooming bath trim fur care.</p><section><h2>Specials</h2></section></main></body></html>",
+            "qwen3:14b",
+            "http://ollama:11434",
+        )
+
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model",
+        _fake_revise,
+    )
+
+    session_id = _new_session(client)
+
+    create = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Build a website for Soggy Doggy grooming."},
+    )
+    assert create.status_code == 200
+    create_artifact = create.json()["messages"][-1]["metadata"]["code_artifact"]
+    target_path = Path(str(create_artifact.get("sandbox_target_path") or ""))
+    assert target_path.exists()
+
+    revise = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Make it more premium and add a Specials section."},
+    )
+    assert revise.status_code == 200
+    revise_artifact = revise.json()["messages"][-1]["metadata"]["code_artifact"]
+    revise_target = Path(str(revise_artifact.get("sandbox_target_path") or ""))
+    assert revise_target == target_path
+    revised_disk = revise_target.read_text(encoding="utf-8")
+    assert "premium" in revised_disk.lower()
+    assert "specials" in revised_disk.lower()
+    assert revise_artifact.get("delivery_mode") == "sandbox_write"
 
 
 def test_build_guard_still_wins_when_commit_words_are_present(monkeypatch, tmp_path: Path) -> None:
@@ -2254,7 +2522,7 @@ def test_build_guard_still_wins_when_commit_words_are_present(monkeypatch, tmp_p
     assert response.status_code == 200
     message = response.json()["messages"][-1]
     answer = message["content"].lower()
-    assert "build task" in answer
+    assert "protected location" in answer
     assert message["metadata"].get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
     assert message["metadata"].get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()
@@ -2273,7 +2541,7 @@ def test_repo_mutation_wording_still_hits_build_guard(monkeypatch, tmp_path: Pat
     assert response.status_code == 200
     message = response.json()["messages"][-1]
     answer = str(message["content"]).lower()
-    assert "build task" in answer
+    assert "protected location" in answer
     assert message["metadata"].get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
     assert message["metadata"].get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()

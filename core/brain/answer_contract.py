@@ -33,12 +33,24 @@ class AnswerContract:
         r"\b(code artifact|filename|previewable|do not apply it to the repo|do not apply to the repo|"
         r"one-page website|landing page|html|css|javascript|typescript|python)\b"
     )
+    WEBSITE_BUILD_ARTIFACT_PATTERN = re.compile(
+        r"\b(build|create|make|generate|draft)\b.*\b(website|site)\b.*\bfor\b"
+    )
     EXPLICIT_ARTIFACT_INTENT_PATTERN = re.compile(
         r"\b(html artifact|code artifact|draft html|inline html|single-file html|single file html|"
         r"one-page html artifact|one page html artifact|generate html artifact|create html artifact|artifact)\b"
     )
+    PREVIEW_ARTIFACT_PATTERN = re.compile(
+        r"\b(preview|show|render|display|mock\s*up|mockup)\b"
+    )
+    SANDBOX_BUILD_ACTION_PATTERN = re.compile(
+        r"\b(build|write|create|scaffold)\b|\bmake\s+(?:a\s+)?project\b|\bgenerate\s+files\b|\bwrite\s+files\b"
+    )
+    SANDBOX_BUILD_TARGET_PATTERN = re.compile(
+        r"\b(website|site|page|design|project|app|files|react|vite|frontend|landing page|web page|homepage)\b"
+    )
     ARTIFACT_REPO_MUTATION_PATTERN = re.compile(
-        r"\b(build me a website|create a website in the repo|make the app|implement this feature|"
+        r"\b(create a website in the repo|make the app|implement this feature|"
         r"change the project files|write this into the repo|write this to the repo|"
         r"in the repo and commit it|commit it|git commit|git push|push it)\b"
     )
@@ -53,10 +65,10 @@ class AnswerContract:
         r"\b(send a text|send text|send this as a text message|text my|text someone|message someone|message\s+[a-z0-9]+|sms this to|sms)\b"
     )
     ARTIFACT_EDIT_ACTION_PATTERN = re.compile(
-        r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use|improve|redesign|move|keep|preserve|undo|revert|show|summarize)\b"
+        r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use|improve|redesign|move|keep|preserve|undo|revert|summarize|add)\b"
     )
     ARTIFACT_EDIT_TARGET_PATTERN = re.compile(
-        r"\b(website|site|artifact|page|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger)\b"
+        r"\b(website|site|artifact|page|pages|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|css|html|javascript|js|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger|home\s?page|homepage|specials?)\b"
     )
     SMS_EXPLICIT_SEND_PATTERN = re.compile(
         r"\b(send a text|send text|send this as a text message|text my|message\s+[a-z0-9]+|sms this)\b"
@@ -71,7 +83,7 @@ class AnswerContract:
         r"\b(color|colors|palette|background|font|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|easier to read|black|gold|white)\b"
     )
     ARTIFACT_CONTENT_PATTERN = re.compile(
-        r"\b(headline|cta|button text|buttons|copy|wording|services section|main headline|rewrite|say)\b"
+        r"\b(headline|cta|button text|buttons|copy|wording|services section|specials section|specials page|main headline|rewrite|rewrite the homepage|rewrite homepage|say)\b"
     )
     ARTIFACT_TARGETED_PATTERN = re.compile(
         r"\b(only|keep the layout|keep the content|preserve)\b"
@@ -136,7 +148,7 @@ class AnswerContract:
         r"\b(medical|health|history|condition|diagnosis|medication)\b"
     )
     WEB_LOOKUP_PATTERN = re.compile(
-        r"\b(look up|lookup|search|find|browse|official website|website)\b"
+        r"\b(look up|lookup|search|find|browse|official website)\b"
     )
     CALENDAR_PATTERN = re.compile(r"\b(calendar|schedule|meeting|appointment|event)\b")
     APPOINTMENT_PATTERN = re.compile(
@@ -275,7 +287,22 @@ class AnswerContract:
         has_action = bool(
             AnswerContract.CODE_ARTIFACT_PATTERN.search(normalized_question)
         )
-        return has_hint and has_action
+        if has_hint and has_action:
+            return True
+
+        # Preserve old single-page website behavior: plain "build a website for ..."
+        # should still route to the renderable code artifact contract.
+        if AnswerContract.WEBSITE_BUILD_ARTIFACT_PATTERN.search(normalized_question):
+            return not sb.is_site_bundle_request(normalized_question)
+
+        if AnswerContract._is_preview_artifact_request(normalized_question) and re.search(
+            r"\b(website|site|page|design|homepage|landing page)\b",
+            normalized_question,
+            flags=re.IGNORECASE,
+        ):
+            return True
+
+        return False
 
     @staticmethod
     def _code_artifact_language(normalized_question: str) -> str:
@@ -897,6 +924,17 @@ class AnswerContract:
                 f'<p class="muted">{html.escape(str(line), quote=False)}</p>'
                 for line in template["info_lines"]
             )
+            requested_colors = AnswerContract._extract_style_hints(question).get(
+                "colors", []
+            )
+            if requested_colors:
+                palette_text = html.escape(
+                    ", ".join(str(color) for color in requested_colors),
+                    quote=False,
+                )
+                info_lines += (
+                    f'<p class="muted">Requested palette: {palette_text}</p>'
+                )
             style = template["style"]
             accent = str(style["accent"])
             accent_2 = str(style["accent_2"])
@@ -1725,6 +1763,11 @@ if __name__ == \"__main__\":
                     "revision_number": artifact.get("revision_number"),
                     "source_prompt": artifact.get("source_prompt"),
                     "prompt_fidelity": artifact.get("prompt_fidelity"),
+                    "delivery_mode": artifact.get("delivery_mode"),
+                    "sandbox_root": artifact.get("sandbox_root"),
+                    "sandbox_project_slug": artifact.get("sandbox_project_slug"),
+                    "sandbox_relative_path": artifact.get("sandbox_relative_path"),
+                    "sandbox_target_path": artifact.get("sandbox_target_path"),
                     "created_at": artifact.get("created_at"),
                     "message_id": artifact.get("message_id"),
                 }
@@ -1864,6 +1907,34 @@ if __name__ == \"__main__\":
         return bool(cls.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized_question))
 
     @classmethod
+    def _is_preview_artifact_request(cls, normalized_question: str) -> bool:
+        if not normalized_question:
+            return False
+        if cls._has_explicit_artifact_intent(normalized_question):
+            return True
+        if cls.PREVIEW_ARTIFACT_PATTERN.search(normalized_question):
+            return True
+        return bool(
+            re.search(
+                r"\bgenerate\b.*\b(website|site|page|design)\b",
+                normalized_question,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    @classmethod
+    def _is_sandbox_build_request(cls, normalized_question: str) -> bool:
+        if not normalized_question:
+            return False
+        if cls._has_explicit_artifact_intent(normalized_question):
+            return False
+        if cls._is_repo_mutation_build_prompt(normalized_question):
+            return False
+        has_action = bool(cls.SANDBOX_BUILD_ACTION_PATTERN.search(normalized_question))
+        has_target = bool(cls.SANDBOX_BUILD_TARGET_PATTERN.search(normalized_question))
+        return has_action and has_target
+
+    @classmethod
     def _is_repo_mutation_build_prompt(cls, normalized_question: str) -> bool:
         if not normalized_question:
             return False
@@ -1885,13 +1956,23 @@ if __name__ == \"__main__\":
     def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
         return (
             cls._has_explicit_artifact_intent(normalized_question)
+            or cls._is_preview_artifact_request(normalized_question)
+            or cls.is_code_artifact_request(normalized_question)
             or sb.is_site_bundle_request(normalized_question)
+            or cls._looks_like_artifact_edit(normalized_question)
+            or cls._is_sandbox_build_request(normalized_question)
         ) and not cls._is_repo_mutation_build_prompt(normalized_question)
 
     @staticmethod
     def _workspace_root() -> Path:
         configured = str(os.getenv("XV7_ARTIFACT_PATCH_ROOT", "")).strip()
         root = Path(configured) if configured else Path.cwd()
+        return root.resolve()
+
+    @staticmethod
+    def _sandbox_root() -> Path:
+        configured = str(os.getenv("XV7_SANDBOX_ROOT", "")).strip()
+        root = Path(configured) if configured else Path("X:/xoduz-sandbox")
         return root.resolve()
 
     @classmethod
@@ -2192,6 +2273,88 @@ if __name__ == \"__main__\":
         if not str(resolved).startswith(str(root_resolved)):
             return None, "target path escapes repo root"
         return resolved, None
+
+    @classmethod
+    def _resolve_safe_sandbox_target(
+        cls,
+        *,
+        root: Path,
+        target_path: str,
+    ) -> tuple[Path | None, str | None]:
+        target_rel = Path(str(target_path or "").replace("\\", "/"))
+        if not str(target_path or "").strip():
+            return None, "target path is empty"
+        if target_rel.is_absolute() or ".." in target_rel.parts:
+            return None, "target path is unsafe"
+        normalized_target = str(target_rel).replace("\\", "/")
+        if cls._is_blocked_patch_target(normalized_target):
+            return None, "target path is blocked by safety policy"
+
+        resolved = (root / target_rel).resolve()
+        root_resolved = root.resolve()
+        if not str(resolved).startswith(str(root_resolved)):
+            return None, "target path escapes sandbox root"
+        return resolved, None
+
+    @classmethod
+    def _sandbox_relative_file_path(
+        cls,
+        *,
+        project_slug: str,
+        filename: str,
+    ) -> str:
+        clean_filename = cls._sanitize_filename(filename, cls._code_artifact_language(filename))
+        return f"{project_slug}/{clean_filename}"
+
+    @classmethod
+    def _write_sandbox_file(
+        cls,
+        *,
+        project_slug: str,
+        filename: str,
+        content: str,
+    ) -> tuple[str, str]:
+        sandbox_root = cls._sandbox_root()
+        relative_path = f"{project_slug}/{filename}"
+        target, error = cls._resolve_safe_sandbox_target(
+            root=sandbox_root,
+            target_path=relative_path,
+        )
+        if target is None:
+            raise RuntimeError(error or "sandbox_target_invalid")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return relative_path.replace("\\", "/"), str(target)
+
+    @classmethod
+    def _write_sandbox_bundle(
+        cls,
+        *,
+        project_slug: str,
+        bundle_files: list[dict[str, Any]],
+    ) -> tuple[list[str], list[str]]:
+        sandbox_root = cls._sandbox_root()
+        written_relative: list[str] = []
+        written_absolute: list[str] = []
+        for item in bundle_files:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or "").replace("\\", "/")
+            content = str(item.get("content") or "")
+            if not path or not sb.is_safe_bundle_path(path):
+                continue
+            relative_path = f"{project_slug}/{path}"
+            target, error = cls._resolve_safe_sandbox_target(
+                root=sandbox_root,
+                target_path=relative_path,
+            )
+            if target is None:
+                raise RuntimeError(error or f"sandbox_target_invalid:{relative_path}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            written_relative.append(relative_path)
+            written_absolute.append(str(target))
+        return written_relative, written_absolute
 
     @classmethod
     def _verify_applied_patch_content(
@@ -3657,6 +3820,39 @@ if __name__ == \"__main__\":
             premium_note = f'<p class="xv7-premium">Premium presentation for {html.escape(business_name, quote=False)} with elevated styling and clearer polish.</p>'
             revised = cls._insert_before_tag(revised, "body", premium_note)
 
+        wants_specials = bool(
+            re.search(r"\b(add\s+)?specials?\b", normalized)
+            or "specials section" in normalized
+            or "specials page" in normalized
+        )
+        if wants_specials and "xv7-specials" not in revised.lower():
+            specials_style = (
+                '<style id="xv7-specials-revision">'
+                ".xv7-specials{margin-top:1.25rem;padding:1rem;border-radius:12px;"
+                "border:1px solid color-mix(in srgb,var(--accent, #f59e0b) 45%, transparent);"
+                "background:color-mix(in srgb,var(--panel, rgba(0,0,0,0.2)) 88%, transparent);}"
+                ".xv7-specials h2{margin:0 0 .5rem;}"
+                "</style>"
+            )
+            revised = cls._insert_before_tag(revised, "head", specials_style)
+            specials_markup = (
+                '<section class="xv7-specials" aria-label="Specials">'
+                "<h2>Specials</h2>"
+                "<p class=\"muted\">Limited-time cart favorites and combo deals available this week.</p>"
+                "<ul><li>Classic Dog Combo</li><li>Loaded Chili Dog Special</li><li>Family Pack Deal</li></ul>"
+                "</section>"
+            )
+            if re.search(r"</main>", revised, flags=re.IGNORECASE):
+                revised = re.sub(
+                    r"</main>",
+                    specials_markup + "</main>",
+                    revised,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            else:
+                revised = cls._insert_before_tag(revised, "body", specials_markup)
+
         if (
             revision_mode == "content_only"
             and requested_headline
@@ -4098,6 +4294,7 @@ if __name__ == \"__main__\":
         )
         is_generation = self.is_code_artifact_request(normalized)
         is_site_bundle_generation = sb.is_site_bundle_request(normalized)
+        is_sandbox_build_request = self._is_sandbox_build_request(normalized)
         has_artifact_edit_intent = self._looks_like_artifact_edit(normalized)
         has_explicit_artifact_generation_language = bool(
             self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized)
@@ -4131,6 +4328,10 @@ if __name__ == \"__main__\":
             and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized)
             and not is_generation
             and not is_site_bundle_generation
+        )
+        latest_delivery_mode = str(latest_artifact.get("delivery_mode") or "") if isinstance(latest_artifact, dict) else ""
+        deliver_to_sandbox = is_sandbox_build_request or (
+            is_refinement_request and latest_delivery_mode == "sandbox_write"
         )
         is_commit_proposal_request = self._is_commit_proposal_request(normalized)
         is_commit_approval_request = self._is_commit_approval_request(normalized)
@@ -4766,6 +4967,7 @@ if __name__ == \"__main__\":
             not is_generation
             and not is_refinement_request
             and not is_site_bundle_generation
+            and not is_sandbox_build_request
         ):
             return None
 
@@ -4810,6 +5012,31 @@ if __name__ == \"__main__\":
                 }
             _bundle_id = f"{_slug}-bundle"
             _rev = len(artifact_history) + 1
+            _route_manifest = [
+                {
+                    "path": page,
+                    "label": sb.page_label(page),
+                    "route": "/" if page == "index.html" else f"/{page}",
+                    "is_entry": page == "index.html",
+                }
+                for page in _pages
+                if page.endswith(".html")
+            ]
+            _code_artifacts = [
+                {
+                    "filename": str(file_item.get("path") or ""),
+                    "language": str(file_item.get("language") or "html"),
+                    "content": str(file_item.get("content") or ""),
+                    "previewable": str(file_item.get("path") or "").endswith(
+                        ".html"
+                    ),
+                    "applied": False,
+                }
+                for file_item in _files
+                if isinstance(file_item, dict)
+                and str(file_item.get("path") or "").strip()
+                and str(file_item.get("content") or "").strip()
+            ]
             _bundle_artifact: dict[str, Any] = {
                 "artifact_type": "site_bundle",
                 "artifact_id": _bundle_id,
@@ -4818,16 +5045,51 @@ if __name__ == \"__main__\":
                 "title": _biz,
                 "slug": _slug,
                 "entry": "index.html",
+                "active_file": "index.html",
+                "preview_entrypoint": "index.html",
+                "route_manifest": _route_manifest,
+                "render_mode": "code_editor_preview",
+                "files": _files,
                 "source_prompt": question.strip(),
                 "site_bundle": {"files": _files},
             }
+            if deliver_to_sandbox:
+                written_relative, written_absolute = self._write_sandbox_bundle(
+                    project_slug=_slug,
+                    bundle_files=_files,
+                )
+                _bundle_artifact.update(
+                    {
+                        "delivery_mode": "sandbox_write",
+                        "sandbox_root": str(self._sandbox_root()),
+                        "sandbox_project_slug": _slug,
+                        "sandbox_project_path": str(self._sandbox_root() / _slug),
+                        "sandbox_written_paths": written_absolute,
+                    }
+                )
+                _code_artifacts = [
+                    {
+                        **artifact,
+                        "applied": True,
+                        "delivery_mode": "sandbox_write",
+                        "sandbox_root": str(self._sandbox_root()),
+                        "sandbox_project_slug": _slug,
+                        "sandbox_relative_path": written_relative[idx],
+                        "sandbox_target_path": written_absolute[idx],
+                    }
+                    for idx, artifact in enumerate(_code_artifacts)
+                    if idx < len(written_relative) and idx < len(written_absolute)
+                ]
             _html_pages = [p for p in _pages if p.endswith(".html")]
             return {
                 "visible_text": (
-                    f"Here is a {len(_html_pages)}-page site bundle for {_biz}. "
-                    f'Files: {", ".join(_pages)}. Use "generate a patch for this site" to prepare files for writing.'
+                    f"Built a {len(_html_pages)}-page website for {_biz} in {self._sandbox_root() / _slug}. "
+                    "You can review and preview the generated files inline."
+                    if deliver_to_sandbox
+                    else f"Here is a {len(_html_pages)}-page website artifact for {_biz}. You can review and preview the generated files inline."
                 ),
                 "code_artifact": {},
+                "code_artifacts": _code_artifacts,
                 "artifact_patch_proposal": {},
                 "site_bundle": _bundle_artifact,
                 "context_receipt": {
@@ -4842,6 +5104,7 @@ if __name__ == \"__main__\":
                     "business_name": _biz,
                     "slug": _slug,
                     "file_count": len(_files),
+                    "delivery_mode": "sandbox_write" if deliver_to_sandbox else "chat_artifact",
                 },
             }
 
@@ -4939,6 +5202,32 @@ if __name__ == \"__main__\":
 
             _bundle_id = str(latest_artifact.get("artifact_id") or f"{_slug}-bundle")
             _rev = len(artifact_history) + 1
+            _entry = str(latest_artifact.get("entry") or "index.html")
+            _route_manifest = [
+                {
+                    "path": page,
+                    "label": sb.page_label(page),
+                    "route": "/" if page == "index.html" else f"/{page}",
+                    "is_entry": page == _entry,
+                }
+                for page in _pages
+                if page.endswith(".html")
+            ]
+            _code_artifacts = [
+                {
+                    "filename": str(file_item.get("path") or ""),
+                    "language": str(file_item.get("language") or "html"),
+                    "content": str(file_item.get("content") or ""),
+                    "previewable": str(file_item.get("path") or "").endswith(
+                        ".html"
+                    ),
+                    "applied": False,
+                }
+                for file_item in _files
+                if isinstance(file_item, dict)
+                and str(file_item.get("path") or "").strip()
+                and str(file_item.get("content") or "").strip()
+            ]
             revised_bundle_artifact: dict[str, Any] = {
                 **latest_artifact,
                 "artifact_type": "site_bundle",
@@ -4947,17 +5236,51 @@ if __name__ == \"__main__\":
                 "revision_number": _rev,
                 "title": _biz,
                 "slug": _slug,
-                "entry": str(latest_artifact.get("entry") or "index.html"),
+                "entry": _entry,
+                "active_file": _entry,
+                "preview_entrypoint": _entry,
+                "route_manifest": _route_manifest,
+                "render_mode": "code_editor_preview",
+                "files": _files,
                 "source_prompt": source_prompt,
                 "site_bundle": {"files": _files},
             }
+            if deliver_to_sandbox:
+                written_relative, written_absolute = self._write_sandbox_bundle(
+                    project_slug=_slug,
+                    bundle_files=_files,
+                )
+                revised_bundle_artifact.update(
+                    {
+                        "delivery_mode": "sandbox_write",
+                        "sandbox_root": str(self._sandbox_root()),
+                        "sandbox_project_slug": _slug,
+                        "sandbox_project_path": str(self._sandbox_root() / _slug),
+                        "sandbox_written_paths": written_absolute,
+                    }
+                )
+                _code_artifacts = [
+                    {
+                        **artifact,
+                        "applied": True,
+                        "delivery_mode": "sandbox_write",
+                        "sandbox_root": str(self._sandbox_root()),
+                        "sandbox_project_slug": _slug,
+                        "sandbox_relative_path": written_relative[idx],
+                        "sandbox_target_path": written_absolute[idx],
+                    }
+                    for idx, artifact in enumerate(_code_artifacts)
+                    if idx < len(written_relative) and idx < len(written_absolute)
+                ]
 
             return {
                 "visible_text": (
-                    "Updated the active site bundle revision and preserved all pages/content. "
-                    'Use "generate a patch for this site" to prepare files for writing.'
+                    f"Updated the sandbox website in {self._sandbox_root() / _slug} and refreshed the inline preview."
+                    if deliver_to_sandbox
+                    else "Updated the active site bundle revision and preserved all pages/content. Use \"generate a patch for this site\" to prepare files for writing."
                 ),
                 "code_artifact": {},
+                "code_artifacts": _code_artifacts,
                 "artifact_patch_proposal": {},
                 "site_bundle": revised_bundle_artifact,
                 "context_receipt": {
@@ -4972,6 +5295,7 @@ if __name__ == \"__main__\":
                     "business_name": _biz,
                     "slug": _slug,
                     "file_count": len(_files),
+                    "delivery_mode": "sandbox_write" if deliver_to_sandbox else "chat_artifact",
                 },
             }
 
@@ -5392,9 +5716,41 @@ if __name__ == \"__main__\":
         if typography_refinement_payload is not None:
             provenance["typography_refinement"] = typography_refinement_payload
 
+        delivery_mode = "sandbox_write" if deliver_to_sandbox else "chat_artifact"
+        project_slug = self._safe_slug(
+            business_name,
+            fallback=self._slugify_artifact_name(filename),
+        )
+        sandbox_relative_path = None
+        sandbox_target_path = None
+        applied_flag = False
+        if deliver_to_sandbox:
+            sandbox_relative_path = str(
+                latest_artifact.get("sandbox_relative_path") or f"{project_slug}/{filename}"
+            ) if latest_artifact is not None else f"{project_slug}/{filename}"
+            project_slug = str(
+                latest_artifact.get("sandbox_project_slug") or project_slug
+            ) if latest_artifact is not None else project_slug
+            sandbox_relative_path, sandbox_target_path = self._write_sandbox_file(
+                project_slug=project_slug,
+                filename=filename,
+                content=artifact_content,
+            )
+            applied_flag = True
+            provenance["delivery_mode"] = "sandbox_write"
+            provenance["sandbox_root"] = str(self._sandbox_root())
+            provenance["sandbox_project_slug"] = project_slug
+            provenance["sandbox_target_path"] = sandbox_target_path
+        else:
+            provenance["delivery_mode"] = "chat_artifact"
+
         return {
             "visible_text": (
-                f"Here is a revised {language.upper()} artifact for {filename}."
+                f"Updated the sandbox file at {sandbox_target_path} and refreshed the inline preview."
+                if (is_refinement_request and deliver_to_sandbox and sandbox_target_path)
+                else f"Built the sandbox file at {sandbox_target_path} and rendered it inline."
+                if (deliver_to_sandbox and sandbox_target_path)
+                else f"Here is a revised {language.upper()} artifact for {filename}."
                 if is_refinement_request
                 else f"Here is a draft {language.upper()} artifact for {filename}."
             ),
@@ -5403,7 +5759,7 @@ if __name__ == \"__main__\":
                 "filename": filename,
                 "language": language,
                 "previewable": previewable,
-                "applied": False,
+                "applied": applied_flag,
                 "content": artifact_content,
                 "artifact_id": (
                     latest_artifact.get("artifact_id")
@@ -5415,6 +5771,11 @@ if __name__ == \"__main__\":
                 "source_prompt": question.strip(),
                 "prompt_fidelity": prompt_fidelity_payload,
                 "typography_refinement": typography_refinement_payload or {},
+                "delivery_mode": delivery_mode,
+                "sandbox_root": str(self._sandbox_root()) if deliver_to_sandbox else "",
+                "sandbox_project_slug": project_slug if deliver_to_sandbox else "",
+                "sandbox_relative_path": sandbox_relative_path or "",
+                "sandbox_target_path": sandbox_target_path or "",
             },
             "artifact_patch_proposal": {},
             "context_receipt": {

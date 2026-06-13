@@ -62,6 +62,14 @@ _FOOD_TERMS = (
 
 def default_pages_for_business(business_name: str, question: str) -> list[str]:
     """Return the default file list for the detected business category."""
+    requested_pages = extract_requested_page_paths(question)
+    if requested_pages:
+        return [
+            *requested_pages,
+            "assets/site.css",
+            "assets/site.js",
+        ]
+
     q = question.lower()
     b = business_name.lower()
     if any(w in q or w in b for w in _FOOD_TERMS):
@@ -91,6 +99,8 @@ _NAV_LABELS: dict[str, str] = {
     "index": "Home",
     "home": "Home",
     "about": "About",
+    "products": "Products",
+    "faq": "FAQ",
     "menu": "Menu",
     "events": "Events",
     "contact": "Contact",
@@ -127,6 +137,12 @@ def normalize_page_path(label: str) -> str:
         "about us": "about.html",
         "about me": "about.html",
         "our story": "about.html",
+        "products": "products.html",
+        "our products": "products.html",
+        "product": "products.html",
+        "faq": "faq.html",
+        "faqs": "faq.html",
+        "frequently asked questions": "faq.html",
         "menu": "menu.html",
         "food menu": "menu.html",
         "our menu": "menu.html",
@@ -145,6 +161,55 @@ def normalize_page_path(label: str) -> str:
         return _ov[low]
     slug = re.sub(r"[^a-z0-9]+", "-", low).strip("-")
     return f"{slug}.html" if slug else "page.html"
+
+
+def extract_requested_page_paths(question: str) -> list[str]:
+    """Extract explicitly requested page names in prompt order."""
+    if not isinstance(question, str) or not question.strip():
+        return []
+
+    aliases: list[tuple[str, str]] = [
+        ("frequently asked questions", "faq"),
+        ("home", "home"),
+        ("products", "products"),
+        ("product", "products"),
+        ("about", "about"),
+        ("faq", "faq"),
+        ("faqs", "faq"),
+        ("contact", "contact"),
+        ("services", "services"),
+        ("gallery", "gallery"),
+        ("menu", "menu"),
+        ("events", "events"),
+    ]
+
+    lowered = question.lower()
+    hits: list[tuple[int, str]] = []
+    for token, canonical in aliases:
+        pattern = re.compile(rf"\b{re.escape(token)}\b", re.IGNORECASE)
+        for match in pattern.finditer(lowered):
+            hits.append((match.start(), canonical))
+
+    if len(hits) < 2:
+        return []
+
+    hits.sort(key=lambda item: item[0])
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for _, canonical in hits:
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        ordered.append(canonical)
+
+    if len(ordered) < 2:
+        return []
+
+    normalized = [normalize_page_path(label) for label in ordered]
+    html_only = [path for path in normalized if path.endswith(".html")]
+    if len(html_only) < 2:
+        return []
+    return html_only
 
 
 # ─── File content generation ───────────────────────────────────────────────────
