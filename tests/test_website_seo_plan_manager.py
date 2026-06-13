@@ -4,7 +4,10 @@ from core.brain.website_seo_plan_manager import WebsiteSeoPlanManager
 
 
 def test_clean_text_normalizes_whitespace_and_non_strings() -> None:
-    assert WebsiteSeoPlanManager.clean_text("  Harry's   Hot   Dogs  ") == "Harry's Hot Dogs"
+    assert (
+        WebsiteSeoPlanManager.clean_text("  Harry's   Hot   Dogs  ")
+        == "Harry's Hot Dogs"
+    )
     assert WebsiteSeoPlanManager.clean_text(None) == ""
 
 

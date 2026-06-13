@@ -71,7 +71,7 @@ class WebsiteSeoPlanManager:
         """Extract or infer a safe meta description."""
         match = cls._META_RE.search(prompt)
         if match:
-            description = cls.clean_text(match.group(1)).strip('"\'').strip(" ,.;:-")
+            description = cls.clean_text(match.group(1)).strip("\"'").strip(" ,.;:-")
             return cls.truncate(description, cls.MAX_DESCRIPTION_LENGTH)
 
         clean_title = cls.clean_text(title) or cls.extract_title(prompt)
@@ -126,7 +126,9 @@ class WebsiteSeoPlanManager:
         return keywords[:10]
 
     @classmethod
-    def build_plan(cls, prompt: str, business_name: str | None = None) -> dict[str, object]:
+    def build_plan(
+        cls, prompt: str, business_name: str | None = None
+    ) -> dict[str, object]:
         """Build a JSON-safe SEO plan."""
         title = cls.extract_title(prompt, business_name)
         description = cls.extract_meta_description(prompt, title)
