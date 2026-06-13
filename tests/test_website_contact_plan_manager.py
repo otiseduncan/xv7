@@ -42,15 +42,18 @@ def test_contact_hints_ignore_unrelated_words() -> None:
 
 
 def test_build_mailto_and_tel_links() -> None:
-    assert WebsiteContactPlanManager.build_mailto(" hello@example.com ") == "mailto:hello@example.com"
+    assert (
+        WebsiteContactPlanManager.build_mailto(" hello@example.com ")
+        == "mailto:hello@example.com"
+    )
     assert WebsiteContactPlanManager.build_tel("(478) 555-1212") == "tel:+14785551212"
     assert WebsiteContactPlanManager.build_tel("555") == "#contact"
 
 
 def test_infer_contact_methods_defaults_when_no_contact_details_exist() -> None:
-    assert WebsiteContactPlanManager.infer_contact_methods("Build a clean website.") == [
-        "contact"
-    ]
+    assert WebsiteContactPlanManager.infer_contact_methods(
+        "Build a clean website."
+    ) == ["contact"]
 
 
 def test_infer_contact_methods_preserves_stable_order() -> None:
