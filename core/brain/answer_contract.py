@@ -4266,8 +4266,8 @@ class AnswerContract:
             business_name,
             fallback=self._slugify_artifact_name(filename),
         )
-        sandbox_relative_path = None
-        sandbox_target_path = None
+        sandbox_relative_path: str | None = None
+        sandbox_target_path: str | None = None
         applied_flag = False
         if deliver_to_sandbox:
             sandbox_relative_path = (
