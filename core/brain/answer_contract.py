@@ -43,6 +43,7 @@ from core.brain.website_project_name_manager import WebsiteProjectNameManager
 from core.brain.website_section_plan_manager import WebsiteSectionPlanManager
 from core.brain.website_seo_plan_manager import WebsiteSeoPlanManager
 from core.brain.website_style_plan_manager import WebsiteStylePlanManager
+from core.brain.visible_response_plan_manager import VisibleResponsePlanManager
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
     resolve_model_for_runtime_role,
@@ -3316,6 +3317,20 @@ class AnswerContract:
                 content_block_plan=_build_content_block_plan,
                 bundle_plan=_build_bundle_plan,
             )
+            _created_file_paths = [
+                str(file_item.get("path") or "").strip()
+                for file_item in _files
+                if isinstance(file_item, dict)
+                and str(file_item.get("path") or "").strip()
+            ]
+            _visible_response_plan = VisibleResponsePlanManager.build_plan(
+                action_name="created",
+                artifact_type="website bundle",
+                project_name=_biz,
+                created_files=_created_file_paths,
+                warnings=_build_plan.get("warnings", []),
+                next_actions=["Review and preview the generated files inline."],
+            )
             _bundle_artifact: dict[str, Any] = {
                 "artifact_type": "site_bundle",
                 "artifact_id": _bundle_id,
@@ -3339,6 +3354,7 @@ class AnswerContract:
                 "seo_plan": _seo_plan,
                 "bundle_plan": _bundle_plan_raw,
                 "build_plan": _build_plan,
+                "visible_response_plan": _visible_response_plan,
                 "source_prompt": question.strip(),
                 "site_bundle": {"files": _files},
             }
@@ -3402,6 +3418,7 @@ class AnswerContract:
                     "seo_plan": _seo_plan,
                     "bundle_plan": _bundle_plan_raw,
                     "build_plan": _build_plan,
+                    "visible_response_plan": _visible_response_plan,
                     "file_count": len(_files),
                     "delivery_mode": "sandbox_write"
                     if deliver_to_sandbox
