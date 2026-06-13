@@ -33,7 +33,9 @@ _LEADING_REQUEST_RE = re.compile(
     r"(?:for|called|named|about)?\s*",
     re.IGNORECASE,
 )
-_GENERIC_SITE_WORDS_RE = re.compile(r"\b(?:website|site|web\s+app|landing\s+page)\b", re.IGNORECASE)
+_GENERIC_SITE_WORDS_RE = re.compile(
+    r"\b(?:website|site|web\s+app|landing\s+page)\b", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,9 @@ class WebsiteProjectNameManager:
     """Pure helpers for website artifact project names and sandbox folder names."""
 
     @staticmethod
-    def normalize_display_name(value: str | None, fallback: str = DEFAULT_PROJECT_DISPLAY_NAME) -> str:
+    def normalize_display_name(
+        value: str | None, fallback: str = DEFAULT_PROJECT_DISPLAY_NAME
+    ) -> str:
         raw = str(value or "").replace("\u2019", "'").strip()
         raw = _TRAILING_DESCRIPTOR_RE.sub("", raw)
         raw = _LEADING_REQUEST_RE.sub("", raw)
@@ -67,23 +71,31 @@ class WebsiteProjectNameManager:
         return raw
 
     @staticmethod
-    def extract_project_name(prompt: str | None, fallback: str = DEFAULT_PROJECT_DISPLAY_NAME) -> str:
+    def extract_project_name(
+        prompt: str | None, fallback: str = DEFAULT_PROJECT_DISPLAY_NAME
+    ) -> str:
         text = str(prompt or "").strip()
         if not text:
             return fallback
 
         quoted_match = _QUOTED_NAME_RE.search(text)
         if quoted_match:
-            return WebsiteProjectNameManager.normalize_display_name(quoted_match.group(1), fallback)
+            return WebsiteProjectNameManager.normalize_display_name(
+                quoted_match.group(1), fallback
+            )
 
         named_match = _NAMED_PROJECT_RE.search(text)
         if named_match:
-            return WebsiteProjectNameManager.normalize_display_name(named_match.group(1), fallback)
+            return WebsiteProjectNameManager.normalize_display_name(
+                named_match.group(1), fallback
+            )
 
         return WebsiteProjectNameManager.normalize_display_name(text, fallback)
 
     @staticmethod
-    def slugify_project_name(value: str | None, fallback: str = DEFAULT_PROJECT_SLUG) -> str:
+    def slugify_project_name(
+        value: str | None, fallback: str = DEFAULT_PROJECT_SLUG
+    ) -> str:
         display_name = WebsiteProjectNameManager.normalize_display_name(
             value,
             fallback=DEFAULT_PROJECT_DISPLAY_NAME,
@@ -99,18 +111,28 @@ class WebsiteProjectNameManager:
         return slug
 
     @staticmethod
-    def safe_folder_name(value: str | None, fallback: str = DEFAULT_PROJECT_SLUG) -> str:
+    def safe_folder_name(
+        value: str | None, fallback: str = DEFAULT_PROJECT_SLUG
+    ) -> str:
         return WebsiteProjectNameManager.slugify_project_name(value, fallback=fallback)
 
     @staticmethod
-    def build_project_name(prompt: str | None, fallback: str = DEFAULT_PROJECT_DISPLAY_NAME) -> WebsiteProjectName:
-        display_name = WebsiteProjectNameManager.extract_project_name(prompt, fallback=fallback)
+    def build_project_name(
+        prompt: str | None, fallback: str = DEFAULT_PROJECT_DISPLAY_NAME
+    ) -> WebsiteProjectName:
+        display_name = WebsiteProjectNameManager.extract_project_name(
+            prompt, fallback=fallback
+        )
         slug = WebsiteProjectNameManager.slugify_project_name(display_name)
-        return WebsiteProjectName(display_name=display_name, slug=slug, folder_name=slug)
+        return WebsiteProjectName(
+            display_name=display_name, slug=slug, folder_name=slug
+        )
 
     @staticmethod
     def build_project_name_payload(
         prompt: str | None,
         fallback: str = DEFAULT_PROJECT_DISPLAY_NAME,
     ) -> dict[str, str]:
-        return WebsiteProjectNameManager.build_project_name(prompt, fallback=fallback).as_dict()
+        return WebsiteProjectNameManager.build_project_name(
+            prompt, fallback=fallback
+        ).as_dict()

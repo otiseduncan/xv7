@@ -4,24 +4,33 @@ from core.brain.website_project_name_manager import WebsiteProjectNameManager
 def test_extract_project_name_from_for_prompt() -> None:
     prompt = "Build a website for Harry's Hot Dog Cart with a menu and red buttons."
 
-    assert WebsiteProjectNameManager.extract_project_name(prompt) == "Harry's Hot Dog Cart"
+    assert (
+        WebsiteProjectNameManager.extract_project_name(prompt) == "Harry's Hot Dog Cart"
+    )
 
 
 def test_extract_project_name_prefers_quoted_name() -> None:
     prompt = 'Create a site called "The Ville Nutrition" with green and white colors.'
 
-    assert WebsiteProjectNameManager.extract_project_name(prompt) == "The Ville Nutrition"
+    assert (
+        WebsiteProjectNameManager.extract_project_name(prompt) == "The Ville Nutrition"
+    )
 
 
 def test_extract_project_name_from_named_prompt() -> None:
     prompt = "Generate a website named Smoky Joe's Vape and CBD featuring a gallery."
 
-    assert WebsiteProjectNameManager.extract_project_name(prompt) == "Smoky Joe's Vape and CBD"
+    assert (
+        WebsiteProjectNameManager.extract_project_name(prompt)
+        == "Smoky Joe's Vape and CBD"
+    )
 
 
 def test_normalize_display_name_removes_generic_request_prefix() -> None:
     assert (
-        WebsiteProjectNameManager.normalize_display_name("Build me a website for Apex ADAS.")
+        WebsiteProjectNameManager.normalize_display_name(
+            "Build me a website for Apex ADAS."
+        )
         == "Apex ADAS"
     )
 
@@ -32,11 +41,16 @@ def test_normalize_display_name_uses_fallback_for_empty_or_generic() -> None:
 
 
 def test_slugify_project_name_removes_apostrophes_and_symbols() -> None:
-    assert WebsiteProjectNameManager.slugify_project_name("Harry's Hot Dog Cart!") == "harrys-hot-dog-cart"
+    assert (
+        WebsiteProjectNameManager.slugify_project_name("Harry's Hot Dog Cart!")
+        == "harrys-hot-dog-cart"
+    )
 
 
 def test_slugify_project_name_handles_curly_apostrophes() -> None:
-    assert WebsiteProjectNameManager.slugify_project_name("Ubi’s RC Lab") == "ubis-rc-lab"
+    assert (
+        WebsiteProjectNameManager.slugify_project_name("Ubi’s RC Lab") == "ubis-rc-lab"
+    )
 
 
 def test_safe_folder_name_avoids_reserved_windows_names() -> None:
