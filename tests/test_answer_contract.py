@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 
+from core.brain import site_bundle as sb
 from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer
@@ -875,16 +876,71 @@ def test_site_bundle_intent_prioritizes_artifact_over_build_guard() -> None:
     assert contract._prioritize_artifact_over_build_guard(normalized) is True
 
 
-def test_repo_mutation_build_phrases_do_not_bypass_build_guard() -> None:
+def test_sandbox_build_phrases_bypass_build_guard_but_repo_mutation_does_not() -> None:
     contract = AnswerContract()
 
-    guard_cases = (
-        "build me a website for another business",
-        "create a website in the repo and commit it",
+    sandbox_case = contract._normalize("build me a website for another business")
+    assert contract._prioritize_artifact_over_build_guard(sandbox_case) is True
+    assert contract._is_sandbox_build_request(sandbox_case) is True
+
+    protected_case = contract._normalize("create a website in the repo and commit it")
+    assert contract._prioritize_artifact_over_build_guard(protected_case) is False
+
+
+def test_site_bundle_requested_pages_force_index_and_preserve_common_pages() -> None:
+    prompt = (
+        "Create a multi-page website for Riverbend Kayak & Paddle Co. "
+        "Include Menu, Specials, Catering, Locations, About, and Contact."
     )
-    for raw in guard_cases:
-        normalized = contract._normalize(raw)
-        assert contract._prioritize_artifact_over_build_guard(normalized) is False
+
+    pages = sb.default_pages_for_business("Riverbend Kayak & Paddle Co", prompt)
+
+    assert pages[:7] == [
+        "index.html",
+        "menu.html",
+        "specials.html",
+        "catering.html",
+        "locations.html",
+        "about.html",
+        "contact.html",
+    ]
+    assert pages[-2:] == ["assets/site.css", "assets/site.js"]
+
+
+def test_site_bundle_uses_relative_asset_paths() -> None:
+    pages = ["index.html", "menu.html", "assets/site.css", "assets/site.js"]
+
+    files = sb.build_bundle_files(
+        business_name="Riverbend Kayak & Paddle Co",
+        slug="riverbend-kayak-paddle-co",
+        pages=pages,
+        style_hints={"colors": [], "styles": []},
+        question="Generate a website preview.",
+    )
+    index_html = next(item["content"] for item in files if item["path"] == "index.html")
+
+    assert 'href="assets/site.css"' in index_html
+    assert 'src="assets/site.js"' in index_html
+    assert 'href="/assets/site.css"' not in index_html
+    assert 'src="/assets/site.js"' not in index_html
+
+
+def test_sandbox_target_resolution_uses_safe_path_containment(tmp_path) -> None:
+    root = tmp_path / "sandbox"
+
+    target, error = AnswerContract._resolve_safe_sandbox_target(
+        root=root,
+        target_path="demo/index.html",
+    )
+    assert error is None
+    assert target == (root / "demo/index.html").resolve()
+
+    escaped, error = AnswerContract._resolve_safe_sandbox_target(
+        root=root,
+        target_path="../sandbox-evil/index.html",
+    )
+    assert escaped is None
+    assert error == "target path is unsafe"
 
 
 def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
@@ -2640,6 +2696,96 @@ def test_site_bundle_generation_returns_bundle_payload(monkeypatch, tmp_path) ->
     assert "contact.html" in paths
     assert any(p.endswith(".css") for p in paths)
     assert not response.get("code_artifact")
+
+
+def test_simple_website_prompt_returns_renderable_code_artifact_payload() -> None:
+    contract = AnswerContract()
+    prompt = (
+        "Build a website for Harry's Hot Dog Cart. "
+        "Use red, yellow, white, and black. "
+        "Make it fun and professional."
+    )
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            prompt,
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    artifact = response.get("code_artifact")
+    assert isinstance(artifact, dict) and artifact, response
+    assert artifact.get("type") == "code_artifact"
+    assert artifact.get("filename") == "index.html"
+    assert artifact.get("language") == "html"
+    assert artifact.get("previewable") is True
+    content = str(artifact.get("content") or "")
+    assert "<!doctype html>" in content.lower()
+    assert "harry" in content.lower()
+
+    visible_text = str(response.get("visible_text") or "").lower()
+    assert "site-bundle-draft" not in visible_text
+    assert "generate a patch for this site" not in visible_text
+    assert response.get("site_bundle", {}) == {}
+
+
+def test_site_bundle_generation_preserves_requested_products_and_faq_pages(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    contract = AnswerContract()
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            (
+                "Build a multi-page website for Smoky Joe's Vape and CBD. "
+                "Include Home, Products, About, FAQ, and Contact pages. "
+                "Use a dark premium design with green accents. "
+                "Make it look like a real local retail business."
+            ),
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    site_bundle_data = response.get("site_bundle")
+    assert isinstance(site_bundle_data, dict), "expected site_bundle payload"
+    assert site_bundle_data.get("artifact_type") == "site_bundle"
+    assert site_bundle_data.get("render_mode") == "code_editor_preview"
+    assert site_bundle_data.get("active_file") == "index.html"
+    assert site_bundle_data.get("preview_entrypoint") == "index.html"
+
+    files = site_bundle_data.get("files")
+    assert isinstance(files, list) and files, "expected top-level files list"
+    file_paths = [str(item.get("path") or "") for item in files if isinstance(item, dict)]
+    assert "index.html" in file_paths
+    assert "products.html" in file_paths
+    assert "about.html" in file_paths
+    assert "faq.html" in file_paths
+    assert "contact.html" in file_paths
+    assert "services.html" not in file_paths
+    assert "gallery.html" not in file_paths
+
+    route_manifest = site_bundle_data.get("route_manifest")
+    assert isinstance(route_manifest, list) and route_manifest
+    route_paths = [str(item.get("path") or "") for item in route_manifest if isinstance(item, dict)]
+    assert "products.html" in route_paths
+    assert "faq.html" in route_paths
+    assert "services.html" not in route_paths
+    assert "gallery.html" not in route_paths
+
+    code_artifacts = response.get("code_artifacts")
+    assert isinstance(code_artifacts, list) and code_artifacts
+    artifact_files = [
+        str(item.get("filename") or "")
+        for item in code_artifacts
+        if isinstance(item, dict)
+    ]
+    assert "index.html" in artifact_files
+    assert "products.html" in artifact_files
+    assert "faq.html" in artifact_files
 
 
 def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:

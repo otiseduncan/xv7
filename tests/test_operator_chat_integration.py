@@ -972,7 +972,7 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    assert "build task" in answer
+    assert "protected location" in answer
     assert "operator mode" in answer
     assert "no files were changed" in answer
     assert "no tests were run" in answer
@@ -1123,7 +1123,7 @@ def test_failed_apply_patch_follow_up_typos_and_shortcuts_still_block_fake_compl
     # message, but no commit or push occurs either way.
     safe_refusals = (
         "not verified as successful",
-        "build task",
+        "protected location",
         "implementation/repo mutation task",
         "do not have a pending commit proposal",
     )

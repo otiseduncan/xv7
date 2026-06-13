@@ -62,6 +62,18 @@ _FOOD_TERMS = (
 
 def default_pages_for_business(business_name: str, question: str) -> list[str]:
     """Return the default file list for the detected business category."""
+    requested_pages = extract_requested_page_paths(question)
+    if requested_pages:
+        pages = [
+            "index.html",
+            *[page for page in requested_pages if page != "index.html"],
+        ]
+        return [
+            *pages,
+            "assets/site.css",
+            "assets/site.js",
+        ]
+
     q = question.lower()
     b = business_name.lower()
     if any(w in q or w in b for w in _FOOD_TERMS):
@@ -91,11 +103,24 @@ _NAV_LABELS: dict[str, str] = {
     "index": "Home",
     "home": "Home",
     "about": "About",
+    "products": "Products",
+    "faq": "FAQ",
     "menu": "Menu",
     "events": "Events",
     "contact": "Contact",
     "services": "Services",
     "gallery": "Gallery",
+    "specials": "Specials",
+    "catering": "Catering",
+    "locations": "Locations",
+    "pricing": "Pricing",
+    "reviews": "Reviews",
+    "portfolio": "Portfolio",
+    "booking": "Booking",
+    "aftercare": "Aftercare",
+    "rentals": "Rentals",
+    "safety": "Safety",
+    "guided-tours": "Guided Tours",
 }
 
 
@@ -127,6 +152,12 @@ def normalize_page_path(label: str) -> str:
         "about us": "about.html",
         "about me": "about.html",
         "our story": "about.html",
+        "products": "products.html",
+        "our products": "products.html",
+        "product": "products.html",
+        "faq": "faq.html",
+        "faqs": "faq.html",
+        "frequently asked questions": "faq.html",
         "menu": "menu.html",
         "food menu": "menu.html",
         "our menu": "menu.html",
@@ -139,12 +170,97 @@ def normalize_page_path(label: str) -> str:
         "gallery": "gallery.html",
         "photo gallery": "gallery.html",
         "photos": "gallery.html",
+        "specials": "specials.html",
+        "deals": "specials.html",
+        "offers": "specials.html",
+        "catering": "catering.html",
+        "locations": "locations.html",
+        "location": "locations.html",
+        "pricing": "pricing.html",
+        "prices": "pricing.html",
+        "reviews": "reviews.html",
+        "testimonials": "reviews.html",
+        "portfolio": "portfolio.html",
+        "booking": "booking.html",
+        "book": "booking.html",
+        "aftercare": "aftercare.html",
+        "rentals": "rentals.html",
+        "safety": "safety.html",
+        "guided tours": "guided-tours.html",
+        "tours": "guided-tours.html",
     }
     low = label.strip().lower()
     if low in _ov:
         return _ov[low]
     slug = re.sub(r"[^a-z0-9]+", "-", low).strip("-")
     return f"{slug}.html" if slug else "page.html"
+
+
+def extract_requested_page_paths(question: str) -> list[str]:
+    """Extract explicitly requested page names in prompt order."""
+    if not isinstance(question, str) or not question.strip():
+        return []
+
+    aliases: list[tuple[str, str]] = [
+        ("frequently asked questions", "faq"),
+        ("home", "home"),
+        ("products", "products"),
+        ("product", "products"),
+        ("about", "about"),
+        ("faq", "faq"),
+        ("faqs", "faq"),
+        ("contact", "contact"),
+        ("services", "services"),
+        ("gallery", "gallery"),
+        ("menu", "menu"),
+        ("events", "events"),
+        ("specials", "specials"),
+        ("deals", "specials"),
+        ("offers", "specials"),
+        ("catering", "catering"),
+        ("locations", "locations"),
+        ("location", "locations"),
+        ("pricing", "pricing"),
+        ("prices", "pricing"),
+        ("reviews", "reviews"),
+        ("testimonials", "reviews"),
+        ("portfolio", "portfolio"),
+        ("booking", "booking"),
+        ("book", "booking"),
+        ("aftercare", "aftercare"),
+        ("rentals", "rentals"),
+        ("safety", "safety"),
+        ("guided tours", "guided tours"),
+        ("tours", "guided tours"),
+    ]
+
+    lowered = question.lower()
+    hits: list[tuple[int, str]] = []
+    for token, canonical in aliases:
+        pattern = re.compile(rf"\b{re.escape(token)}\b", re.IGNORECASE)
+        for match in pattern.finditer(lowered):
+            hits.append((match.start(), canonical))
+
+    if len(hits) < 2:
+        return []
+
+    hits.sort(key=lambda item: item[0])
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for _, canonical in hits:
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        ordered.append(canonical)
+
+    if len(ordered) < 2:
+        return []
+
+    normalized = [normalize_page_path(label) for label in ordered]
+    html_only = [path for path in normalized if path.endswith(".html")]
+    if len(html_only) < 2:
+        return []
+    return html_only
 
 
 # ─── File content generation ───────────────────────────────────────────────────
@@ -180,8 +296,8 @@ def build_bundle_files(
     nav_html = build_nav_html(pages)
     css_path = next((p for p in pages if p.endswith(".css")), None)
     js_path = next((p for p in pages if p.endswith(".js")), None)
-    link_tag = f'<link rel="stylesheet" href="/{css_path}">' if css_path else ""
-    script_tag = f'<script src="/{js_path}" defer></script>' if js_path else ""
+    link_tag = f'<link rel="stylesheet" href="{css_path}">' if css_path else ""
+    script_tag = f'<script src="{js_path}" defer></script>' if js_path else ""
 
     def _page(path: str) -> str:
         lbl = page_label(path)

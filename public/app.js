@@ -1102,12 +1102,31 @@ class Xv7UI {
         : (responseMetadata.site_bundle && typeof responseMetadata.site_bundle === 'object' ? responseMetadata.site_bundle : null);
       if (siteBundlePayload && siteBundlePayload.artifact_type === 'site_bundle') {
         const bundleText = typeof response.visible_text === 'string' ? response.visible_text : 'Site bundle generated.';
-        const bundleArticle = this.appendMessageCard('assistant', bundleText, null, {}, this.nowIso());
+        const bundleFiles = this.collectSiteBundleFiles(siteBundlePayload);
+        const bundleCodeArtifacts = bundleFiles
+          .filter((file) => file && typeof file === 'object')
+          .map((file) => {
+            const path = String(file.path || '');
+            const language = String(file.language || this.inferLanguageFromFilename(path));
+            return {
+              filename: path,
+              language,
+              content: String(file.content || ''),
+              previewable: path.endsWith('.html'),
+              applied: false,
+            };
+          })
+          .filter((artifact) => artifact.filename && artifact.content);
+        const bundleMeta = {
+          site_bundle: siteBundlePayload,
+          code_artifacts: bundleCodeArtifacts,
+        };
+        const bundleArticle = this.appendMessageCard('assistant', bundleText, null, bundleMeta, this.nowIso());
         if (bundleArticle) {
           try {
             this.appendSiteBundleCard(bundleArticle, siteBundlePayload);
             if (typeof siteBundlePayload === 'object') {
-              this.latestAssistantMeta = { site_bundle: siteBundlePayload };
+              this.latestAssistantMeta = bundleMeta;
             }
           } catch (bundleError) {
             this.appendRenderErrorNotice(
@@ -1530,61 +1549,66 @@ class Xv7UI {
     article.append(notice);
   }
 
-    appendSiteBundleCard(article, bundlePayload) {
-      const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
-      const title = String(bundle.title || 'Site Bundle');
-      const slug = String(bundle.slug || '');
-      const entry = String(bundle.entry || 'index.html');
-      const filesRaw = (bundle.site_bundle && Array.isArray(bundle.site_bundle.files))
-        ? bundle.site_bundle.files
-        : [];
-      const htmlPages = filesRaw.filter((f) => f && String(f.path || '').endsWith('.html'));
-      const allFiles = filesRaw;
+  collectSiteBundleFiles(bundlePayload) {
+    const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
+    if (Array.isArray(bundle.files)) return bundle.files;
+    if (bundle.site_bundle && Array.isArray(bundle.site_bundle.files)) return bundle.site_bundle.files;
+    return [];
+  }
 
-      const card = document.createElement('section');
-      card.className = 'site-bundle-card';
-      card.dataset.slug = slug;
+  appendSiteBundleCard(article, bundlePayload) {
+    const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
+    const title = String(bundle.title || 'Site Bundle');
+    const slug = String(bundle.slug || '');
+    const entry = String(bundle.entry || 'index.html');
+    const activeFile = String(bundle.active_file || entry || 'index.html');
+    const previewEntrypoint = String(bundle.preview_entrypoint || entry || 'index.html');
+    const allFiles = this.collectSiteBundleFiles(bundle);
 
-      const header = document.createElement('div');
-      header.className = 'site-bundle-header';
+    const card = document.createElement('section');
+    card.className = 'site-bundle-card';
+    card.dataset.slug = slug;
 
-      const titleEl = document.createElement('p');
-      titleEl.className = 'site-bundle-title';
-      titleEl.textContent = title;
+    const header = document.createElement('div');
+    header.className = 'site-bundle-header';
 
-      const label = document.createElement('span');
-      label.className = 'site-bundle-label';
-      label.textContent = 'Site bundle artifact';
+    const titleEl = document.createElement('p');
+    titleEl.className = 'site-bundle-title';
+    titleEl.textContent = title;
 
-      const meta = document.createElement('p');
-      meta.className = 'site-bundle-meta';
-      meta.textContent = `${allFiles.length} file${allFiles.length !== 1 ? 's' : ''} · entry: ${entry} · slug: ${slug || '(none)'}`;
+    const label = document.createElement('span');
+    label.className = 'site-bundle-label';
+    label.textContent = 'Site bundle artifact';
 
-      header.append(titleEl, label, meta);
+    const meta = document.createElement('p');
+    meta.className = 'site-bundle-meta';
+    meta.textContent = `${allFiles.length} file${allFiles.length !== 1 ? 's' : ''} · entry: ${entry} · active: ${activeFile} · preview: ${previewEntrypoint} · slug: ${slug || '(none)'}`;
 
-      const fileList = document.createElement('ul');
-      fileList.className = 'site-bundle-file-list';
-      allFiles.forEach((f) => {
-        if (!f || typeof f !== 'object') return;
-        const path = String(f.path || '');
-        const lang = String(f.language || '');
-        const item = document.createElement('li');
-        item.className = 'site-bundle-file-item';
-        item.textContent = path + (lang ? ` [${lang}]` : '');
-        fileList.append(item);
-      });
+    header.append(titleEl, label, meta);
 
-      const notice = document.createElement('p');
-      notice.className = 'site-bundle-notice';
-      notice.textContent = `This artifact contains ${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}. Use "generate a patch for this site" to prepare them for writing.`;
+    const fileList = document.createElement('ul');
+    fileList.className = 'site-bundle-file-list';
+    allFiles.forEach((f) => {
+      if (!f || typeof f !== 'object') return;
+      const path = String(f.path || '');
+      const lang = String(f.language || '');
+      const item = document.createElement('li');
+      item.className = 'site-bundle-file-item';
+      item.textContent = path + (lang ? ` [${lang}]` : '');
+      fileList.append(item);
+    });
 
-      card.append(header, fileList, notice);
-      article.append(card);
+    const notice = document.createElement('p');
+    notice.className = 'site-bundle-notice';
+    notice.textContent = `This artifact contains ${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}. Use "generate a patch for this site" to prepare them for writing.`;
 
-      if (typeof article.scrollIntoView === 'function') {
-        article.scrollIntoView({ block: 'start', inline: 'nearest' });
-      }
+    card.append(header, fileList, notice);
+    article.append(card);
+
+    if (typeof article.scrollIntoView === 'function') {
+      article.scrollIntoView({ block: 'start', inline: 'nearest' });
     }
+  }
 
   appendCodeArtifacts(article, messageMetadata) {
     const artifacts = this.collectCodeArtifacts(messageMetadata);
