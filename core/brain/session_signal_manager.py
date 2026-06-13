@@ -19,10 +19,12 @@ class SessionSignalManager:
             return None
 
         for fact in record.facts:
+            if "otis duncan" in fact.statement.lower():
+                return "Otis Duncan"
+
+        for fact in record.facts:
             text = fact.statement.strip()
             lowered = text.lower()
-            if "otis duncan" in lowered:
-                return "Otis Duncan"
             if lowered.startswith("the user/operator is "):
                 value = text.split("is", 1)[-1].strip().strip(".")
                 if value:
@@ -46,22 +48,22 @@ class SessionSignalManager:
     def normalize_reminder_request(question: str) -> str:
         text = re.sub(r"\s+", " ", question.strip())
         text = re.sub(
-            r"^(please\s+)?(set|create|add)\s+(me\s+)?(a\s+)?reminder\s+(for|to)\s+",
+            r"^(please\s+)?(set|create|add)\s+(me\s+)?(a\s+)?reminder\s+(for|to)\b",
             "",
             text,
             flags=re.IGNORECASE,
         )
         text = re.sub(
-            r"^(please\s+)?remind me\s+(to\s+)?",
+            r"^(please\s+)?remind me(\s+to)?\b",
             "",
             text,
             flags=re.IGNORECASE,
         )
+        text = re.sub(r"(?i)\ba\.?m\.??", "AM", text)
+        text = re.sub(r"(?i)\bp\.?m\.??", "PM", text)
         text = text.strip(" .")
         if not text:
             return "your requested reminder details"
-        text = re.sub(r"(?i)\ba\.m\.", "AM", text)
-        text = re.sub(r"(?i)\bp\.m\.", "PM", text)
         text = re.sub(
             r"\bat\s+(\d{1,2}:\d{2})\s*(AM|PM)\s+to\s+",
             r"at \1 \2 — ",
