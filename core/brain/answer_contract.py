@@ -3,10 +3,7 @@ from __future__ import annotations
 import os
 import html
 import re
-import difflib
-import hashlib
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -608,11 +605,11 @@ class AnswerContract:
 
     @staticmethod
     def _content_sha256(content: str) -> str:
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return PatchProposalManager.content_sha256(content)
 
     @staticmethod
     def _utc_now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return PatchProposalManager.utc_now_iso()
 
     @classmethod
     def _resolve_safe_patch_target(
@@ -795,28 +792,12 @@ class AnswerContract:
         targeted_validation: dict[str, Any] | None = None,
         preview_path: str | None = None,
     ) -> dict[str, Any]:
-        content = str(proposal.get("content") or "")
-        updated = {
-            **proposal,
-            "applied": bool(proposal.get("applied", False)),
-            "applied_at": str(proposal.get("applied_at") or cls._utc_now_iso()),
-            "content_length": len(content),
-            "content_sha256": cls._content_sha256(content) if content else "",
-            "source_artifact_id": str(proposal.get("source_artifact_id") or ""),
-            "validation_status": str(
-                (proposal.get("validation") or {}).get("status") or "failed"
-            ),
-            "tests_run": bool(proposal.get("tests_run", False)),
-            "commit_created": bool(proposal.get("commit_created", False)),
-            "push_performed": bool(proposal.get("push_performed", False)),
-        }
-        if verification is not None:
-            updated["post_apply_verification"] = verification
-        if targeted_validation is not None:
-            updated["targeted_validation"] = targeted_validation
-        if preview_path:
-            updated["preview_path"] = preview_path
-        return updated
+        return PatchProposalManager.applied_patch_with_runtime_fields(
+            proposal=proposal,
+            verification=verification,
+            targeted_validation=targeted_validation,
+            preview_path=preview_path,
+        )
 
     @classmethod
     def _build_unified_diff(
@@ -826,34 +807,17 @@ class AnswerContract:
         before_content: str | None,
         after_content: str,
     ) -> str:
-        before_lines = (
-            [] if before_content is None else before_content.splitlines(keepends=True)
+        return PatchProposalManager.build_unified_diff(
+            target_path=target_path,
+            before_content=before_content,
+            after_content=after_content,
         )
-        after_lines = after_content.splitlines(keepends=True)
-        from_file = "/dev/null" if before_content is None else f"a/{target_path}"
-        to_file = f"b/{target_path}"
-        diff = difflib.unified_diff(
-            before_lines, after_lines, fromfile=from_file, tofile=to_file, n=3
-        )
-        text = "".join(diff).strip()
-        return text or f"--- {from_file}\n+++ {to_file}\n"
 
     @classmethod
     def _extract_patch_proposal_from_metadata(
         cls, metadata: dict[str, Any]
     ) -> dict[str, Any] | None:
-        if not isinstance(metadata, dict):
-            return None
-        proposal = metadata.get("artifact_patch_proposal")
-        if not isinstance(proposal, dict):
-            return None
-        if str(proposal.get("type") or "") != "artifact_patch_proposal":
-            return None
-        target_path = str(proposal.get("target_path") or "").strip()
-        content = proposal.get("content")
-        if not target_path or not isinstance(content, str):
-            return None
-        return proposal
+        return PatchProposalManager.extract_patch_proposal_from_metadata(metadata)
 
     # site_bundle session helpers are delegated to the sb module.
 
@@ -863,29 +827,10 @@ class AnswerContract:
         session_messages: list[Any] | None,
         session_metadata: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        if isinstance(session_messages, list):
-            for message in reversed(session_messages):
-                if not isinstance(message, dict):
-                    continue
-                if str(message.get("role") or "").lower() != "assistant":
-                    continue
-                metadata = message.get("metadata")
-                if not isinstance(metadata, dict):
-                    continue
-                proposal = cls._extract_patch_proposal_from_metadata(metadata)
-                if proposal is None:
-                    continue
-                if proposal.get("applied") is True:
-                    continue
-                return proposal
-
-        if isinstance(session_metadata, dict):
-            payload = session_metadata.get("last_assistant_payload")
-            if isinstance(payload, dict):
-                proposal = cls._extract_patch_proposal_from_metadata(payload)
-                if proposal is not None and proposal.get("applied") is not True:
-                    return proposal
-        return None
+        return PatchProposalManager.latest_pending_patch_proposal(
+            session_messages,
+            session_metadata,
+        )
 
     @classmethod
     def _latest_applied_patch_proposal(
@@ -893,28 +838,10 @@ class AnswerContract:
         session_messages: list[Any] | None,
         session_metadata: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        if isinstance(session_messages, list):
-            for message in reversed(session_messages):
-                if not isinstance(message, dict):
-                    continue
-                if str(message.get("role") or "").lower() != "assistant":
-                    continue
-                metadata = message.get("metadata")
-                if not isinstance(metadata, dict):
-                    continue
-                proposal = cls._extract_patch_proposal_from_metadata(metadata)
-                if proposal is None:
-                    continue
-                if proposal.get("applied") is True:
-                    return proposal
-
-        if isinstance(session_metadata, dict):
-            payload = session_metadata.get("last_assistant_payload")
-            if isinstance(payload, dict):
-                proposal = cls._extract_patch_proposal_from_metadata(payload)
-                if proposal is not None and proposal.get("applied") is True:
-                    return proposal
-        return None
+        return PatchProposalManager.latest_applied_patch_proposal(
+            session_messages,
+            session_metadata,
+        )
 
     @classmethod
     def _extract_commit_proposal_from_metadata(
