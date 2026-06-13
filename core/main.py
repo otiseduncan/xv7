@@ -228,6 +228,8 @@ def build_assistant_payload(
     action_history_refs: list[str] | None = None,
     code_artifact: dict[str, Any] | None = None,
     artifact_patch_proposal: dict[str, Any] | None = None,
+    site_bundle: dict[str, Any] | None = None,
+    site_bundle_patch_proposals: list[dict[str, Any]] | None = None,
     commit_proposal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_memory_receipts: list[str] = []
@@ -250,6 +252,8 @@ def build_assistant_payload(
         "action_history_refs": action_history_refs or [],
         "code_artifact": code_artifact or {},
         "artifact_patch_proposal": artifact_patch_proposal or {},
+        "site_bundle": site_bundle or {},
+        "site_bundle_patch_proposals": site_bundle_patch_proposals or [],
         "commit_proposal": commit_proposal or {},
     }
 
@@ -2641,6 +2645,10 @@ async def add_session_message(
                 artifact_patch_proposal=artifact_response.get(
                     "artifact_patch_proposal"
                 ),
+                site_bundle=artifact_response.get("site_bundle"),
+                site_bundle_patch_proposals=artifact_response.get(
+                    "site_bundle_patch_proposals"
+                ),
                 commit_proposal=artifact_response.get("commit_proposal"),
             )
 
@@ -3493,6 +3501,10 @@ async def add_session_message(
             ],
             code_artifact=artifact_response.get("code_artifact"),
             artifact_patch_proposal=artifact_response.get("artifact_patch_proposal"),
+            site_bundle=artifact_response.get("site_bundle"),
+            site_bundle_patch_proposals=artifact_response.get(
+                "site_bundle_patch_proposals"
+            ),
             commit_proposal=artifact_response.get("commit_proposal"),
         )
 

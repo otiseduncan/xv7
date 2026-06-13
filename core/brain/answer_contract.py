@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import httpx
 
+from core.brain import site_bundle as sb
 from core.brain.schema import BrainLayer, BrainRecord
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
@@ -77,6 +78,7 @@ class AnswerContract:
     )
     ARTIFACT_PATCH_PROPOSAL_PATTERN = re.compile(
         r"\b(generate(?:\s+a)?\s+patch|create\s+a\s+patch\s+from\s+the\s+artifact|turn\s+this\s+into\s+a\s+patch|"
+        r"create\s+patch\s+proposals?|create\s+patch\s+proposal\s+for\s+all\s+files|"
         r"make\s+a\s+patch\s+for\s+this\s+website|prepare\s+this\s+for\s+vs\s*code|save\s+this\s+as\s+a\s+patch|"
         r"show\s+me\s+the\s+diff|where\s+would\s+this\s+file\s+go)\b"
     )
@@ -1687,6 +1689,14 @@ if __name__ == \"__main__\":
         if not isinstance(metadata, dict):
             return None
 
+        # Site bundle takes priority when present.
+        _site_bundle = metadata.get("site_bundle")
+        if (
+            isinstance(_site_bundle, dict)
+            and _site_bundle.get("artifact_type") == "site_bundle"
+        ):
+            return dict(_site_bundle)
+
         artifacts: list[Any] = []
         code_artifacts = metadata.get("code_artifacts")
         if isinstance(code_artifacts, list):
@@ -1873,8 +1883,9 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
-        return cls._has_explicit_artifact_intent(
-            normalized_question
+        return (
+            cls._has_explicit_artifact_intent(normalized_question)
+            or sb.is_site_bundle_request(normalized_question)
         ) and not cls._is_repo_mutation_build_prompt(normalized_question)
 
     @staticmethod
@@ -2121,6 +2132,9 @@ if __name__ == \"__main__\":
         )
 
         if language == "html":
+            target_is_site_bundle = target_path.replace("\\", "/").startswith(
+                "generated-sites/"
+            )
             _add_check(
                 "html_shell",
                 "<!doctype html" in content.lower() or "<html" in content.lower(),
@@ -2128,7 +2142,12 @@ if __name__ == \"__main__\":
             )
             _add_check(
                 "html_inline_css",
-                "<style" in content.lower(),
+                "<style" in content.lower()
+                or (
+                    target_is_site_bundle
+                    and "<link" in content.lower()
+                    and "stylesheet" in content.lower()
+                ),
                 "html artifacts must include inline style content",
             )
 
@@ -2273,9 +2292,9 @@ if __name__ == \"__main__\":
             "failures": failures,
             "verified_at": cls._utc_now_iso(),
             "content_length": len(actual_content) if actual_content else 0,
-            "content_sha256": cls._content_sha256(actual_content)
-            if actual_content
-            else "",
+            "content_sha256": (
+                cls._content_sha256(actual_content) if actual_content else ""
+            ),
         }
         return verification, {
             "actual_content": actual_content,
@@ -2350,6 +2369,8 @@ if __name__ == \"__main__\":
         if not target_path or not isinstance(content, str):
             return None
         return proposal
+
+    # site_bundle session helpers are delegated to the sb module.
 
     @classmethod
     def _latest_pending_patch_proposal(
@@ -2739,9 +2760,9 @@ if __name__ == \"__main__\":
             "excluded_files": excluded_files,
             "status_lines": raw_status_lines,
             "change_lines": change_lines,
-            "diff_stat": diff_stat_proc.stdout.strip()
-            if diff_stat_proc.returncode == 0
-            else "",
+            "diff_stat": (
+                diff_stat_proc.stdout.strip() if diff_stat_proc.returncode == 0 else ""
+            ),
             "proposed_commit_message": proposed_commit_message,
             "visible_text": " ".join(visible_lines),
         }
@@ -4049,9 +4070,9 @@ if __name__ == \"__main__\":
                 first_reachable = endpoint
 
         return {
-            "configured_endpoint": endpoint_candidates[0]
-            if endpoint_candidates
-            else None,
+            "configured_endpoint": (
+                endpoint_candidates[0] if endpoint_candidates else None
+            ),
             "endpoint_candidates": endpoint_candidates,
             "resolved_model_tag": model_tag,
             "reachable_endpoint": first_reachable,
@@ -4076,6 +4097,7 @@ if __name__ == \"__main__\":
             "latest session artifact" if latest_artifact is not None else None
         )
         is_generation = self.is_code_artifact_request(normalized)
+        is_site_bundle_generation = sb.is_site_bundle_request(normalized)
         has_artifact_edit_intent = self._looks_like_artifact_edit(normalized)
         has_explicit_artifact_generation_language = bool(
             self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized)
@@ -4087,6 +4109,7 @@ if __name__ == \"__main__\":
         ):
             # Active-artifact edit prompts may still mention "html"/"css" but should stay in revision flow.
             is_generation = False
+            is_site_bundle_generation = False
         is_patch_proposal_request = self._is_patch_proposal_request(normalized)
         is_patch_apply_request = self._is_patch_apply_request(normalized)
         is_post_apply_verify_request = self._is_post_apply_verify_request(normalized)
@@ -4107,6 +4130,7 @@ if __name__ == \"__main__\":
             and refinement_mode is not None
             and not self.SMS_EXPLICIT_SEND_PATTERN.search(normalized)
             and not is_generation
+            and not is_site_bundle_generation
         )
         is_commit_proposal_request = self._is_commit_proposal_request(normalized)
         is_commit_approval_request = self._is_commit_approval_request(normalized)
@@ -4114,9 +4138,128 @@ if __name__ == \"__main__\":
             is_commit_proposal_request or is_commit_approval_request
         ) and not (
             is_generation
+            or is_site_bundle_generation
             or is_refinement_request
             or self._looks_like_artifact_edit(normalized)
         )
+
+        # ─── Site bundle patch proposal ────────────────────────────────────────────
+        if (
+            is_patch_proposal_request
+            and latest_artifact is not None
+            and latest_artifact.get("artifact_type") == "site_bundle"
+        ):
+            slug = str(latest_artifact.get("slug") or "site-bundle")
+            bundle_files_raw = latest_artifact.get("site_bundle") or {}
+            bundle_files: list[dict[str, str]] = []
+            if isinstance(bundle_files_raw, dict):
+                bundle_files = list(bundle_files_raw.get("files") or [])
+            if not bundle_files:
+                return {
+                    "visible_text": "I do not have any files in the active site bundle to patch.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "site_bundle": latest_artifact,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-proposal",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "proposal_unavailable",
+                        "applied": False,
+                        "requires_confirmation": True,
+                        "failure_reason": "empty_bundle",
+                    },
+                }
+            root = self._workspace_root()
+            bundle_proposals = sb.build_patch_proposals(
+                bundle_files=bundle_files,
+                slug=slug,
+                root=root,
+                validate_fn=self._validate_patch_proposal,
+                diff_fn=self._build_unified_diff,
+            )
+            all_passed = all(
+                p.get("validation", {}).get("status") == "passed"
+                for p in bundle_proposals
+            )
+            return {
+                "visible_text": (
+                    f"I prepared patch proposals for all {len(bundle_proposals)} file(s) in the site bundle. "
+                    'No files were written. Use "apply it" to write them.'
+                ),
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "site_bundle": latest_artifact,
+                "site_bundle_patch_proposals": bundle_proposals,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-proposal",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_patch": "bundle_proposed",
+                    "applied": False,
+                    "requires_confirmation": True,
+                    "slug": slug,
+                    "file_count": len(bundle_proposals),
+                    "all_valid": all_passed,
+                    "source_artifact": source_artifact_label
+                    or "latest session artifact",
+                },
+            }
+
+        # ─── Site bundle apply ──────────────────────────────────────────────────────
+        if is_patch_apply_request:
+            _bundle_proposals_pending = sb.latest_pending_bundle_proposals(
+                session_messages, session_metadata
+            )
+            if _bundle_proposals_pending is not None:
+                root = self._workspace_root()
+                written, errors = sb.apply_proposals(
+                    proposals=_bundle_proposals_pending,
+                    root=root,
+                    resolve_fn=self._resolve_safe_patch_target,
+                )
+                latest_bundle_art = sb.latest_bundle_artifact(
+                    session_messages, session_metadata
+                )
+                slug = str((latest_bundle_art or {}).get("slug") or "site-bundle")
+                entry = str((latest_bundle_art or {}).get("entry") or "index.html")
+                preview_path = f"/generated-sites/{slug}/{entry}"
+                applied_bundle_proposals = [
+                    {**p, "applied": True, "preview_path": preview_path}
+                    for p in _bundle_proposals_pending
+                    if p.get("target_path") in written
+                ]
+                return {
+                    "visible_text": (
+                        f"Applied {len(written)} file(s) for the site bundle under generated-sites/{slug}/. "
+                        + (f"Errors: {'; '.join(errors)}" if errors else "No errors.")
+                        + f" Preview entry page at {preview_path}."
+                    ),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "site_bundle": latest_bundle_art or {},
+                    "site_bundle_patch_proposals": applied_bundle_proposals,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_patch": "bundle_applied",
+                        "applied": True,
+                        "requires_confirmation": True,
+                        "slug": slug,
+                        "files_written": written,
+                        "errors": errors,
+                        "preview_path": preview_path,
+                        "commit_created": False,
+                        "push_performed": False,
+                    },
+                }
 
         if is_patch_proposal_request:
             if latest_artifact is None:
@@ -4276,8 +4419,8 @@ if __name__ == \"__main__\":
 
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-            written = target.read_text(encoding="utf-8")
-            if written != content:
+            written_content = target.read_text(encoding="utf-8")
+            if written_content != content:
                 return {
                     "visible_text": "I attempted to apply the patch, but post-write validation failed because the file content does not match the proposal.",
                     "code_artifact": {},
@@ -4599,6 +4742,7 @@ if __name__ == \"__main__\":
 
         if (
             not is_generation
+            and not is_site_bundle_generation
             and refinement_mode is not None
             and latest_artifact is None
         ):
@@ -4618,8 +4762,218 @@ if __name__ == \"__main__\":
                 },
             }
 
-        if not is_generation and not is_refinement_request:
+        if (
+            not is_generation
+            and not is_refinement_request
+            and not is_site_bundle_generation
+        ):
             return None
+
+        # ─── Site bundle generation ─────────────────────────────────────────────────
+        if is_site_bundle_generation and not is_refinement_request:
+            _biz = self._format_business_name(
+                self._extract_artifact_name(question), "Local Business Website"
+            )
+            _style = self._extract_style_hints(question)
+            _slug = self._safe_slug(_biz, fallback="site-bundle")
+            _pages = sb.default_pages_for_business(_biz, question)
+            _files = sb.build_bundle_files(
+                business_name=_biz,
+                slug=_slug,
+                pages=_pages,
+                style_hints=_style,
+                question=question,
+            )
+            _passed, _failures = sb.validate_bundle(
+                bundle_files=_files,
+                entry="index.html",
+                business_name=_biz,
+                style_hints=_style,
+            )
+            if not _passed:
+                return {
+                    "visible_text": "I could not generate a valid site bundle. "
+                    + "; ".join(_failures),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "site_bundle": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: site-bundle-draft",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_generation": "site_bundle_generation_failed",
+                        "artifact_validation": "failed",
+                        "failure_reason": "; ".join(_failures),
+                    },
+                }
+            _bundle_id = f"{_slug}-bundle"
+            _rev = len(artifact_history) + 1
+            _bundle_artifact: dict[str, Any] = {
+                "artifact_type": "site_bundle",
+                "artifact_id": _bundle_id,
+                "revision_id": f"{_bundle_id}:r{_rev}",
+                "revision_number": _rev,
+                "title": _biz,
+                "slug": _slug,
+                "entry": "index.html",
+                "source_prompt": question.strip(),
+                "site_bundle": {"files": _files},
+            }
+            _html_pages = [p for p in _pages if p.endswith(".html")]
+            return {
+                "visible_text": (
+                    f"Here is a {len(_html_pages)}-page site bundle for {_biz}. "
+                    f'Files: {", ".join(_pages)}. Use "generate a patch for this site" to prepare files for writing.'
+                ),
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "site_bundle": _bundle_artifact,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: site-bundle-draft",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "site_bundle",
+                    "artifact_validation": "passed",
+                    "revision_number": _rev,
+                    "business_name": _biz,
+                    "slug": _slug,
+                    "file_count": len(_files),
+                },
+            }
+
+        if (
+            is_refinement_request
+            and latest_artifact is not None
+            and str(latest_artifact.get("artifact_type") or "") == "site_bundle"
+        ):
+            latest_bundle = latest_artifact.get("site_bundle")
+            latest_files_raw: list[dict[str, Any]] = []
+            if isinstance(latest_bundle, dict):
+                files_candidate = latest_bundle.get("files")
+                if isinstance(files_candidate, list):
+                    for item in files_candidate:
+                        if isinstance(item, dict):
+                            latest_files_raw.append(item)
+            latest_files = [
+                item
+                for item in latest_files_raw
+                if sb.is_safe_bundle_path(str(item.get("path") or ""))
+            ]
+            existing_pages = [
+                str(item.get("path") or "")
+                for item in latest_files
+                if str(item.get("path") or "")
+            ]
+            source_prompt = str(latest_artifact.get("source_prompt") or question)
+            _biz = self._format_business_name(
+                str(
+                    latest_artifact.get("title")
+                    or self._extract_artifact_name(source_prompt)
+                ),
+                "Local Business Website",
+            )
+            _slug = self._safe_slug(
+                str(latest_artifact.get("slug") or _biz), fallback="site-bundle"
+            )
+            _pages = existing_pages or sb.default_pages_for_business(
+                _biz, source_prompt
+            )
+
+            _style = self._extract_style_hints(question)
+            if not _style.get("colors"):
+                css_text = ""
+                for item in latest_files:
+                    if str(item.get("path") or "").endswith(".css"):
+                        css_text = str(item.get("content") or "")
+                        break
+                if css_text:
+                    colors_from_css: list[str] = []
+                    for var_name in ("bg", "accent", "text"):
+                        match = re.search(rf"--{var_name}:\s*([^;]+);", css_text)
+                        if match:
+                            colors_from_css.append(match.group(1).strip())
+                    if colors_from_css:
+                        _style["colors"] = colors_from_css
+
+            typo_style = self._typography_style_request(normalized)
+            if typo_style and typo_style not in _style.get("styles", []):
+                _style.setdefault("styles", []).append(typo_style)
+
+            _files = sb.build_bundle_files(
+                business_name=_biz,
+                slug=_slug,
+                pages=_pages,
+                style_hints=_style,
+                question=question,
+            )
+            _passed, _failures = sb.validate_bundle(
+                bundle_files=_files,
+                entry=str(latest_artifact.get("entry") or "index.html"),
+                business_name=_biz,
+                style_hints=_style,
+            )
+            if not _passed:
+                return {
+                    "visible_text": (
+                        "I could not complete the requested site bundle refinement safely, so I preserved the current bundle unchanged. "
+                        + "; ".join(_failures)
+                    ),
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "site_bundle": latest_artifact,
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: site-bundle-draft",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_generation": "site_bundle_refinement_failed",
+                        "artifact_validation": "failed",
+                        "failure_reason": "; ".join(_failures),
+                    },
+                }
+
+            _bundle_id = str(latest_artifact.get("artifact_id") or f"{_slug}-bundle")
+            _rev = len(artifact_history) + 1
+            revised_bundle_artifact: dict[str, Any] = {
+                **latest_artifact,
+                "artifact_type": "site_bundle",
+                "artifact_id": _bundle_id,
+                "revision_id": f"{_bundle_id}:r{_rev}",
+                "revision_number": _rev,
+                "title": _biz,
+                "slug": _slug,
+                "entry": str(latest_artifact.get("entry") or "index.html"),
+                "source_prompt": source_prompt,
+                "site_bundle": {"files": _files},
+            }
+
+            return {
+                "visible_text": (
+                    "Updated the active site bundle revision and preserved all pages/content. "
+                    'Use "generate a patch for this site" to prepare files for writing.'
+                ),
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "site_bundle": revised_bundle_artifact,
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: site-bundle-draft",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "site_bundle_refinement",
+                    "artifact_validation": "passed",
+                    "revision_number": _rev,
+                    "business_name": _biz,
+                    "slug": _slug,
+                    "file_count": len(_files),
+                },
+            }
 
         next_revision_number = len(artifact_history) + 1
 
@@ -4846,9 +5200,9 @@ if __name__ == \"__main__\":
                         "artifact_generation": "deterministic_prompt_template_fallback",
                         "model_used": model_resolution.model_tag or "unknown",
                         "fallback_reason": f"artifact revision fallback: {fallback_reason}",
-                        "fallback_prevalidation": "passed"
-                        if valid
-                        else f"failed:{reason}",
+                        "fallback_prevalidation": (
+                            "passed" if valid else f"failed:{reason}"
+                        ),
                         "source_artifact": source_artifact_label
                         or "latest session artifact",
                         "source_artifact_key": "latest_session_artifact",
@@ -5051,9 +5405,11 @@ if __name__ == \"__main__\":
                 "previewable": previewable,
                 "applied": False,
                 "content": artifact_content,
-                "artifact_id": latest_artifact.get("artifact_id")
-                if latest_artifact is not None
-                else f"{self._slugify_artifact_name(filename)}-artifact",
+                "artifact_id": (
+                    latest_artifact.get("artifact_id")
+                    if latest_artifact is not None
+                    else f"{self._slugify_artifact_name(filename)}-artifact"
+                ),
                 "revision_id": f"{(latest_artifact.get('artifact_id') if latest_artifact is not None else self._slugify_artifact_name(filename) + '-artifact')}:r{next_revision_number}",
                 "revision_number": next_revision_number,
                 "source_prompt": question.strip(),

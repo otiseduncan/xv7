@@ -505,7 +505,7 @@ def test_local_capability_prompts_are_phase_accurate() -> None:
 def test_code_artifact_generation_uses_local_model_path(monkeypatch) -> None:
     contract = AnswerContract()
     prompt = (
-        "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. "
+        'Generate a small HTML code artifact for a one-page "Flow Flowers" website. '
         "Use soft pink, cream, and gold colors with an elegant script-style heading. "
         "Return it as a code artifact with filename index.html, language html, previewable true, "
         "and do not apply it to the repo."
@@ -552,7 +552,7 @@ def test_code_artifact_generation_uses_local_model_path(monkeypatch) -> None:
 def test_code_artifact_generation_falls_back_when_model_invalid(monkeypatch) -> None:
     contract = AnswerContract()
     prompt = (
-        "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website. "
+        'Generate a small HTML code artifact for a one-page "Rico\'s Mobile Detailing" website. '
         "Return it as a code artifact with filename index.html, language html, previewable true, "
         "and do not apply it to the repo."
     )
@@ -579,7 +579,10 @@ def test_code_artifact_generation_falls_back_when_model_invalid(monkeypatch) -> 
 
     response = asyncio.run(contract.build_code_artifact_response(prompt))
     assert response is not None
-    assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+    assert (
+        response["provenance"]["artifact_generation"]
+        == "deterministic_prompt_template_fallback"
+    )
     assert response["provenance"]["fallback_reason"] == "html_shell_missing"
     assert "Rico's Mobile Detailing" in response["code_artifact"]["content"]
 
@@ -587,7 +590,7 @@ def test_code_artifact_generation_falls_back_when_model_invalid(monkeypatch) -> 
 def test_code_artifact_generation_falls_back_on_timeout(monkeypatch) -> None:
     contract = AnswerContract()
     prompt = (
-        "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. "
+        'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
         "Return it as a code artifact with filename index.html, language html, previewable true, "
         "and do not apply it to the repo."
     )
@@ -614,7 +617,10 @@ def test_code_artifact_generation_falls_back_on_timeout(monkeypatch) -> None:
 
     response = asyncio.run(contract.build_code_artifact_response(prompt))
     assert response is not None
-    assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+    assert (
+        response["provenance"]["artifact_generation"]
+        == "deterministic_prompt_template_fallback"
+    )
     assert "timed out" in response["provenance"]["fallback_reason"].lower()
 
 
@@ -688,7 +694,7 @@ def test_local_model_generation_tries_secondary_endpoint(monkeypatch) -> None:
             return _FakeResponse(
                 {
                     "message": {
-                            "content": "<!doctype html><html><head><style>body{background:black;color:red;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>trustworthy urgent locksmith service</p></body></html>"
+                        "content": "<!doctype html><html><head><style>body{background:black;color:red;} .metal{color:silver;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>trustworthy urgent locksmith service</p></body></html>"
                     }
                 }
             )
@@ -698,7 +704,7 @@ def test_local_model_generation_tries_secondary_endpoint(monkeypatch) -> None:
     content, model, endpoint = asyncio.run(
         contract._generate_artifact_with_local_model(
             question=(
-                "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. "
+                'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
                 "Use black, red, and silver colors, make it trustworthy and urgent."
             ),
             filename="index.html",
@@ -706,7 +712,10 @@ def test_local_model_generation_tries_secondary_endpoint(monkeypatch) -> None:
             previewable=True,
             apply_requested=False,
             business_name="Crimson Turtle Locksmiths",
-            style_hints={"colors": ["black", "red", "silver"], "styles": ["trustworthy", "urgent"]},
+            style_hints={
+                "colors": ["black", "red", "silver"],
+                "styles": ["trustworthy", "urgent"],
+            },
             layout_hints=[],
         )
     )
@@ -792,10 +801,16 @@ def test_crimson_template_is_locksmith_specific_and_visual() -> None:
     lowered = content.lower()
 
     assert "Crimson Turtle Locksmiths" in content
-    assert any(token in lowered for token in ("locksmith", "security", "key", "lock", "emergency", "lockout"))
+    assert any(
+        token in lowered
+        for token in ("locksmith", "security", "key", "lock", "emergency", "lockout")
+    )
     assert any(token in lowered for token in ("black", "dark", "#000", "#111"))
     assert "red" in lowered or "#dc2626" in lowered
-    assert any(token in lowered for token in ("silver", "gray", "grey", "metal", "#9ca3af", "#c0c0c0"))
+    assert any(
+        token in lowered
+        for token in ("silver", "gray", "grey", "metal", "#9ca3af", "#c0c0c0")
+    )
     assert "trust" in lowered and "urgent" in lowered
     assert "a clean one-page website with a clear offer" not in lowered
 
@@ -810,12 +825,18 @@ def test_unquoted_soggy_doggy_name_and_grooming_template() -> None:
     content = contract._default_code_artifact_content("index.html", "html", prompt)
     lowered = content.lower()
     assert "Soggy Doggy" in content
-    assert any(token in lowered for token in ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw"))
+    assert any(
+        token in lowered
+        for token in ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw")
+    )
     assert "white" in lowered or "#ffffff" in lowered
     assert "purple" in lowered or "#7c3aed" in lowered or "#a855f7" in lowered
     assert "green" in lowered or "#22c55e" in lowered
     assert "local business website" not in lowered
-    assert "a clean one-page website with a clear offer and simple call to action." not in content
+    assert (
+        "a clean one-page website with a clear offer and simple call to action."
+        not in content
+    )
     for forbidden in ("harry", "flow flowers", "rico", "neon byte", "crimson turtle"):
         assert forbidden not in lowered
 
@@ -840,6 +861,16 @@ def test_explicit_artifact_intent_prioritizes_artifact_over_build_guard() -> Non
         "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"
     )
     assert contract._has_explicit_artifact_intent(normalized) is True
+    assert contract._is_repo_mutation_build_prompt(normalized) is False
+    assert contract._prioritize_artifact_over_build_guard(normalized) is True
+
+
+def test_site_bundle_intent_prioritizes_artifact_over_build_guard() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize(
+        "create a 5 page website for Tony's Tavern biker bar using black orange and yellow"
+    )
     assert contract._is_repo_mutation_build_prompt(normalized) is False
     assert contract._prioritize_artifact_over_build_guard(normalized) is True
 
@@ -870,13 +901,23 @@ def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
     report = contract.validate_artifact_prompt_fidelity(
         prompt,
         content,
-        {"history_business_names": ["Soggy Doggy"], "previous_colors": ["white", "purple", "green"]},
+        {
+            "history_business_names": ["Soggy Doggy"],
+            "previous_colors": ["white", "purple", "green"],
+        },
     )
 
     assert report["passed"] is False
-    assert any(item.startswith("forbidden_term_present:Soggy Doggy") for item in report["failures"])
-    assert any(item.startswith("forbidden_term_present:white") for item in report["failures"])
-    assert any(item.startswith("forbidden_term_present:purple") for item in report["failures"])
+    assert any(
+        item.startswith("forbidden_term_present:Soggy Doggy")
+        for item in report["failures"]
+    )
+    assert any(
+        item.startswith("forbidden_term_present:white") for item in report["failures"]
+    )
+    assert any(
+        item.startswith("forbidden_term_present:purple") for item in report["failures"]
+    )
 
 
 def test_code16_generation_repairs_stale_template_leakage(monkeypatch) -> None:
@@ -904,7 +945,9 @@ def test_code16_generation_repairs_stale_template_leakage(monkeypatch) -> None:
             "http://127.0.0.1:11434",
         )
 
-    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate)
+    monkeypatch.setattr(
+        AnswerContract, "_generate_artifact_with_local_model", _fake_generate
+    )
 
     response = asyncio.run(
         contract.build_code_artifact_response(
@@ -959,17 +1002,23 @@ def test_code16_generation_blocks_unrepairable_prompt_fidelity(monkeypatch) -> N
         layout_hints: list[str],
     ) -> tuple[str, str, str]:
         return (
-            "<!doctype html><html><head><title>Soggy Doggy</title><script src=\"https://cdn.bad/site.js\"></script></head>"
+            '<!doctype html><html><head><title>Soggy Doggy</title><script src="https://cdn.bad/site.js"></script></head>'
             "<body><h1>Soggy Doggy</h1><p>White, purple, and green studio style with clean grooming stations.</p></body></html>",
             "fake-code-model:test",
             "http://127.0.0.1:11434",
         )
 
-    def _no_repair(cls, *, prompt: str, artifact_content: str, fidelity_report: dict[str, object]) -> str:
+    def _no_repair(
+        cls, *, prompt: str, artifact_content: str, fidelity_report: dict[str, object]
+    ) -> str:
         return artifact_content
 
-    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate)
-    monkeypatch.setattr(AnswerContract, "_repair_artifact_prompt_fidelity", classmethod(_no_repair))
+    monkeypatch.setattr(
+        AnswerContract, "_generate_artifact_with_local_model", _fake_generate
+    )
+    monkeypatch.setattr(
+        AnswerContract, "_repair_artifact_prompt_fidelity", classmethod(_no_repair)
+    )
 
     response = asyncio.run(
         contract.build_code_artifact_response(
@@ -1009,7 +1058,9 @@ def test_validate_artifact_rejects_generic_output_for_grooming_prompt() -> None:
     }
 
 
-def test_generation_fallback_returns_sanitized_failure_when_template_cannot_pass_validation(monkeypatch) -> None:
+def test_generation_fallback_returns_sanitized_failure_when_template_cannot_pass_validation(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
 
     monkeypatch.setattr(
@@ -1026,7 +1077,11 @@ def test_generation_fallback_returns_sanitized_failure_when_template_cannot_pass
     monkeypatch.setattr(
         AnswerContract,
         "_default_code_artifact_content",
-        staticmethod(lambda filename, language, question: "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"),
+        staticmethod(
+            lambda filename, language, question: (
+                "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"
+            )
+        ),
     )
 
     async def _fake_generate_failure(
@@ -1043,7 +1098,9 @@ def test_generation_fallback_returns_sanitized_failure_when_template_cannot_pass
     ) -> tuple[str, str, str]:
         raise RuntimeError("timeout")
 
-    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate_failure)
+    monkeypatch.setattr(
+        AnswerContract, "_generate_artifact_with_local_model", _fake_generate_failure
+    )
 
     response = asyncio.run(
         contract.build_code_artifact_response(
@@ -1059,7 +1116,9 @@ def test_generation_fallback_returns_sanitized_failure_when_template_cannot_pass
     assert response["provenance"]["failure_reason"] == "fallback_validation_failed"
 
 
-def test_artifact_generation_retry_prompt_includes_missing_requirements(monkeypatch) -> None:
+def test_artifact_generation_retry_prompt_includes_missing_requirements(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
 
     monkeypatch.setattr(
@@ -1131,7 +1190,10 @@ def test_artifact_generation_retry_prompt_includes_missing_requirements(monkeypa
             previewable=True,
             apply_requested=False,
             business_name="Crimson Turtle Locksmiths",
-            style_hints={"colors": ["black", "red", "silver"], "styles": ["trustworthy", "urgent"]},
+            style_hints={
+                "colors": ["black", "red", "silver"],
+                "styles": ["trustworthy", "urgent"],
+            },
             layout_hints=[],
         )
     )
@@ -1162,12 +1224,23 @@ def test_artifact_edit_detection_prefers_edit_over_sms_with_active_artifact() ->
         }
     ]
 
-    assert contract._tool_intent_category("change the text on the website to script") is None
+    assert (
+        contract._tool_intent_category("change the text on the website to script")
+        is None
+    )
     artifact, source = contract._latest_assistant_artifact(session_messages, {})
     assert artifact is not None
     assert source == "latest session artifact"
-    assert contract._looks_like_artifact_edit("change the text on the website to script") is True
-    assert contract.SMS_EXPLICIT_SEND_PATTERN.search("change the text on the website to script") is None
+    assert (
+        contract._looks_like_artifact_edit("change the text on the website to script")
+        is True
+    )
+    assert (
+        contract.SMS_EXPLICIT_SEND_PATTERN.search(
+            "change the text on the website to script"
+        )
+        is None
+    )
 
 
 def test_revision_prompt_contains_existing_content_and_instruction() -> None:
@@ -1216,7 +1289,9 @@ def test_build_code_artifact_response_revision_preserves_metadata(monkeypatch) -
             "http://ollama:11434",
         )
 
-    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _fake_revise)
+    monkeypatch.setattr(
+        AnswerContract, "_revise_artifact_with_local_model", _fake_revise
+    )
 
     response = asyncio.run(
         contract.build_code_artifact_response(
@@ -1238,7 +1313,9 @@ def test_build_code_artifact_response_revision_preserves_metadata(monkeypatch) -
     assert response["provenance"]["source_artifact"] == "latest session artifact"
 
 
-def test_typography_refinement_blackletter_preserves_identity_and_content(monkeypatch) -> None:
+def test_typography_refinement_blackletter_preserves_identity_and_content(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
     session_messages = [
         {
@@ -1257,10 +1334,16 @@ def test_typography_refinement_blackletter_preserves_identity_and_content(monkey
         }
     ]
 
-    async def _should_not_run_revise(self, *, question: str, source_artifact: dict[str, object]):
-        raise AssertionError("typography-only requests should not call local model revision")
+    async def _should_not_run_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ):
+        raise AssertionError(
+            "typography-only requests should not call local model revision"
+        )
 
-    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _should_not_run_revise)
+    monkeypatch.setattr(
+        AnswerContract, "_revise_artifact_with_local_model", _should_not_run_revise
+    )
 
     response = asyncio.run(
         contract.build_code_artifact_response(
@@ -1277,13 +1360,18 @@ def test_typography_refinement_blackletter_preserves_identity_and_content(monkey
     assert "biker bar" in content.lower()
     assert "blackletter-heading" in content
     assert "xv7-typography-refinement" in content
-    assert response["provenance"]["artifact_generation"] == "deterministic_typography_refinement"
+    assert (
+        response["provenance"]["artifact_generation"]
+        == "deterministic_typography_refinement"
+    )
     typography = response["provenance"].get("typography_refinement", {})
     assert typography.get("requested_style") == "blackletter/gothic"
     assert typography.get("status") == "passed"
 
 
-def test_typography_refinement_blackletter_preserves_existing_colors(monkeypatch) -> None:
+def test_typography_refinement_blackletter_preserves_existing_colors(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
     session_messages = [
         {
@@ -1302,10 +1390,16 @@ def test_typography_refinement_blackletter_preserves_existing_colors(monkeypatch
         }
     ]
 
-    async def _should_not_run_revise(self, *, question: str, source_artifact: dict[str, object]):
-        raise AssertionError("typography-only requests should not call local model revision")
+    async def _should_not_run_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ):
+        raise AssertionError(
+            "typography-only requests should not call local model revision"
+        )
 
-    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _should_not_run_revise)
+    monkeypatch.setattr(
+        AnswerContract, "_revise_artifact_with_local_model", _should_not_run_revise
+    )
 
     response = asyncio.run(
         contract.build_code_artifact_response(
@@ -1386,10 +1480,15 @@ def test_typography_refinement_without_active_artifact_returns_guidance() -> Non
     assert response is not None
     assert response["code_artifact"] == {}
     assert "active artifact" in response["visible_text"].lower()
-    assert response["provenance"]["artifact_generation"] == "artifact_refinement_unavailable"
+    assert (
+        response["provenance"]["artifact_generation"]
+        == "artifact_refinement_unavailable"
+    )
 
 
-def test_typography_refinement_failure_is_sanitized_and_does_not_replace_artifact(monkeypatch) -> None:
+def test_typography_refinement_failure_is_sanitized_and_does_not_replace_artifact(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
     session_messages = [
         {
@@ -1441,12 +1540,16 @@ def test_typography_refinement_failure_is_sanitized_and_does_not_replace_artifac
         response["visible_text"]
         == "I could not safely apply the typography refinement, so I preserved the current artifact unchanged."
     )
-    assert response["provenance"]["artifact_generation"] == "typography_refinement_failed"
+    assert (
+        response["provenance"]["artifact_generation"] == "typography_refinement_failed"
+    )
     typography = response["provenance"].get("typography_refinement", {})
     assert typography.get("status") == "failed"
 
 
-def test_typography_long_blackletter_sequence_uses_deterministic_refinement(monkeypatch) -> None:
+def test_typography_long_blackletter_sequence_uses_deterministic_refinement(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
     revise_calls: list[str] = []
     session_messages: list[dict[str, object]] = []
@@ -1468,7 +1571,9 @@ def test_typography_long_blackletter_sequence_uses_deterministic_refinement(monk
             "fake-code-model:test",
         )
 
-    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+    async def _fake_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ) -> tuple[str, str, str]:
         revise_calls.append(question.lower())
         lowered = question.lower()
         base = str(source_artifact.get("content") or "")
@@ -1482,10 +1587,16 @@ def test_typography_long_blackletter_sequence_uses_deterministic_refinement(monk
                 .replace("color:#facc15", "color:purple")
             )
             return (updated, "qwen3:14b", "http://ollama:11434")
-        raise AssertionError("typography-only prompts should not call local model revision")
+        raise AssertionError(
+            "typography-only prompts should not call local model revision"
+        )
 
-    monkeypatch.setattr(AnswerContract, "_generate_artifact_with_local_model", _fake_generate)
-    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _fake_revise)
+    monkeypatch.setattr(
+        AnswerContract, "_generate_artifact_with_local_model", _fake_generate
+    )
+    monkeypatch.setattr(
+        AnswerContract, "_revise_artifact_with_local_model", _fake_revise
+    )
 
     prompts = [
         "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors",
@@ -1497,16 +1608,21 @@ def test_typography_long_blackletter_sequence_uses_deterministic_refinement(monk
 
     final_response: dict[str, Any] = {}
     for prompt in prompts:
-        final_response = asyncio.run(
-            contract.build_code_artifact_response(
-                prompt,
-                session_messages=session_messages,
-                session_metadata={},
+        final_response = (
+            asyncio.run(
+                contract.build_code_artifact_response(
+                    prompt,
+                    session_messages=session_messages,
+                    session_metadata={},
+                )
             )
-        ) or {}
+            or {}
+        )
         assert final_response
         step_artifact = final_response.get("code_artifact", {})
-        assert step_artifact, f"prompt failed to return artifact: {prompt} => {final_response}"
+        assert step_artifact, (
+            f"prompt failed to return artifact: {prompt} => {final_response}"
+        )
         session_messages.append({"role": "user", "content": prompt})
         session_messages.append(
             {
@@ -1527,7 +1643,9 @@ def test_typography_long_blackletter_sequence_uses_deterministic_refinement(monk
     typography = provenance.get("typography_refinement", {})
 
     assert artifact
-    assert provenance.get("artifact_generation") == "deterministic_typography_refinement"
+    assert (
+        provenance.get("artifact_generation") == "deterministic_typography_refinement"
+    )
     assert "blackletter-heading" in content
     assert "Old English Text MT" in content
     assert "UnifrakturCook" in content
@@ -1549,7 +1667,9 @@ def test_typography_long_blackletter_sequence_uses_deterministic_refinement(monk
     assert "change the website colors to white pink and purple" in revise_calls[0]
 
 
-def test_build_code_artifact_response_revision_uses_deterministic_fallback(monkeypatch) -> None:
+def test_build_code_artifact_response_revision_uses_deterministic_fallback(
+    monkeypatch,
+) -> None:
     contract = AnswerContract()
     session_messages = [
         {
@@ -1571,7 +1691,9 @@ def test_build_code_artifact_response_revision_uses_deterministic_fallback(monke
     async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]):
         raise RuntimeError("revision_content_unchanged")
 
-    monkeypatch.setattr(AnswerContract, "_revise_artifact_with_local_model", _fake_revise)
+    monkeypatch.setattr(
+        AnswerContract, "_revise_artifact_with_local_model", _fake_revise
+    )
     monkeypatch.setattr(
         "core.brain.answer_contract.resolve_model_for_runtime_role",
         lambda role: RuntimeRoleModelResolution(
@@ -1601,13 +1723,19 @@ def test_build_code_artifact_response_revision_uses_deterministic_fallback(monke
         assert artifact["applied"] is False
         assert "#d4af37" in artifact["content"] or "gold" in artifact["content"].lower()
         assert "premium" in artifact["content"].lower()
-        assert response["provenance"]["artifact_generation"] == "deterministic_prompt_template_fallback"
+        assert (
+            response["provenance"]["artifact_generation"]
+            == "deterministic_prompt_template_fallback"
+        )
         assert response["provenance"]["model_used"] == "qwen3:14b"
         assert response["provenance"]["source_artifact"] == "latest session artifact"
         assert "artifact revision fallback" in response["provenance"]["fallback_reason"]
     else:
         assert "failed prompt-fidelity validation" in response["visible_text"].lower()
-        assert response["provenance"]["artifact_generation"] == "artifact_prompt_fidelity_blocked"
+        assert (
+            response["provenance"]["artifact_generation"]
+            == "artifact_prompt_fidelity_blocked"
+        )
 
 
 def test_sms_pattern_handles_explicit_message_wording() -> None:
@@ -1655,7 +1783,10 @@ def test_build_code_artifact_response_requests_artifact_context_first() -> None:
     assert response is not None
     assert response["code_artifact"] == {}
     assert "active artifact" in response["visible_text"].lower()
-    assert response["provenance"]["artifact_generation"] == "artifact_refinement_unavailable"
+    assert (
+        response["provenance"]["artifact_generation"]
+        == "artifact_refinement_unavailable"
+    )
     assert response["provenance"]["failure_reason"] == "no_active_artifact"
 
 
@@ -1678,7 +1809,10 @@ def test_build_code_artifact_response_undo_restores_previous_revision() -> None:
                     "applied": False,
                     "content": "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>",
                 },
-                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+                "policy_provenance": {
+                    "artifact_generation": "local_model",
+                    "revision_number": 1,
+                },
             },
         },
         {
@@ -1697,7 +1831,10 @@ def test_build_code_artifact_response_undo_restores_previous_revision() -> None:
                     "applied": False,
                     "content": "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Black and gold bath trim fur care</p></body></html>",
                 },
-                "policy_provenance": {"artifact_generation": "local_model_revision", "revision_number": 2},
+                "policy_provenance": {
+                    "artifact_generation": "local_model_revision",
+                    "revision_number": 2,
+                },
             },
         },
     ]
@@ -1712,7 +1849,10 @@ def test_build_code_artifact_response_undo_restores_previous_revision() -> None:
 
     assert response is not None
     assert response["provenance"]["artifact_generation"] == "artifact_undo"
-    assert response["code_artifact"]["content"] == "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>"
+    assert (
+        response["code_artifact"]["content"]
+        == "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>"
+    )
     assert response["code_artifact"]["revision_number"] == 3
 
 
@@ -1731,7 +1871,10 @@ def test_build_code_artifact_response_explain_returns_summary_only() -> None:
                     "applied": False,
                     "content": "<!doctype html><html><body><h1>Soggy Doggy</h1><p>Bath trim fur care</p></body></html>",
                 },
-                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+                "policy_provenance": {
+                    "artifact_generation": "local_model",
+                    "revision_number": 1,
+                },
             },
         },
         {
@@ -1746,7 +1889,10 @@ def test_build_code_artifact_response_explain_returns_summary_only() -> None:
                     "applied": False,
                     "content": "<!doctype html><html><head><style>h1{font-family:'Brush Script MT',cursive;}</style></head><body><h1>Pampered Paws, Clean Coats</h1><p>Bath trim fur care</p></body></html>",
                 },
-                "policy_provenance": {"artifact_generation": "local_model_revision", "revision_number": 2},
+                "policy_provenance": {
+                    "artifact_generation": "local_model_revision",
+                    "revision_number": 2,
+                },
             },
         },
     ]
@@ -1762,10 +1908,15 @@ def test_build_code_artifact_response_explain_returns_summary_only() -> None:
     assert response is not None
     assert response["code_artifact"] == {}
     assert response["provenance"]["artifact_generation"] == "artifact_change_summary"
-    assert "headline" in response["visible_text"].lower() or "typography" in response["visible_text"].lower()
+    assert (
+        "headline" in response["visible_text"].lower()
+        or "typography" in response["visible_text"].lower()
+    )
 
 
-def _artifact_session_messages(*, filename: str = "index.html", content: str) -> list[dict[str, object]]:
+def _artifact_session_messages(
+    *, filename: str = "index.html", content: str
+) -> list[dict[str, object]]:
     return [
         {
             "role": "assistant",
@@ -1782,13 +1933,18 @@ def _artifact_session_messages(*, filename: str = "index.html", content: str) ->
                     "revision_id": "soggy-doggy-artifact:r1",
                     "revision_number": 1,
                 },
-                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+                "policy_provenance": {
+                    "artifact_generation": "local_model",
+                    "revision_number": 1,
+                },
             },
         }
     ]
 
 
-def test_patch_proposal_from_active_artifact_does_not_write_file(tmp_path, monkeypatch) -> None:
+def test_patch_proposal_from_active_artifact_does_not_write_file(
+    tmp_path, monkeypatch
+) -> None:
     contract = AnswerContract()
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     session_messages = _artifact_session_messages(
@@ -1813,7 +1969,9 @@ def test_patch_proposal_from_active_artifact_does_not_write_file(tmp_path, monke
     assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
 
 
-def test_patch_proposal_uses_latest_artifact_slug_after_back_to_back_generation() -> None:
+def test_patch_proposal_uses_latest_artifact_slug_after_back_to_back_generation() -> (
+    None
+):
     contract = AnswerContract()
     session_messages = [
         {
@@ -1832,7 +1990,10 @@ def test_patch_proposal_uses_latest_artifact_slug_after_back_to_back_generation(
                     "revision_number": 1,
                     "source_prompt": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green",
                 },
-                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+                "policy_provenance": {
+                    "artifact_generation": "local_model",
+                    "revision_number": 1,
+                },
             },
         },
         {
@@ -1851,7 +2012,10 @@ def test_patch_proposal_uses_latest_artifact_slug_after_back_to_back_generation(
                     "revision_number": 1,
                     "source_prompt": "generate a small HTML artifact for tony tavern grooming using black yellow and green",
                 },
-                "policy_provenance": {"artifact_generation": "local_model", "revision_number": 1},
+                "policy_provenance": {
+                    "artifact_generation": "local_model",
+                    "revision_number": 1,
+                },
             },
         },
     ]
@@ -1865,7 +2029,10 @@ def test_patch_proposal_uses_latest_artifact_slug_after_back_to_back_generation(
     )
 
     assert response is not None
-    assert response["artifact_patch_proposal"]["target_path"] == "generated-sites/tony-tavern/index.html"
+    assert (
+        response["artifact_patch_proposal"]["target_path"]
+        == "generated-sites/tony-tavern/index.html"
+    )
 
 
 def test_patch_proposal_without_active_artifact_returns_clear_message() -> None:
@@ -1881,7 +2048,10 @@ def test_patch_proposal_without_active_artifact_returns_clear_message() -> None:
 
     assert response is not None
     assert response["artifact_patch_proposal"] == {}
-    assert response["visible_text"] == "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first."
+    assert (
+        response["visible_text"]
+        == "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first."
+    )
 
 
 def test_patch_proposal_sanitizes_malicious_filename(tmp_path, monkeypatch) -> None:
@@ -1906,12 +2076,16 @@ def test_patch_proposal_sanitizes_malicious_filename(tmp_path, monkeypatch) -> N
     assert proposal["target_path"].endswith("/evil.html")
 
 
-def test_patch_proposal_existing_target_sets_update_operation(tmp_path, monkeypatch) -> None:
+def test_patch_proposal_existing_target_sets_update_operation(
+    tmp_path, monkeypatch
+) -> None:
     contract = AnswerContract()
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     target = tmp_path / "generated-sites" / "soggy-doggy" / "index.html"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("<!doctype html><html><body><h1>Old</h1></body></html>", encoding="utf-8")
+    target.write_text(
+        "<!doctype html><html><body><h1>Old</h1></body></html>", encoding="utf-8"
+    )
 
     session_messages = _artifact_session_messages(
         content="<!doctype html><html><head><style>body{background:black;color:gold}</style></head><body><h1>Soggy Doggy</h1><p>Premium grooming.</p></body></html>",
@@ -1928,7 +2102,10 @@ def test_patch_proposal_existing_target_sets_update_operation(tmp_path, monkeypa
     assert proposal["operation"] == "update"
     assert "--- a/generated-sites/soggy-doggy/index.html" in proposal["diff"]
     assert "+++ b/generated-sites/soggy-doggy/index.html" in proposal["diff"]
-    assert target.read_text(encoding="utf-8") == "<!doctype html><html><body><h1>Old</h1></body></html>"
+    assert (
+        target.read_text(encoding="utf-8")
+        == "<!doctype html><html><body><h1>Old</h1></body></html>"
+    )
 
 
 def test_apply_patch_requires_pending_proposal() -> None:
@@ -1943,10 +2120,14 @@ def test_apply_patch_requires_pending_proposal() -> None:
     )
 
     assert response is not None
-    assert response["visible_text"] == "I do not have a pending patch proposal to apply."
+    assert (
+        response["visible_text"] == "I do not have a pending patch proposal to apply."
+    )
 
 
-def test_apply_patch_writes_file_only_after_explicit_apply(tmp_path, monkeypatch) -> None:
+def test_apply_patch_writes_file_only_after_explicit_apply(
+    tmp_path, monkeypatch
+) -> None:
     contract = AnswerContract()
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     session_messages = _artifact_session_messages(
@@ -1989,7 +2170,9 @@ def test_apply_patch_writes_file_only_after_explicit_apply(tmp_path, monkeypatch
     assert "no push was performed" in apply_response["visible_text"]
 
 
-def test_post_apply_verify_reports_checks_and_preview_path(tmp_path, monkeypatch) -> None:
+def test_post_apply_verify_reports_checks_and_preview_path(
+    tmp_path, monkeypatch
+) -> None:
     contract = AnswerContract()
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     session_messages = _artifact_session_messages(
@@ -2089,7 +2272,11 @@ def test_post_apply_preview_returns_route(tmp_path, monkeypatch) -> None:
                 {
                     "role": "assistant",
                     "content": apply_response["visible_text"],
-                    "metadata": {"artifact_patch_proposal": apply_response["artifact_patch_proposal"]},
+                    "metadata": {
+                        "artifact_patch_proposal": apply_response[
+                            "artifact_patch_proposal"
+                        ]
+                    },
                 }
             ],
             session_metadata={},
@@ -2097,10 +2284,15 @@ def test_post_apply_preview_returns_route(tmp_path, monkeypatch) -> None:
     )
 
     assert "/generated-sites/soggy-doggy/index.html" in preview_response["visible_text"]
-    assert preview_response["artifact_patch_proposal"]["preview_path"] == "/generated-sites/soggy-doggy/index.html"
+    assert (
+        preview_response["artifact_patch_proposal"]["preview_path"]
+        == "/generated-sites/soggy-doggy/index.html"
+    )
 
 
-def test_post_apply_targeted_validation_runs_focused_checks_only(tmp_path, monkeypatch) -> None:
+def test_post_apply_targeted_validation_runs_focused_checks_only(
+    tmp_path, monkeypatch
+) -> None:
     contract = AnswerContract()
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     session_messages = _artifact_session_messages(
@@ -2138,7 +2330,11 @@ def test_post_apply_targeted_validation_runs_focused_checks_only(tmp_path, monke
                 {
                     "role": "assistant",
                     "content": apply_response["visible_text"],
-                    "metadata": {"artifact_patch_proposal": apply_response["artifact_patch_proposal"]},
+                    "metadata": {
+                        "artifact_patch_proposal": apply_response[
+                            "artifact_patch_proposal"
+                        ]
+                    },
                 }
             ],
             session_metadata={},
@@ -2212,7 +2408,9 @@ def test_failed_validation_patch_cannot_be_applied(tmp_path, monkeypatch) -> Non
         "diff": "--- /dev/null\n+++ b/generated-sites/soggy-doggy/index.html\n",
         "validation": {
             "status": "failed",
-            "checks": [{"name": "html_inline_css", "status": "failed", "detail": "missing"}],
+            "checks": [
+                {"name": "html_inline_css", "status": "failed", "detail": "missing"}
+            ],
             "failures": ["html_inline_css: missing"],
         },
     }
@@ -2234,3 +2432,355 @@ def test_failed_validation_patch_cannot_be_applied(tmp_path, monkeypatch) -> Non
     assert response is not None
     assert "validation failed" in response["visible_text"].lower()
     assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
+
+
+# ─── Code 21: site_bundle tests ────────────────────────────────────────────────
+
+
+def test_site_bundle_intent_detects_multi_page_website() -> None:
+    from core.brain import site_bundle as sb
+
+    assert sb.is_site_bundle_request("create a multi-page website for tony's tavern")
+    assert sb.is_site_bundle_request("build a full website for the fuze boxx")
+    assert sb.is_site_bundle_request(
+        "create a 5 page website for tony's tavern biker bar"
+    )
+    assert sb.is_site_bundle_request("create a website artifact tonys tavern")
+    assert not sb.is_site_bundle_request(
+        "create a html artifact tony's tavern biker bar"
+    )
+    assert not sb.is_site_bundle_request(
+        "make a website for tony"
+    )  # no multi-page hint without page count
+
+
+def test_site_bundle_single_file_prompt_does_not_trigger_bundle() -> None:
+    from core.brain import site_bundle as sb
+    from core.brain.answer_contract import AnswerContract
+
+    ac = AnswerContract()
+    assert not sb.is_site_bundle_request(
+        "create a html artifact tonys tavern biker bar using black orange yellow"
+    )
+    assert ac.is_code_artifact_request("create a html artifact tonys tavern biker bar")
+
+
+def test_site_bundle_default_pages_tavern() -> None:
+    from core.brain import site_bundle as sb
+
+    pages = sb.default_pages_for_business(
+        "Tony's Tavern", "create a website for Tony's Tavern biker bar"
+    )
+    assert "index.html" in pages
+    assert "menu.html" in pages
+    assert "events.html" in pages
+    assert "contact.html" in pages
+    assert "assets/site.css" in pages
+
+
+def test_site_bundle_default_pages_service_business() -> None:
+    from core.brain import site_bundle as sb
+
+    pages = sb.default_pages_for_business(
+        "Acme Locksmith", "create a website for Acme Locksmith"
+    )
+    assert "index.html" in pages
+    assert "services.html" in pages
+    assert "gallery.html" in pages
+    assert "contact.html" in pages
+    assert "assets/site.css" in pages
+
+
+def test_site_bundle_nav_links_on_every_html_page() -> None:
+    from core.brain import site_bundle as sb
+
+    pages = ["index.html", "about.html", "menu.html", "contact.html", "assets/site.css"]
+    files = sb.build_bundle_files(
+        business_name="Tony's Tavern",
+        slug="tonys-tavern",
+        pages=pages,
+        style_hints={"colors": ["#000", "#f97316", "#fff"], "styles": []},
+        question="create a multi-page website",
+    )
+    html_files = [f for f in files if f["path"].endswith(".html")]
+    assert len(html_files) >= 3
+    for f in html_files:
+        content = f["content"]
+        assert 'href="index.html"' in content
+        assert 'href="about.html"' in content
+        assert 'href="contact.html"' in content
+
+
+def test_site_bundle_shared_css_linked_from_html_pages() -> None:
+    from core.brain import site_bundle as sb
+
+    pages = ["index.html", "about.html", "assets/site.css"]
+    files = sb.build_bundle_files(
+        business_name="Fuze Boxx",
+        slug="fuze-boxx",
+        pages=pages,
+        style_hints={"colors": [], "styles": []},
+        question="website",
+    )
+    html_files = [f for f in files if f["path"].endswith(".html")]
+    for f in html_files:
+        assert "site.css" in f["content"], f"{f['path']} missing CSS link"
+
+
+def test_site_bundle_business_name_in_every_html_page() -> None:
+    from core.brain import site_bundle as sb
+
+    pages = ["index.html", "about.html", "menu.html", "contact.html", "assets/site.css"]
+    files = sb.build_bundle_files(
+        business_name="Tony's Tavern",
+        slug="tonys-tavern",
+        pages=pages,
+        style_hints={"colors": [], "styles": []},
+        question="website",
+    )
+    html_files = [f for f in files if f["path"].endswith(".html")]
+    for f in html_files:
+        assert "tony" in f["content"].lower(), f"{f['path']} missing business name"
+
+
+def test_site_bundle_requested_colors_appear_in_css() -> None:
+    from core.brain import site_bundle as sb
+
+    pages = ["index.html", "assets/site.css"]
+    files = sb.build_bundle_files(
+        business_name="Fuze Boxx",
+        slug="fuze-boxx",
+        pages=pages,
+        style_hints={"colors": ["#1a1a2e", "#e94560", "#f0f0f0"], "styles": []},
+        question="website",
+    )
+    css_file = next(f for f in files if f["path"].endswith(".css"))
+    assert "#1a1a2e" in css_file["content"]
+    assert "#e94560" in css_file["content"]
+
+
+def test_site_bundle_unsafe_paths_rejected() -> None:
+    from core.brain import site_bundle as sb
+
+    assert not sb.is_safe_bundle_path("../../../etc/passwd")
+    assert not sb.is_safe_bundle_path("/absolute/path.html")
+    assert not sb.is_safe_bundle_path("C:\\windows\\path.html")
+    assert not sb.is_safe_bundle_path("page;rm -rf /.html")
+    assert sb.is_safe_bundle_path("index.html")
+    assert sb.is_safe_bundle_path("assets/site.css")
+
+
+def test_site_bundle_validate_requires_entry_file() -> None:
+    from core.brain import site_bundle as sb
+
+    files = [
+        {
+            "path": "about.html",
+            "language": "html",
+            "content": "<html><body>about</body></html>",
+        },
+        {
+            "path": "menu.html",
+            "language": "html",
+            "content": "<html><body>menu</body></html>",
+        },
+    ]
+    passed, failures = sb.validate_bundle(
+        bundle_files=files,
+        entry="index.html",
+        business_name="",
+        style_hints={},
+    )
+    assert not passed
+    assert any("entry file" in f for f in failures)
+
+
+def test_site_bundle_validate_requires_two_html_pages() -> None:
+    from core.brain import site_bundle as sb
+
+    files = [
+        {
+            "path": "index.html",
+            "language": "html",
+            "content": "<html><body>home</body></html>",
+        }
+    ]
+    passed, failures = sb.validate_bundle(
+        bundle_files=files,
+        entry="index.html",
+        business_name="",
+        style_hints={},
+    )
+    assert not passed
+    assert any("2" in f or "html pages" in f.lower() for f in failures)
+
+
+def test_site_bundle_generation_returns_bundle_payload(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    contract = AnswerContract()
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "create a 5 page website for Tony's Tavern biker bar using black orange and yellow",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+    assert response is not None
+    site_bundle_data = response.get("site_bundle")
+    assert isinstance(site_bundle_data, dict), (
+        f"expected site_bundle, got: {list(response.keys())}"
+    )
+    assert site_bundle_data.get("artifact_type") == "site_bundle"
+    assert "tony" in site_bundle_data.get("title", "").lower()
+    bundle_files = (site_bundle_data.get("site_bundle") or {}).get("files", [])
+    assert len(bundle_files) >= 5
+    paths = [f["path"] for f in bundle_files]
+    assert "index.html" in paths
+    assert "menu.html" in paths or "services.html" in paths
+    assert "contact.html" in paths
+    assert any(p.endswith(".css") for p in paths)
+    assert not response.get("code_artifact")
+
+
+def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    contract = AnswerContract()
+    bundle_artifact = {
+        "artifact_type": "site_bundle",
+        "artifact_id": "tonys-tavern-bundle",
+        "revision_id": "tonys-tavern-bundle:r1",
+        "revision_number": 1,
+        "title": "Tony's Tavern",
+        "slug": "tonys-tavern",
+        "entry": "index.html",
+        "source_prompt": "create a website",
+        "site_bundle": {
+            "files": [
+                {
+                    "path": "index.html",
+                    "language": "html",
+                    "content": "<!doctype html><html><body>Tony's Tavern</body></html>",
+                },
+                {
+                    "path": "menu.html",
+                    "language": "html",
+                    "content": "<!doctype html><html><body>Tony's Tavern Menu</body></html>",
+                },
+                {
+                    "path": "assets/site.css",
+                    "language": "css",
+                    "content": "body { background: #000; }",
+                },
+            ]
+        },
+    }
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate a patch for this site",
+            session_messages=[
+                {
+                    "role": "user",
+                    "content": "create a website for Tony's Tavern",
+                    "metadata": {},
+                },
+                {
+                    "role": "assistant",
+                    "content": "Here is the bundle.",
+                    "metadata": {"site_bundle": bundle_artifact},
+                },
+            ],
+            session_metadata={},
+        )
+    )
+    assert response is not None
+    proposals = response.get("site_bundle_patch_proposals")
+    assert isinstance(proposals, list), "expected site_bundle_patch_proposals"
+    assert len(proposals) == 3
+    target_paths = [p["target_path"] for p in proposals]
+    assert "generated-sites/tonys-tavern/index.html" in target_paths
+    assert "generated-sites/tonys-tavern/menu.html" in target_paths
+    assert "generated-sites/tonys-tavern/assets/site.css" in target_paths
+    assert not (tmp_path / "generated-sites" / "tonys-tavern" / "index.html").exists()
+
+
+def test_site_bundle_apply_writes_all_files(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    contract = AnswerContract()
+    bundle_artifact = {
+        "artifact_type": "site_bundle",
+        "slug": "tonys-tavern",
+        "entry": "index.html",
+    }
+    proposals = [
+        {
+            "type": "artifact_patch_proposal",
+            "proposal_id": "patch-aaa",
+            "target_path": "generated-sites/tonys-tavern/index.html",
+            "operation": "create",
+            "language": "html",
+            "applied": False,
+            "requires_confirmation": True,
+            "content": "<!doctype html><html><body>Tony's Tavern</body></html>",
+            "diff": "",
+            "validation": {"status": "passed", "checks": [], "failures": []},
+        },
+        {
+            "type": "artifact_patch_proposal",
+            "proposal_id": "patch-bbb",
+            "target_path": "generated-sites/tonys-tavern/assets/site.css",
+            "operation": "create",
+            "language": "css",
+            "applied": False,
+            "requires_confirmation": True,
+            "content": "body { background: #000; }",
+            "diff": "",
+            "validation": {"status": "passed", "checks": [], "failures": []},
+        },
+    ]
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "apply the patch",
+            session_messages=[
+                {"role": "user", "content": "generate a patch", "metadata": {}},
+                {
+                    "role": "assistant",
+                    "content": "Patch proposals ready.",
+                    "metadata": {
+                        "site_bundle": bundle_artifact,
+                        "site_bundle_patch_proposals": proposals,
+                    },
+                },
+            ],
+            session_metadata={},
+        )
+    )
+    assert response is not None
+    provenance = response.get("provenance", {})
+    assert provenance.get("artifact_patch") == "bundle_applied"
+    assert (tmp_path / "generated-sites" / "tonys-tavern" / "index.html").exists()
+    assert (
+        tmp_path / "generated-sites" / "tonys-tavern" / "assets" / "site.css"
+    ).exists()
+
+
+def test_site_bundle_unsafe_apply_is_blocked(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    from core.brain import site_bundle as sb
+
+    bad_proposals = [
+        {
+            "target_path": "../../../evil.html",
+            "operation": "create",
+            "language": "html",
+            "applied": False,
+            "content": "<html>evil</html>",
+            "validation": {"status": "passed", "checks": [], "failures": []},
+        },
+    ]
+    written, errors = sb.apply_proposals(
+        proposals=bad_proposals,
+        root=tmp_path,
+        resolve_fn=AnswerContract._resolve_safe_patch_target,
+    )
+    assert len(written) == 0, "unsafe paths must not be written"
+    assert len(errors) > 0

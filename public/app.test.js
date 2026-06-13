@@ -3783,4 +3783,152 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('avatarVideo').getAttribute('src')).toBe('/avatar/xoduz-idle.mp4');
     expect(document.getElementById('avatarDiagClip').textContent).not.toContain('(disabled)');
   });
+
+  // ─── Code 21: site bundle frontend rendering tests ──────────────────────────
+
+  it('renders a site bundle card with label, title, and file count', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          visible_text: 'Here is a 5-page site bundle for Tony\'s Tavern.',
+          site_bundle: {
+            artifact_type: 'site_bundle',
+            artifact_id: 'tonys-tavern-bundle',
+            title: "Tony's Tavern",
+            slug: 'tonys-tavern',
+            entry: 'index.html',
+            site_bundle: {
+              files: [
+                { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+                { path: 'about.html', language: 'html', content: '<!doctype html><html><body>about</body></html>' },
+                { path: 'menu.html', language: 'html', content: '<!doctype html><html><body>menu</body></html>' },
+                { path: 'events.html', language: 'html', content: '<!doctype html><html><body>events</body></html>' },
+                { path: 'contact.html', language: 'html', content: '<!doctype html><html><body>contact</body></html>' },
+                { path: 'assets/site.css', language: 'css', content: 'body { background: #000; }' },
+                { path: 'assets/site.js', language: 'javascript', content: 'console.log("ready");' },
+              ],
+            },
+          },
+          metadata: {},
+          messages: [
+            { role: 'user', content: 'create a website', metadata: {} },
+            { role: 'assistant', content: 'Here is a 5-page site bundle.', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'create a 5 page website for Tony\'s Tavern';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const bundleCard = document.querySelector('.site-bundle-card');
+    expect(bundleCard).toBeTruthy();
+    expect(bundleCard.querySelector('.site-bundle-label')?.textContent).toContain('Site bundle artifact');
+    expect(bundleCard.querySelector('.site-bundle-title')?.textContent).toContain("Tony's Tavern");
+    const meta = bundleCard.querySelector('.site-bundle-meta')?.textContent || '';
+    expect(meta).toContain('7 file');
+    expect(meta).toContain('index.html');
+    const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
+    expect(fileItems.length).toBe(7);
+    const filePaths = fileItems.map((el) => el.textContent || '');
+    expect(filePaths.some((t) => t.includes('index.html'))).toBe(true);
+    expect(filePaths.some((t) => t.includes('assets/site.css'))).toBe(true);
+    expect(bundleCard.querySelector('.site-bundle-notice')?.textContent).toContain('7 file');
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+  });
+
+  it('does not break single-file artifact card when site_bundle absent', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {},
+          messages: [
+            { role: 'user', content: 'create an artifact', metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Here is your artifact.',
+              metadata: {
+                code_artifacts: [
+                  { filename: 'index.html', language: 'html', content: '<!doctype html><html><body>Tony\'s Tavern</body></html>' },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'create a html artifact';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.querySelector('.site-bundle-card')).toBeFalsy();
+    expect(document.querySelector('.code-artifact-card')).toBeTruthy();
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+  });
+
+  it('site bundle render failure shows diagnostic and recovers send state', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          visible_text: 'Here is the bundle.',
+          site_bundle: {
+            artifact_type: 'site_bundle',
+            title: 'Tony\'s Tavern',
+            slug: 'tonys-tavern',
+            entry: 'index.html',
+            site_bundle: { files: [] },
+          },
+          metadata: {},
+          messages: [
+            { role: 'user', content: 'create', metadata: {} },
+            { role: 'assistant', content: 'bundle', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    vi.spyOn(ui, 'appendSiteBundleCard').mockImplementation(() => {
+      throw new Error('bundle render failed');
+    });
+
+    document.getElementById('promptInput').value = 'create a website for Tony';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+    expect(document.querySelector('.chat-render-error')).toBeTruthy();
+  });
+
 });

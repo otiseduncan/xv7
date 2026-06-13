@@ -440,6 +440,75 @@ details[open] > .diag-section-title::before {
   gap: 0.8rem;
 }
 
+  /* ─── Site bundle card ─────────────────────────────────────────── */
+
+  .site-bundle-card {
+    margin-top: 0.85rem;
+    border: 1px solid rgba(0, 163, 255, 0.35);
+    border-radius: 0.9rem;
+    background: rgba(5, 18, 40, 0.92);
+    padding: 0.9rem 1rem;
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .site-bundle-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 0.8rem;
+  }
+
+  .site-bundle-title {
+    margin: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--color-text-accent);
+    letter-spacing: 0.04em;
+  }
+
+  .site-bundle-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.35rem;
+    background: rgba(0, 163, 255, 0.18);
+    color: var(--color-text-accent);
+    white-space: nowrap;
+  }
+
+  .site-bundle-meta {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--color-text-muted);
+    width: 100%;
+  }
+
+  .site-bundle-file-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .site-bundle-file-item {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.73rem;
+    color: var(--color-text);
+    opacity: 0.85;
+  }
+
+  .site-bundle-notice {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    border-top: 1px solid rgba(0, 163, 255, 0.18);
+    padding-top: 0.5rem;
+  }
+
 .artifact-patch-proposal {
   margin-top: 0.85rem;
   border: 1px solid rgba(0, 163, 255, 0.24);
