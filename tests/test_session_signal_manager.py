@@ -47,7 +47,9 @@ def test_active_focus_summary_reads_dict_or_string() -> None:
     dict_metadata = {"active_focus": {"summary": "Code 22 refactor"}}
     string_metadata = {"active_focus": " XV7 branch "}
 
-    assert SessionSignalManager.active_focus_summary(dict_metadata) == "Code 22 refactor"
+    assert (
+        SessionSignalManager.active_focus_summary(dict_metadata) == "Code 22 refactor"
+    )
     assert SessionSignalManager.active_focus_summary(string_metadata) == "XV7 branch"
     assert SessionSignalManager.active_focus_summary({"active_focus": {}}) is None
 
@@ -80,7 +82,9 @@ def test_normalize_reminder_request_rewrites_time_to_separator() -> None:
 
 def test_has_live_repo_check_proof_accepts_boolean() -> None:
     assert SessionSignalManager.has_live_repo_check_proof({"live_repo_check": True})
-    assert not SessionSignalManager.has_live_repo_check_proof({"live_repo_check": False})
+    assert not SessionSignalManager.has_live_repo_check_proof(
+        {"live_repo_check": False}
+    )
 
 
 def test_has_live_repo_check_proof_accepts_tool_result() -> None:
@@ -130,5 +134,8 @@ def test_last_verified_operator_model_reads_operator_readiness_fact() -> None:
 
 
 def test_last_verified_operator_model_returns_none_without_match() -> None:
-    assert SessionSignalManager.last_verified_operator_model(make_record("No model.")) is None
+    assert (
+        SessionSignalManager.last_verified_operator_model(make_record("No model."))
+        is None
+    )
     assert SessionSignalManager.last_verified_operator_model(None) is None
