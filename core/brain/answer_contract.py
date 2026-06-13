@@ -770,22 +770,10 @@ class AnswerContract:
         root: Path,
         target_path: str,
     ) -> tuple[Path | None, str | None]:
-        target_rel = Path(str(target_path or "").replace("\\", "/"))
-        if not str(target_path or "").strip():
-            return None, "target path is empty"
-        if target_rel.is_absolute() or ".." in target_rel.parts:
-            return None, "target path is unsafe"
-        normalized_target = str(target_rel).replace("\\", "/")
-        if not normalized_target.startswith("generated-sites/"):
-            return None, "target path must stay under generated-sites/"
-        if cls._is_blocked_patch_target(normalized_target):
-            return None, "target path is blocked by safety policy"
-
-        resolved = (root / target_rel).resolve()
-        root_resolved = root.resolve()
-        if not str(resolved).startswith(str(root_resolved)):
-            return None, "target path escapes repo root"
-        return resolved, None
+        return RepoSafetyPolicy.resolve_safe_patch_target(
+            root=root,
+            target_path=target_path,
+        )
 
     @classmethod
     def _resolve_safe_sandbox_target(

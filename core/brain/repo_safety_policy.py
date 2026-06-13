@@ -59,6 +59,33 @@ class RepoSafetyPolicy:
         return any(segment in lowered for segment in blocked_segments)
 
     @classmethod
+    def resolve_safe_patch_target(
+        cls,
+        *,
+        root: Path,
+        target_path: str,
+    ) -> tuple[Path | None, str | None]:
+        target_rel = Path(str(target_path or "").replace("\\", "/"))
+        if not str(target_path or "").strip():
+            return None, "target path is empty"
+        if target_rel.is_absolute() or ".." in target_rel.parts:
+            return None, "target path is unsafe"
+
+        normalized_target = str(target_rel).replace("\\", "/")
+        if not normalized_target.startswith("generated-sites/"):
+            return None, "target path must stay under generated-sites/"
+        if cls.is_blocked_patch_target(normalized_target):
+            return None, "target path is blocked by safety policy"
+
+        resolved = (root / target_rel).resolve()
+        root_resolved = root.resolve()
+        try:
+            resolved.relative_to(root_resolved)
+        except ValueError:
+            return None, "target path escapes repo root"
+        return resolved, None
+
+    @classmethod
     def validate_patch_proposal(
         cls,
         *,

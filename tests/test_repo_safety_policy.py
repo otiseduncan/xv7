@@ -146,6 +146,77 @@ def test_validate_patch_proposal_rejects_sibling_root_prefix_escape(
     )
 
 
+def test_resolve_safe_patch_target_accepts_generated_sites_target(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    resolved, error = RepoSafetyPolicy.resolve_safe_patch_target(
+        root=root,
+        target_path="generated-sites/demo/index.html",
+    )
+
+    assert error is None
+    assert resolved == (root / "generated-sites/demo/index.html").resolve()
+
+
+def test_resolve_safe_patch_target_rejects_unsafe_targets(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    absolute_target = str((tmp_path / "outside" / "index.html").resolve())
+
+    cases = [
+        ("", "target path is empty"),
+        (absolute_target, "target path is unsafe"),
+        ("../generated-sites/demo/index.html", "target path is unsafe"),
+        ("other/demo/index.html", "target path must stay under generated-sites/"),
+        (
+            "generated-sites/demo/node_modules/index.html",
+            "target path is blocked by safety policy",
+        ),
+        (
+            "../repo-evil/generated-sites/demo/index.html",
+            "target path is unsafe",
+        ),
+    ]
+
+    for target_path, expected_error in cases:
+        resolved, error = RepoSafetyPolicy.resolve_safe_patch_target(
+            root=root,
+            target_path=target_path,
+        )
+        assert resolved is None
+        assert error == expected_error
+
+
+def test_resolve_safe_patch_target_wrapper_parity(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    absolute_target = str((tmp_path / "outside" / "index.html").resolve())
+
+    targets = [
+        "generated-sites/demo/index.html",
+        "",
+        absolute_target,
+        "../generated-sites/demo/index.html",
+        "other/demo/index.html",
+        "generated-sites/demo/node_modules/index.html",
+        "../repo-evil/generated-sites/demo/index.html",
+    ]
+
+    for target_path in targets:
+        answer_contract_result = AnswerContract._resolve_safe_patch_target(
+            root=root,
+            target_path=target_path,
+        )
+        repo_policy_result = RepoSafetyPolicy.resolve_safe_patch_target(
+            root=root,
+            target_path=target_path,
+        )
+        assert answer_contract_result == repo_policy_result
+
+
 def test_answer_contract_wrappers_match_repo_safety_policy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
