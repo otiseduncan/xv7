@@ -14,7 +14,9 @@ import re
 from dataclasses import dataclass
 
 
-_REMOTE_REFERENCE_RE = re.compile(r"^(?:https?:)?//|^(?:data|javascript):", re.IGNORECASE)
+_REMOTE_REFERENCE_RE = re.compile(
+    r"^(?:https?:)?//|^(?:data|javascript):", re.IGNORECASE
+)
 _REFERENCE_ATTR_RE = re.compile(
     r"\b(?:href|src)\s*=\s*(['\"])(?P<value>.*?)\1",
     re.IGNORECASE | re.DOTALL,
@@ -35,7 +37,9 @@ class WebsiteAssetReferenceManager:
 
     CSS_EXTENSIONS = frozenset({".css"})
     SCRIPT_EXTENSIONS = frozenset({".js", ".mjs"})
-    IMAGE_EXTENSIONS = frozenset({".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"})
+    IMAGE_EXTENSIONS = frozenset(
+        {".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
+    )
     FONT_EXTENSIONS = frozenset({".eot", ".otf", ".ttf", ".woff", ".woff2"})
 
     @classmethod
@@ -101,7 +105,9 @@ class WebsiteAssetReferenceManager:
             return None
         path = cls.normalize_asset_path(value)
         extension = cls.extension_for_path(path)
-        return AssetReference(path=path, kind=cls.classify_asset(path), extension=extension)
+        return AssetReference(
+            path=path, kind=cls.classify_asset(path), extension=extension
+        )
 
     @classmethod
     def asset_href(cls, filename: str, folder: str = "assets") -> str:

@@ -5,12 +5,20 @@ from core.brain.website_asset_reference_manager import (
 
 
 def test_normalize_asset_path_removes_root_and_dot_prefixes() -> None:
-    assert WebsiteAssetReferenceManager.normalize_asset_path(r"/assets\\site.css") == "assets/site.css"
-    assert WebsiteAssetReferenceManager.normalize_asset_path("./assets/site.js") == "assets/site.js"
+    assert (
+        WebsiteAssetReferenceManager.normalize_asset_path(r"/assets\\site.css")
+        == "assets/site.css"
+    )
+    assert (
+        WebsiteAssetReferenceManager.normalize_asset_path("./assets/site.js")
+        == "assets/site.js"
+    )
 
 
 def test_remote_reference_detection_covers_common_remote_forms() -> None:
-    assert WebsiteAssetReferenceManager.is_remote_reference("https://cdn.example/site.css")
+    assert WebsiteAssetReferenceManager.is_remote_reference(
+        "https://cdn.example/site.css"
+    )
     assert WebsiteAssetReferenceManager.is_remote_reference("//cdn.example/site.css")
     assert WebsiteAssetReferenceManager.is_remote_reference("data:image/png;base64,abc")
     assert WebsiteAssetReferenceManager.is_remote_reference("javascript:alert(1)")
@@ -20,9 +28,13 @@ def test_remote_reference_detection_covers_common_remote_forms() -> None:
 def test_safe_local_reference_rejects_empty_remote_and_traversal() -> None:
     assert WebsiteAssetReferenceManager.is_safe_local_reference("assets/site.css")
     assert not WebsiteAssetReferenceManager.is_safe_local_reference("")
-    assert not WebsiteAssetReferenceManager.is_safe_local_reference("https://cdn.example/site.css")
+    assert not WebsiteAssetReferenceManager.is_safe_local_reference(
+        "https://cdn.example/site.css"
+    )
     assert not WebsiteAssetReferenceManager.is_safe_local_reference("../secrets.txt")
-    assert not WebsiteAssetReferenceManager.is_safe_local_reference("assets/../secret.txt")
+    assert not WebsiteAssetReferenceManager.is_safe_local_reference(
+        "assets/../secret.txt"
+    )
 
 
 def test_extension_for_path_is_lowercase_and_handles_missing_extension() -> None:
@@ -31,7 +43,9 @@ def test_extension_for_path_is_lowercase_and_handles_missing_extension() -> None
 
 
 def test_classify_asset_by_extension() -> None:
-    assert WebsiteAssetReferenceManager.classify_asset("assets/site.css") == "stylesheet"
+    assert (
+        WebsiteAssetReferenceManager.classify_asset("assets/site.css") == "stylesheet"
+    )
     assert WebsiteAssetReferenceManager.classify_asset("assets/site.js") == "script"
     assert WebsiteAssetReferenceManager.classify_asset("assets/logo.svg") == "image"
     assert WebsiteAssetReferenceManager.classify_asset("assets/font.woff2") == "font"
@@ -49,14 +63,22 @@ def test_make_reference_returns_model_for_safe_local_asset() -> None:
 
 
 def test_make_reference_rejects_unsafe_asset() -> None:
-    assert WebsiteAssetReferenceManager.make_reference("https://cdn.example/logo.png") is None
+    assert (
+        WebsiteAssetReferenceManager.make_reference("https://cdn.example/logo.png")
+        is None
+    )
     assert WebsiteAssetReferenceManager.make_reference("../logo.png") is None
 
 
 def test_asset_href_uses_assets_folder_and_filename_only() -> None:
     assert WebsiteAssetReferenceManager.asset_href("site.css") == "assets/site.css"
-    assert WebsiteAssetReferenceManager.asset_href("nested/site.css") == "assets/site.css"
-    assert WebsiteAssetReferenceManager.asset_href("site.css", folder="./public/assets") == "public/assets/site.css"
+    assert (
+        WebsiteAssetReferenceManager.asset_href("nested/site.css") == "assets/site.css"
+    )
+    assert (
+        WebsiteAssetReferenceManager.asset_href("site.css", folder="./public/assets")
+        == "public/assets/site.css"
+    )
 
 
 def test_stylesheet_and_script_tags_are_bundle_relative() -> None:
