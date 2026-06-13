@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, TypedDict
 
 DEFAULT_BUSINESS_TYPE = "general_business"
+
+
+class BusinessTypeConfig(TypedDict):
+    """Typed business category configuration."""
+
+    label: str
+    hints: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -30,7 +37,7 @@ class WebsiteBusinessType:
 class WebsiteBusinessTypeManager:
     """Pure helpers for inferring coarse website business categories."""
 
-    BUSINESS_TYPES: ClassVar[dict[str, dict[str, object]]] = {
+    BUSINESS_TYPES: ClassVar[dict[str, BusinessTypeConfig]] = {
         "food_cart": {
             "label": "Food cart",
             "hints": ("hot dog", "hotdog", "food cart", "food truck"),
@@ -104,10 +111,7 @@ class WebsiteBusinessTypeManager:
         matches: list[str] = []
         seen: set[str] = set()
         for config in cls.BUSINESS_TYPES.values():
-            hints = config.get("hints", ())
-            for hint in hints:
-                if not isinstance(hint, str):
-                    continue
+            for hint in config["hints"]:
                 key = cls.normalize_text(hint)
                 if key in seen:
                     continue
@@ -125,15 +129,16 @@ class WebsiteBusinessTypeManager:
         for kind, config in cls.BUSINESS_TYPES.items():
             if kind == DEFAULT_BUSINESS_TYPE:
                 continue
-            hints = tuple(str(hint) for hint in config.get("hints", ()))
             local_matches = tuple(
-                hint for hint in hints if cls._contains_hint(normalized_prompt, hint)
+                hint
+                for hint in config["hints"]
+                if cls._contains_hint(normalized_prompt, hint)
             )
             if local_matches:
                 confidence = "high" if len(local_matches) > 1 else "medium"
                 return WebsiteBusinessType(
                     kind=kind,
-                    label=str(config.get("label", kind.replace("_", " ").title())),
+                    label=config["label"],
                     confidence=confidence,
                     matched_hints=local_matches,
                 )
@@ -141,7 +146,7 @@ class WebsiteBusinessTypeManager:
         default_config = cls.BUSINESS_TYPES[DEFAULT_BUSINESS_TYPE]
         return WebsiteBusinessType(
             kind=DEFAULT_BUSINESS_TYPE,
-            label=str(default_config["label"]),
+            label=default_config["label"],
             confidence="low",
             matched_hints=tuple(matched_hints),
         )
