@@ -58,6 +58,16 @@ class RepoSafetyPolicy:
             return True
         return any(segment in lowered for segment in blocked_segments)
 
+    @staticmethod
+    def is_absolute_path_text(path_text: str) -> bool:
+        normalized = str(path_text or "").strip().replace("\\", "/")
+        return bool(
+            Path(normalized).is_absolute()
+            or normalized.startswith("/")
+            or normalized.startswith("//")
+            or re.match(r"^[a-zA-Z]:/", normalized)
+        )
+
     @classmethod
     def resolve_safe_patch_target(
         cls,
@@ -65,10 +75,11 @@ class RepoSafetyPolicy:
         root: Path,
         target_path: str,
     ) -> tuple[Path | None, str | None]:
-        target_rel = Path(str(target_path or "").replace("\\", "/"))
-        if not str(target_path or "").strip():
+        target_path_text = str(target_path or "")
+        target_rel = Path(target_path_text.replace("\\", "/"))
+        if not target_path_text.strip():
             return None, "target path is empty"
-        if target_rel.is_absolute() or ".." in target_rel.parts:
+        if cls.is_absolute_path_text(target_path_text) or ".." in target_rel.parts:
             return None, "target path is unsafe"
 
         normalized_target = str(target_rel).replace("\\", "/")
@@ -124,7 +135,7 @@ class RepoSafetyPolicy:
         )
         _add_check(
             "target_path_relative",
-            not target.is_absolute(),
+            not cls.is_absolute_path_text(target_path),
             "target path must be relative",
         )
         _add_check(
