@@ -44,46 +44,38 @@ def test_extract_user_name_returns_none_without_match() -> None:
 
 
 def test_active_focus_summary_reads_dict_or_string() -> None:
-    assert (
-        SessionSignalManager.active_focus_summary(
-            {"active_focus": {"summary": "Code 22 refactor"}}
-        )
-        == "Code 22 refactor"
-    )
-    assert (
-        SessionSignalManager.active_focus_summary({"active_focus": " XV7 branch "})
-        == "XV7 branch"
-    )
+    dict_metadata = {"active_focus": {"summary": "Code 22 refactor"}}
+    string_metadata = {"active_focus": " XV7 branch "}
+
+    assert SessionSignalManager.active_focus_summary(dict_metadata) == "Code 22 refactor"
+    assert SessionSignalManager.active_focus_summary(string_metadata) == "XV7 branch"
     assert SessionSignalManager.active_focus_summary({"active_focus": {}}) is None
 
 
 def test_normalize_reminder_request_cleans_common_prefixes() -> None:
-    assert (
-        SessionSignalManager.normalize_reminder_request("Remind me to call the shop.")
-        == "Call the shop"
+    call_shop = SessionSignalManager.normalize_reminder_request(
+        "Remind me to call the shop."
     )
-    assert (
-        SessionSignalManager.normalize_reminder_request(
-            "Set me a reminder to check XV7 at 7:30 p.m."
-        )
-        == "Check XV7 at 7:30 PM"
+    check_xv7 = SessionSignalManager.normalize_reminder_request(
+        "Set me a reminder to check XV7 at 7:30 p.m."
     )
+
+    assert call_shop == "Call the shop"
+    assert check_xv7 == "Check XV7 at 7:30 PM"
 
 
 def test_normalize_reminder_request_handles_empty_details() -> None:
-    assert (
-        SessionSignalManager.normalize_reminder_request("Remind me to")
-        == "your requested reminder details"
-    )
+    result = SessionSignalManager.normalize_reminder_request("Remind me to")
+
+    assert result == "your requested reminder details"
 
 
 def test_normalize_reminder_request_rewrites_time_to_separator() -> None:
-    assert (
-        SessionSignalManager.normalize_reminder_request(
-            "Remind me to at 8:00 AM to review commits"
-        )
-        == "At 8:00 AM — review commits"
+    result = SessionSignalManager.normalize_reminder_request(
+        "Remind me to at 8:00 AM to review commits"
     )
+
+    assert result == "At 8:00 AM — review commits"
 
 
 def test_has_live_repo_check_proof_accepts_boolean() -> None:
@@ -99,45 +91,36 @@ def test_has_live_repo_check_proof_accepts_tool_result() -> None:
 
 
 def test_latest_model_tag_filters_policy_sources() -> None:
-    assert (
-        SessionSignalManager.latest_model_tag(
-            {
-                "model_use_receipt": {
-                    "model_selection_source": "brain_records",
-                    "model_tag": "llama3.1:8b",
-                }
-            }
-        )
-        is None
-    )
+    metadata = {
+        "model_use_receipt": {
+            "model_selection_source": "brain_records",
+            "model_tag": "llama3.1:8b",
+        }
+    }
+
+    assert SessionSignalManager.latest_model_tag(metadata) is None
 
 
 def test_latest_model_tag_returns_cleaned_runtime_tag() -> None:
-    assert (
-        SessionSignalManager.latest_model_tag(
-            {
-                "model_use_receipt": {
-                    "model_selection_source": "runtime",
-                    "model_tag": " llama3.1:8b ",
-                }
-            }
-        )
-        == "llama3.1:8b"
-    )
+    metadata = {
+        "model_use_receipt": {
+            "model_selection_source": "runtime",
+            "model_tag": " llama3.1:8b ",
+        }
+    }
+
+    assert SessionSignalManager.latest_model_tag(metadata) == "llama3.1:8b"
 
 
 def test_latest_model_tag_filters_brain_records_tag() -> None:
-    assert (
-        SessionSignalManager.latest_model_tag(
-            {
-                "model_use_receipt": {
-                    "model_selection_source": "runtime",
-                    "model_tag": "xv7-brain-records",
-                }
-            }
-        )
-        is None
-    )
+    metadata = {
+        "model_use_receipt": {
+            "model_selection_source": "runtime",
+            "model_tag": "xv7-brain-records",
+        }
+    }
+
+    assert SessionSignalManager.latest_model_tag(metadata) is None
 
 
 def test_last_verified_operator_model_reads_operator_readiness_fact() -> None:
