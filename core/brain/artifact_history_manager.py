@@ -43,10 +43,7 @@ class ArtifactHistoryManager:
             return None
 
         site_bundle = metadata.get("site_bundle")
-        if (
-            isinstance(site_bundle, dict)
-            and site_bundle.get("artifact_type") == "site_bundle"
-        ):
+        if isinstance(site_bundle, dict) and site_bundle.get("artifact_type") == "site_bundle":
             return dict(site_bundle)
 
         artifacts: list[Any] = []
@@ -67,8 +64,7 @@ class ArtifactHistoryManager:
                 return {
                     "type": "code_artifact",
                     "filename": filename,
-                    "language": str(artifact.get("language") or "html").strip()
-                    or "html",
+                    "language": str(artifact.get("language") or "html").strip() or "html",
                     "previewable": bool(artifact.get("previewable", True)),
                     "applied": bool(artifact.get("applied", False)),
                     "content": content,
@@ -165,9 +161,7 @@ class ArtifactHistoryManager:
 
             prompt = str(artifact.get("source_prompt") or "").strip()
             if prompt:
-                extracted = ArtifactFidelityManager.extract_prompt_fidelity_contract(
-                    prompt
-                )
+                extracted = ArtifactFidelityManager.extract_prompt_fidelity_contract(prompt)
                 name = str(extracted.get("requested_business_name") or "").strip()
                 if name:
                     history_names.append(name)
