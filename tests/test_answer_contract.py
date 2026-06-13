@@ -3083,6 +3083,90 @@ def test_explicit_sandbox_write_is_not_repo_mutation() -> None:
             assert "repo mutation" not in result.answer.lower()
 
 
+def test_explicit_sandbox_write_exports_active_single_code_artifact(
+    monkeypatch, tmp_path
+) -> None:
+    """End-to-end: Build me a website → chat artifact. Then Write it to the sandbox
+    → writes the active artifact to sandbox without generating a new draft."""
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    contract = AnswerContract()
+
+    # Simulate the state after a plain website build: active code_artifact in session.
+    fake_artifact_content = (
+        "<!doctype html><html><head><style>body{background:#111;color:#eee;}</style></head>"
+        "<body><h1>Harry's Hot Dog Cart</h1></body></html>"
+    )
+    fake_artifact = {
+        "type": "code_artifact",
+        "artifact_type": "code_artifact",
+        "artifact_id": "harrys-hot-dog-cart-artifact",
+        "revision_id": "harrys-hot-dog-cart-artifact:r1",
+        "revision_number": 1,
+        "filename": "index.html",
+        "language": "html",
+        "content": fake_artifact_content,
+        "previewable": True,
+        "applied": False,
+        "delivery_mode": "chat_artifact",
+        "source_prompt": "Build me a website for Harry's Hot Dog Cart.",
+    }
+    session_messages = [
+        {
+            "role": "user",
+            "content": "Build me a website for Harry's Hot Dog Cart.",
+            "metadata": {},
+        },
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {"code_artifact": fake_artifact},
+        },
+    ]
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "Write it to the sandbox.",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None, "Expected a response, got None"
+
+    # Must write to sandbox, not produce a new draft.
+    provenance = response.get("provenance", {})
+    assert provenance.get("delivery_mode") == "sandbox_write", (
+        f"Expected delivery_mode=sandbox_write, got: {provenance.get('delivery_mode')}"
+    )
+    assert provenance.get("artifact_generation") == "sandbox_artifact_export"
+
+    # Must return sandbox path info.
+    target_path = str(provenance.get("sandbox_target_path") or "")
+    assert target_path, "Expected a sandbox_target_path in provenance"
+    assert "harrys-hot-dog-cart" in target_path
+    assert "index.html" in target_path
+
+    # Sandbox file must actually exist on disk.
+    assert sandbox_root.exists(), "sandbox root must be created"
+    expected_file = sandbox_root / "harrys-hot-dog-cart" / "index.html"
+    assert expected_file.exists(), f"Expected sandbox file at {expected_file}"
+
+    # The visible text must mention the sandbox path.
+    visible = str(response.get("visible_text") or "").lower()
+    assert "sandbox" in visible or "harrys-hot-dog-cart" in visible
+
+    # Must NOT be a draft artifact response.
+    assert "draft" not in visible, f"Must not produce a new draft artifact: {visible}"
+
+    # code_artifact in response must reflect sandbox_write delivery.
+    result_artifact = response.get("code_artifact", {})
+    assert isinstance(result_artifact, dict) and result_artifact
+    assert result_artifact.get("delivery_mode") == "sandbox_write"
+    assert result_artifact.get("applied") is True
+
+
 def test_sandbox_location_query_returns_fast_path_from_artifact_state(
     monkeypatch, tmp_path
 ) -> None:
@@ -3129,11 +3213,32 @@ def test_sandbox_location_query_returns_fast_path_from_artifact_state(
 
 
 def test_repo_mutation_prompt_still_protected() -> None:
-    """Prompt: 'Commit this to the repo.' must still require Operator Mode."""
+    """Prompt: 'Commit this to the repo.' must still require Operator Mode.
+    No sandbox write. No repo mutation without approval."""
+    from core.operator.manager import OperatorManager
+    import tempfile
+
     contract = AnswerContract()
     normalized = contract._normalize("Commit this to the repo.")
     assert contract._is_repo_mutation_build_prompt(normalized) is True
     assert contract._prioritize_artifact_over_build_guard(normalized) is False
+
+    # Operator manager must deny this as a mutation requiring Operator Mode.
+    with tempfile.TemporaryDirectory() as tmp:
+        manager = OperatorManager(repo_root=__import__("pathlib").Path(tmp))
+        result = manager.try_handle_chat("Commit this to the repo.")
+        # Must NOT route through sandbox export path.
+        # Should be a denial via operator manager (not None) or None (fallthrough to
+        # implementation_task guard). Either way, it must not perform a sandbox write.
+        if result is not None:
+            # If the operator manager handles it, it should be a denial.
+            answer = result.answer.lower()
+            assert (
+                "operator mode" in answer
+                or "repo mutation" in answer
+                or "implementation" in answer
+                or "no files were changed" in answer
+            ), f"Unexpected operator answer for repo mutation: {answer!r}"
 
 
 def test_sandbox_build_does_not_fire_for_plain_website_prompts() -> None:

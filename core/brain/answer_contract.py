@@ -2547,6 +2547,90 @@ class AnswerContract:
             or self._looks_like_artifact_edit(normalized)
         )
 
+        # ─── Explicit sandbox export of active single-file code artifact ──────────
+        # "Write it to the sandbox" / "save to sandbox" with an active code_artifact
+        # (not a site_bundle) must write the existing artifact content to the sandbox
+        # and return a receipt — it must NOT generate a new draft artifact.
+        # Note: extract_artifact_from_metadata normalizes single artifacts with key
+        # "type" (not "artifact_type"), while site bundles use "artifact_type".
+        _latest_artifact_kind = str(
+            (latest_artifact.get("artifact_type") or latest_artifact.get("type") or "")
+            if isinstance(latest_artifact, dict)
+            else ""
+        )
+        is_explicit_single_artifact_sandbox_export = (
+            explicit_sandbox_delivery_request
+            and latest_artifact is not None
+            and _latest_artifact_kind == "code_artifact"
+            and not is_site_bundle_sandbox_delivery_request
+            and not is_generation
+            and not is_site_bundle_generation
+        )
+        if is_explicit_single_artifact_sandbox_export:
+            _filename = str(latest_artifact.get("filename") or "index.html")  # type: ignore[union-attr]
+            _content = str(latest_artifact.get("content") or "")
+            _language = str(latest_artifact.get("language") or "html")
+            _artifact_id = str(
+                latest_artifact.get("artifact_id")  # type: ignore[union-attr]
+                or self._slugify_artifact_name(_filename)
+                or "artifact-export"
+            )
+            # Derive project slug from artifact_id (strip "-artifact" suffix if present).
+            _export_slug = self._safe_slug(
+                _artifact_id.replace("-artifact", ""), fallback="artifact-export"
+            )
+            if not _content.strip():
+                return {
+                    "visible_text": "The active artifact has no content to write to sandbox.",
+                    "code_artifact": {},
+                    "artifact_patch_proposal": {},
+                    "context_receipt": {
+                        "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-artifact-export",
+                        "context_receipts": [],
+                        "record_ids": [],
+                    },
+                    "provenance": {
+                        "artifact_generation": "sandbox_artifact_export_empty",
+                        "delivery_mode": "chat_artifact",
+                    },
+                }
+            _sandbox_relative_path, _sandbox_target_path = self._write_sandbox_file(
+                project_slug=_export_slug,
+                filename=_filename,
+                content=_content,
+            )
+            _sandbox_root_str = str(self._sandbox_root())
+            return {
+                "visible_text": (
+                    f"Wrote the active artifact to sandbox: {_sandbox_target_path}\n"
+                    f"Sandbox root: {_sandbox_root_str}"
+                ),
+                "code_artifact": {
+                    **latest_artifact,
+                    "delivery_mode": "sandbox_write",
+                    "applied": True,
+                    "sandbox_root": _sandbox_root_str,
+                    "sandbox_project_slug": _export_slug,
+                    "sandbox_relative_path": _sandbox_relative_path,
+                    "sandbox_target_path": _sandbox_target_path,
+                },
+                "artifact_patch_proposal": {},
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-artifact-export",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "sandbox_artifact_export",
+                    "artifact_validation": "passed",
+                    "delivery_mode": "sandbox_write",
+                    "sandbox_root": _sandbox_root_str,
+                    "sandbox_project_slug": _export_slug,
+                    "sandbox_relative_path": _sandbox_relative_path,
+                    "sandbox_target_path": _sandbox_target_path,
+                },
+            }
+
         # ─── Site bundle patch proposal ────────────────────────────────────────────
         if (
             is_patch_proposal_request
