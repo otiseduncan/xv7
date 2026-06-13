@@ -217,3 +217,122 @@ def test_answer_contract_wrappers_match_code_artifact_builder() -> None:
     assert AnswerContract._artifact_intent_label(
         prompt
     ) == CodeArtifactBuilder.artifact_intent_label(prompt)
+
+
+def test_answer_contract_artifact_helpers_call_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "code_artifact_language",
+        staticmethod(lambda normalized_question: f"language:{normalized_question}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "code_artifact_filename",
+        staticmethod(lambda language: f"filename:{language}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "clean_artifact_label",
+        staticmethod(lambda text: f"label:{text}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "extract_artifact_name",
+        classmethod(lambda cls, question: f"name:{question}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "artifact_business_category",
+        staticmethod(lambda question, name: f"category:{question}:{name}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "artifact_style_profile",
+        staticmethod(lambda question, category: {"style": f"{question}:{category}"}),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "format_business_name",
+        staticmethod(lambda name, fallback: f"business:{name}:{fallback}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "build_business_site_template",
+        classmethod(lambda cls, question: {"template": question}),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "default_code_artifact_content",
+        classmethod(
+            lambda cls, filename, language, question: (
+                f"content:{filename}:{language}:{question}"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "extract_requested_filename",
+        classmethod(lambda cls, question, language: f"requested:{question}:{language}"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "extract_requested_previewable",
+        staticmethod(lambda question, language: question == language),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "extract_apply_intent",
+        staticmethod(lambda question: question == "apply"),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "extract_style_hints",
+        staticmethod(lambda question: {"colors": [question], "styles": ["builder"]}),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "extract_layout_hints",
+        staticmethod(lambda question: [f"layout:{question}"]),
+    )
+    monkeypatch.setattr(
+        CodeArtifactBuilder,
+        "artifact_intent_label",
+        staticmethod(lambda question: f"intent:{question}"),
+    )
+
+    assert AnswerContract._code_artifact_language("q") == "language:q"
+    assert AnswerContract._code_artifact_filename("html") == "filename:html"
+    assert AnswerContract._clean_artifact_label(" raw ") == "label: raw "
+    assert AnswerContract._extract_artifact_name("prompt") == "name:prompt"
+    assert (
+        AnswerContract._artifact_business_category("prompt", "Name")
+        == "category:prompt:Name"
+    )
+    assert AnswerContract._artifact_style_profile("prompt", "generic") == {
+        "style": "prompt:generic"
+    }
+    assert (
+        AnswerContract._format_business_name("Name", "Fallback")
+        == "business:Name:Fallback"
+    )
+    assert AnswerContract._build_business_site_template("prompt") == {
+        "template": "prompt"
+    }
+    assert (
+        AnswerContract._default_code_artifact_content("index.html", "html", "prompt")
+        == "content:index.html:html:prompt"
+    )
+    assert (
+        AnswerContract._extract_requested_filename("prompt", "html")
+        == "requested:prompt:html"
+    )
+    assert AnswerContract._extract_requested_previewable("same", "same") is True
+    assert AnswerContract._extract_apply_intent("apply") is True
+    assert AnswerContract._extract_style_hints("black") == {
+        "colors": ["black"],
+        "styles": ["builder"],
+    }
+    assert AnswerContract._extract_layout_hints("hero") == ["layout:hero"]
+    assert AnswerContract._artifact_intent_label("html") == "intent:html"
