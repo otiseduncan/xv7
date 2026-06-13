@@ -15,9 +15,16 @@ class RevisionReceiptManager:
     def next_revision_number(artifact: dict[str, Any] | None) -> int:
         if not isinstance(artifact, dict):
             return 1
+
+        raw_revision_number = artifact.get("revision_number")
         try:
-            current = int(artifact.get("revision_number"))
-        except (TypeError, ValueError):
+            if isinstance(raw_revision_number, int):
+                current = raw_revision_number
+            elif isinstance(raw_revision_number, str):
+                current = int(raw_revision_number)
+            else:
+                current = 0
+        except ValueError:
             current = 0
         return max(current + 1, 1)
 
