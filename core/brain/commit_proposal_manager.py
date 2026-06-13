@@ -100,7 +100,9 @@ class CommitProposalManager:
                 "No files were changed and no commit was created."
             )
         if excluded_files:
-            visible_lines.append(f"Excluded blocked paths: {', '.join(excluded_files[:5])}.")
+            visible_lines.append(
+                f"Excluded blocked paths: {', '.join(excluded_files[:5])}."
+            )
         return " ".join(visible_lines)
 
     @classmethod
