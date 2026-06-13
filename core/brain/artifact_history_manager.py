@@ -36,7 +36,9 @@ class ArtifactHistoryManager:
         return None
 
     @staticmethod
-    def extract_artifact_from_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    def extract_artifact_from_metadata(
+        metadata: dict[str, Any],
+    ) -> dict[str, Any] | None:
         if not isinstance(metadata, dict):
             return None
 
@@ -163,7 +165,9 @@ class ArtifactHistoryManager:
 
             prompt = str(artifact.get("source_prompt") or "").strip()
             if prompt:
-                extracted = ArtifactFidelityManager.extract_prompt_fidelity_contract(prompt)
+                extracted = ArtifactFidelityManager.extract_prompt_fidelity_contract(
+                    prompt
+                )
                 name = str(extracted.get("requested_business_name") or "").strip()
                 if name:
                     history_names.append(name)
