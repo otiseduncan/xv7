@@ -98,6 +98,18 @@ class IntentRouter:
     ARTIFACT_TARGETED_PATTERN = re.compile(
         r"\b(only|keep the layout|keep the content|preserve)\b"
     )
+    TYPOGRAPHY_BLACKLETTER_PATTERN = re.compile(
+        r"\b(old english font|blackletter|gothic font|fraktur|medieval font|biker-bar style font|biker bar style font)\b"
+    )
+    TYPOGRAPHY_BLACKLETTER_DETAIL_PATTERN = re.compile(
+        r"\b(major section titles|heavier strokes|shadowing|letter spacing|decorative styling|gothic biker-bar style font|gothic biker bar style font)\b"
+    )
+    TYPOGRAPHY_SCRIPT_PATTERN = re.compile(
+        r"\b(script font|cursive font|change the font|change the text font|change the heading font|change the font to a script)\b"
+    )
+    COLOR_CHANGE_REQUEST_PATTERN = re.compile(
+        r"\b(color|colors|palette|background|theme)\b"
+    )
 
     @staticmethod
     def normalize(text: str) -> str:
@@ -108,25 +120,79 @@ class IntentRouter:
         return bool(cls.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized_text))
 
     @classmethod
+    def typography_style_request(cls, normalized_text: str) -> str | None:
+        if cls.TYPOGRAPHY_BLACKLETTER_PATTERN.search(normalized_text):
+            return "blackletter/gothic"
+        if (
+            "gothic" in normalized_text
+            and cls.TYPOGRAPHY_BLACKLETTER_DETAIL_PATTERN.search(normalized_text)
+        ):
+            return "blackletter/gothic"
+        if cls.TYPOGRAPHY_SCRIPT_PATTERN.search(normalized_text):
+            return "script/cursive"
+        return None
+
+    @classmethod
     def artifact_refinement_mode(cls, normalized_text: str) -> str | None:
+        typography_style = cls.typography_style_request(normalized_text)
+        asks_for_color_change = bool(
+            cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_text)
+        )
+        if typography_style is not None and not asks_for_color_change:
+            return "typography_only"
+
         if cls.ARTIFACT_UNDO_PATTERN.search(normalized_text):
             return "undo"
         if cls.ARTIFACT_EXPLAIN_PATTERN.search(normalized_text):
             return "explain"
-        has_style = bool(cls.ARTIFACT_STYLE_PATTERN.search(normalized_text))
-        has_content = bool(cls.ARTIFACT_CONTENT_PATTERN.search(normalized_text))
+        has_action = bool(cls.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_text))
         targeted = bool(cls.ARTIFACT_TARGETED_PATTERN.search(normalized_text))
-        if has_style and not has_content:
-            return "typography_only" if "font" in normalized_text else "style_only"
-        if has_content and not has_style:
+        style = bool(cls.ARTIFACT_STYLE_PATTERN.search(normalized_text))
+        content = bool(cls.ARTIFACT_CONTENT_PATTERN.search(normalized_text))
+        has_target = bool(cls.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_text))
+        if not has_action and not (style or content or targeted):
+            return None
+        if not has_action and not has_target:
+            return None
+        if has_action and not (has_target or style or content or targeted):
+            return None
+        if targeted and style and not content:
+            return "style_only"
+        if targeted and content and not style:
+            return "content_only"
+        if (
+            style
+            and not content
+            and any(
+                phrase in normalized_text
+                for phrase in (
+                    "change the colors",
+                    "background white",
+                    "use script font",
+                    "make it easier to read",
+                    "restyle",
+                )
+            )
+        ):
+            return "style_only"
+        if (
+            content
+            and not style
+            and any(
+                phrase in normalized_text
+                for phrase in (
+                    "headline",
+                    "cta",
+                    "button text",
+                    "rewrite",
+                    "services section",
+                )
+            )
+        ):
             return "content_only"
         if targeted:
             return "targeted_revision"
-        has_action = bool(cls.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_text))
-        has_target = bool(cls.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_text))
-        if has_action and has_target:
-            return "full_revision"
-        return None
+        return "full_revision"
 
     @classmethod
     def looks_like_artifact_edit(cls, normalized_text: str) -> bool:

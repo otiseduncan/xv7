@@ -14,6 +14,7 @@ from uuid import uuid4
 import httpx
 
 from core.brain import site_bundle as sb
+from core.brain.intent_router import IntentRouter
 from core.brain.schema import BrainLayer, BrainRecord
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
@@ -157,7 +158,7 @@ class AnswerContract:
 
     @staticmethod
     def _normalize(text: str) -> str:
-        return re.sub(r"\s+", " ", text.strip().lower())
+        return IntentRouter.normalize(text)
 
     @staticmethod
     def _find_layer_record(
@@ -281,30 +282,7 @@ class AnswerContract:
 
     @staticmethod
     def is_code_artifact_request(normalized_question: str) -> bool:
-        has_hint = bool(
-            AnswerContract.CODE_ARTIFACT_HINT_PATTERN.search(normalized_question)
-        )
-        has_action = bool(
-            AnswerContract.CODE_ARTIFACT_PATTERN.search(normalized_question)
-        )
-        if has_hint and has_action:
-            return True
-
-        # Preserve old single-page website behavior: plain "build a website for ..."
-        # should still route to the renderable code artifact contract.
-        if AnswerContract.WEBSITE_BUILD_ARTIFACT_PATTERN.search(normalized_question):
-            return not sb.is_site_bundle_request(normalized_question)
-
-        if AnswerContract._is_preview_artifact_request(
-            normalized_question
-        ) and re.search(
-            r"\b(website|site|page|design|homepage|landing page)\b",
-            normalized_question,
-            flags=re.IGNORECASE,
-        ):
-            return True
-
-        return False
+        return IntentRouter.is_code_artifact_request(normalized_question)
 
     @staticmethod
     def _code_artifact_language(normalized_question: str) -> str:
@@ -1672,34 +1650,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _looks_like_artifact_edit(normalized_question: str) -> bool:
-        if AnswerContract._artifact_refinement_mode(normalized_question) in {
-            "undo",
-            "explain",
-            "typography_only",
-            "style_only",
-            "content_only",
-            "targeted_revision",
-            "full_revision",
-        }:
-            return True
-        has_action = bool(
-            AnswerContract.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question)
-        )
-        has_target = bool(
-            AnswerContract.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question)
-        )
-        explicit = any(
-            phrase in normalized_question
-            for phrase in (
-                "revise this site",
-                "update the artifact",
-                "change the website",
-                "make the text script",
-                "change the text on the website",
-                "change the font to script",
-            )
-        )
-        return explicit or (has_action and has_target)
+        return IntentRouter.looks_like_artifact_edit(normalized_question)
 
     @staticmethod
     def _extract_business_name_from_html(content: str) -> str | None:
@@ -1904,64 +1855,23 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _has_explicit_artifact_intent(cls, normalized_question: str) -> bool:
-        return bool(cls.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized_question))
+        return IntentRouter.has_explicit_artifact_intent(normalized_question)
 
     @classmethod
     def _is_preview_artifact_request(cls, normalized_question: str) -> bool:
-        if not normalized_question:
-            return False
-        if cls._has_explicit_artifact_intent(normalized_question):
-            return True
-        if cls.PREVIEW_ARTIFACT_PATTERN.search(normalized_question):
-            return True
-        return bool(
-            re.search(
-                r"\bgenerate\b.*\b(website|site|page|design)\b",
-                normalized_question,
-                flags=re.IGNORECASE,
-            )
-        )
+        return IntentRouter.is_preview_artifact_request(normalized_question)
 
     @classmethod
     def _is_sandbox_build_request(cls, normalized_question: str) -> bool:
-        if not normalized_question:
-            return False
-        if cls._has_explicit_artifact_intent(normalized_question):
-            return False
-        if cls._is_repo_mutation_build_prompt(normalized_question):
-            return False
-        has_action = bool(cls.SANDBOX_BUILD_ACTION_PATTERN.search(normalized_question))
-        has_target = bool(cls.SANDBOX_BUILD_TARGET_PATTERN.search(normalized_question))
-        return has_action and has_target
+        return IntentRouter.is_sandbox_build_request(normalized_question)
 
     @classmethod
     def _is_repo_mutation_build_prompt(cls, normalized_question: str) -> bool:
-        if not normalized_question:
-            return False
-
-        if cls.ARTIFACT_REPO_MUTATION_PATTERN.search(normalized_question):
-            return True
-
-        if any(
-            marker in normalized_question
-            for marker in (" in the repo", " into the repo", " to the repo")
-        ) and not re.search(
-            r"\b(do not|don't)\s+(apply|write|save)\b", normalized_question
-        ):
-            return True
-
-        return False
+        return IntentRouter.is_repo_mutation_build_prompt(normalized_question)
 
     @classmethod
     def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
-        return (
-            cls._has_explicit_artifact_intent(normalized_question)
-            or cls._is_preview_artifact_request(normalized_question)
-            or cls.is_code_artifact_request(normalized_question)
-            or sb.is_site_bundle_request(normalized_question)
-            or cls._looks_like_artifact_edit(normalized_question)
-            or cls._is_sandbox_build_request(normalized_question)
-        ) and not cls._is_repo_mutation_build_prompt(normalized_question)
+        return IntentRouter.prioritize_artifact_over_build_guard(normalized_question)
 
     @staticmethod
     def _workspace_root() -> Path:
@@ -3207,65 +3117,7 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _artifact_refinement_mode(cls, normalized_question: str) -> str | None:
-        typography_style = cls._typography_style_request(normalized_question)
-        asks_for_color_change = bool(
-            cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_question)
-        )
-        if typography_style is not None and not asks_for_color_change:
-            return "typography_only"
-
-        if cls.ARTIFACT_UNDO_PATTERN.search(normalized_question):
-            return "undo"
-        if cls.ARTIFACT_EXPLAIN_PATTERN.search(normalized_question):
-            return "explain"
-        has_action = bool(cls.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question))
-        targeted = bool(cls.ARTIFACT_TARGETED_PATTERN.search(normalized_question))
-        style = bool(cls.ARTIFACT_STYLE_PATTERN.search(normalized_question))
-        content = bool(cls.ARTIFACT_CONTENT_PATTERN.search(normalized_question))
-        has_target = bool(cls.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question))
-        if not has_action and not (style or content or targeted):
-            return None
-        if not has_action and not has_target:
-            return None
-        if has_action and not (has_target or style or content or targeted):
-            return None
-        if targeted and style and not content:
-            return "style_only"
-        if targeted and content and not style:
-            return "content_only"
-        if (
-            style
-            and not content
-            and any(
-                phrase in normalized_question
-                for phrase in (
-                    "change the colors",
-                    "background white",
-                    "use script font",
-                    "make it easier to read",
-                    "restyle",
-                )
-            )
-        ):
-            return "style_only"
-        if (
-            content
-            and not style
-            and any(
-                phrase in normalized_question
-                for phrase in (
-                    "headline",
-                    "cta",
-                    "button text",
-                    "rewrite",
-                    "services section",
-                )
-            )
-        ):
-            return "content_only"
-        if targeted:
-            return "targeted_revision"
-        return "full_revision"
+        return IntentRouter.artifact_refinement_mode(normalized_question)
 
     @staticmethod
     def _artifact_needs_context_message() -> str:

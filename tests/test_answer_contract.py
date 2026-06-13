@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
+from typing import Any
 
 from core.brain import site_bundle as sb
 from core.brain.answer_contract import AnswerContract
@@ -2759,7 +2759,9 @@ def test_site_bundle_generation_preserves_requested_products_and_faq_pages(
 
     files = site_bundle_data.get("files")
     assert isinstance(files, list) and files, "expected top-level files list"
-    file_paths = [str(item.get("path") or "") for item in files if isinstance(item, dict)]
+    file_paths = [
+        str(item.get("path") or "") for item in files if isinstance(item, dict)
+    ]
     assert "index.html" in file_paths
     assert "products.html" in file_paths
     assert "about.html" in file_paths
@@ -2770,7 +2772,9 @@ def test_site_bundle_generation_preserves_requested_products_and_faq_pages(
 
     route_manifest = site_bundle_data.get("route_manifest")
     assert isinstance(route_manifest, list) and route_manifest
-    route_paths = [str(item.get("path") or "") for item in route_manifest if isinstance(item, dict)]
+    route_paths = [
+        str(item.get("path") or "") for item in route_manifest if isinstance(item, dict)
+    ]
     assert "products.html" in route_paths
     assert "faq.html" in route_paths
     assert "services.html" not in route_paths

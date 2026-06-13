@@ -55,6 +55,47 @@ def test_intent_router_matches_current_answer_contract_routing_helpers() -> None
         )
 
 
+def test_answer_contract_intent_helpers_delegate_to_intent_router() -> None:
+    prompts = [
+        *ROUTING_CASES,
+        "Use script font for the headline",
+        "Keep the layout but make the colors black and gold",
+        "Rewrite the homepage headline",
+        "What changed?",
+        "Undo the last change",
+    ]
+
+    for prompt in prompts:
+        contract_normalized = AnswerContract._normalize(prompt)
+        router_normalized = IntentRouter.normalize(prompt)
+
+        assert contract_normalized == router_normalized
+        assert AnswerContract._has_explicit_artifact_intent(
+            contract_normalized
+        ) == IntentRouter.has_explicit_artifact_intent(router_normalized)
+        assert AnswerContract._is_preview_artifact_request(
+            contract_normalized
+        ) == IntentRouter.is_preview_artifact_request(router_normalized)
+        assert AnswerContract.is_code_artifact_request(
+            contract_normalized
+        ) == IntentRouter.is_code_artifact_request(router_normalized)
+        assert AnswerContract._is_sandbox_build_request(
+            contract_normalized
+        ) == IntentRouter.is_sandbox_build_request(router_normalized)
+        assert AnswerContract._is_repo_mutation_build_prompt(
+            contract_normalized
+        ) == IntentRouter.is_repo_mutation_build_prompt(router_normalized)
+        assert AnswerContract._artifact_refinement_mode(
+            contract_normalized
+        ) == IntentRouter.artifact_refinement_mode(router_normalized)
+        assert AnswerContract._looks_like_artifact_edit(
+            contract_normalized
+        ) == IntentRouter.looks_like_artifact_edit(router_normalized)
+        assert AnswerContract._prioritize_artifact_over_build_guard(
+            contract_normalized
+        ) == IntentRouter.prioritize_artifact_over_build_guard(router_normalized)
+
+
 def test_intent_router_classifies_command_language_contract() -> None:
     assert (
         IntentRouter.classify(
