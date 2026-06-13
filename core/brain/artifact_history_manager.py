@@ -79,9 +79,12 @@ class ArtifactHistoryManager:
                     "prompt_fidelity": artifact.get("prompt_fidelity"),
                     "delivery_mode": artifact.get("delivery_mode"),
                     "sandbox_root": artifact.get("sandbox_root"),
+                    "project_slug": artifact.get("project_slug"),
                     "sandbox_project_slug": artifact.get("sandbox_project_slug"),
+                    "sandbox_project_path": artifact.get("sandbox_project_path"),
                     "sandbox_relative_path": artifact.get("sandbox_relative_path"),
                     "sandbox_target_path": artifact.get("sandbox_target_path"),
+                    "sandbox_written_paths": artifact.get("sandbox_written_paths"),
                     "created_at": artifact.get("created_at"),
                     "message_id": artifact.get("message_id"),
                 }

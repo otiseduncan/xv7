@@ -3090,6 +3090,7 @@ def test_explicit_sandbox_write_exports_active_single_code_artifact(
     → writes the active artifact to sandbox without generating a new draft."""
     sandbox_root = tmp_path / "sandbox"
     monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+    monkeypatch.setenv("XV7_SANDBOX_ROOT_DISPLAY", r"X:\xoduz-sandbox")
 
     contract = AnswerContract()
 
@@ -3147,6 +3148,8 @@ def test_explicit_sandbox_write_exports_active_single_code_artifact(
     assert target_path, "Expected a sandbox_target_path in provenance"
     assert "harrys-hot-dog-cart" in target_path
     assert "index.html" in target_path
+    assert "index-html" not in target_path
+    assert "/app/X:" not in target_path
 
     # Sandbox file must actually exist on disk.
     assert sandbox_root.exists(), "sandbox root must be created"
@@ -3165,6 +3168,63 @@ def test_explicit_sandbox_write_exports_active_single_code_artifact(
     assert isinstance(result_artifact, dict) and result_artifact
     assert result_artifact.get("delivery_mode") == "sandbox_write"
     assert result_artifact.get("applied") is True
+    assert result_artifact.get("sandbox_project_slug") == "harrys-hot-dog-cart"
+
+
+def test_sandbox_location_query_prefers_latest_sandbox_export_over_newer_chat_preview(
+    monkeypatch, tmp_path
+) -> None:
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+
+    contract = AnswerContract()
+    export_artifact = {
+        "type": "code_artifact",
+        "filename": "index.html",
+        "language": "html",
+        "content": "<!doctype html><html><body>exported</body></html>",
+        "delivery_mode": "sandbox_write",
+        "sandbox_root": str(sandbox_root),
+        "sandbox_project_slug": "harrys-hot-dog-cart",
+        "sandbox_project_path": str(sandbox_root / "harrys-hot-dog-cart"),
+        "sandbox_target_path": str(sandbox_root / "harrys-hot-dog-cart" / "index.html"),
+        "sandbox_written_paths": [
+            str(sandbox_root / "harrys-hot-dog-cart" / "index.html")
+        ],
+    }
+    later_chat_preview_artifact = {
+        "type": "code_artifact",
+        "filename": "index.html",
+        "language": "html",
+        "content": "<!doctype html><html><body>new draft</body></html>",
+        "delivery_mode": "chat_artifact",
+    }
+    session_messages = [
+        {
+            "role": "assistant",
+            "content": "Wrote the active artifact to sandbox.",
+            "metadata": {"code_artifact": export_artifact},
+        },
+        {
+            "role": "assistant",
+            "content": "Here is a draft HTML artifact for index.html.",
+            "metadata": {"code_artifact": later_chat_preview_artifact},
+        },
+    ]
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "Show me where the files went.",
+            session_messages=session_messages,
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    visible = str(response.get("visible_text") or "").lower()
+    assert "harrys-hot-dog-cart" in visible
+    assert "index.html" in visible
+    assert "no sandbox files were written" not in visible
 
 
 def test_sandbox_location_query_returns_fast_path_from_artifact_state(

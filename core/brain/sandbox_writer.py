@@ -12,10 +12,62 @@ class SandboxWriteManager:
     """Sandbox path safety and file writing for generated artifacts."""
 
     @staticmethod
-    def sandbox_root() -> Path:
+    def _is_windows_style_path(path_text: str) -> bool:
+        text = str(path_text or "").strip()
+        return bool(re.match(r"^[A-Za-z]:[\\/]", text))
+
+    @classmethod
+    def sandbox_root(cls) -> Path:
+        """Return the write root used inside the current runtime environment."""
+        configured_write = str(os.getenv("XV7_SANDBOX_ROOT_WRITE", "")).strip()
         configured = str(os.getenv("XV7_SANDBOX_ROOT", "")).strip()
+        if configured_write:
+            return Path(configured_write).resolve()
+
+        # On non-Windows runtimes (e.g., Docker/Linux), a Windows host path in
+        # XV7_SANDBOX_ROOT should not be resolved into /app/X:/... . Prefer an
+        # explicit container root when available, then a safe default mount path.
+        if os.name != "nt" and cls._is_windows_style_path(configured):
+            container_root = (
+                str(os.getenv("XV7_SANDBOX_ROOT_CONTAINER", "")).strip()
+                or "/xoduz-sandbox"
+            )
+            return Path(container_root).resolve()
+
         root = Path(configured) if configured else Path("X:/xoduz-sandbox")
         return root.resolve()
+
+    @classmethod
+    def sandbox_display_root(cls) -> str:
+        """Return the user-visible sandbox root path for receipts/messages."""
+        configured_display = str(os.getenv("XV7_SANDBOX_ROOT_DISPLAY", "")).strip()
+        if configured_display:
+            return configured_display
+
+        configured = str(os.getenv("XV7_SANDBOX_ROOT", "")).strip()
+        if configured and cls._is_windows_style_path(configured):
+            return configured.replace("/", "\\")
+
+        return str(cls.sandbox_root())
+
+    @classmethod
+    def display_path_for_write_target(cls, write_target_path: str) -> str:
+        """Map an internal write path to a display path if roots differ."""
+        target_text = str(write_target_path or "").strip()
+        if not target_text:
+            return ""
+
+        write_root = cls.sandbox_root()
+        display_root = cls.sandbox_display_root().rstrip("/\\")
+
+        try:
+            target = Path(target_text).resolve()
+            relative = target.relative_to(write_root)
+            rel_text = str(relative).replace("/", "\\")
+            separator = "" if display_root.endswith(("/", "\\")) else "\\"
+            return f"{display_root}{separator}{rel_text}"
+        except Exception:
+            return target_text
 
     @staticmethod
     def sanitize_filename(filename: str, language: str) -> str:

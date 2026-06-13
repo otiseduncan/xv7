@@ -555,6 +555,10 @@ class AnswerContract:
     def _sandbox_root() -> Path:
         return SandboxWriteManager.sandbox_root()
 
+    @staticmethod
+    def _sandbox_display_root() -> str:
+        return SandboxWriteManager.sandbox_display_root()
+
     @classmethod
     def _safe_slug(cls, raw: str | None, fallback: str) -> str:
         return WebsiteProjectNameManager.safe_folder_name(raw, fallback=fallback)
@@ -1394,6 +1398,27 @@ class AnswerContract:
                 }
             )
         return history
+
+    @classmethod
+    def _latest_sandbox_export_artifact(
+        cls,
+        artifact_history: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        for item in reversed(artifact_history):
+            if not isinstance(item, dict):
+                continue
+            artifact = item.get("artifact")
+            if not isinstance(artifact, dict):
+                continue
+            if str(artifact.get("delivery_mode") or "") != "sandbox_write":
+                continue
+            if (
+                str(artifact.get("sandbox_target_path") or "").strip()
+                or str(artifact.get("sandbox_project_path") or "").strip()
+                or artifact.get("sandbox_written_paths")
+            ):
+                return artifact
+        return None
 
     @staticmethod
     def _extract_target_text(question: str, label: str) -> str | None:
@@ -2428,15 +2453,32 @@ class AnswerContract:
 
         # ─── Sandbox location fast-path ─────────────────────────────────────────────
         if self._is_sandbox_location_query(normalized):
-            if latest_artifact is not None:
-                sandbox_project_path = str(
-                    latest_artifact.get("sandbox_project_path") or ""
+            latest_sandbox_artifact = self._latest_sandbox_export_artifact(
+                artifact_history
+            )
+            if latest_sandbox_artifact is not None:
+                sandbox_target_path = str(
+                    latest_sandbox_artifact.get("sandbox_target_path") or ""
                 ).strip()
+                sandbox_project_path = str(
+                    latest_sandbox_artifact.get("sandbox_project_path") or ""
+                ).strip()
+                if not sandbox_project_path and sandbox_target_path:
+                    try:
+                        sandbox_project_path = str(Path(sandbox_target_path).parent)
+                    except Exception:
+                        sandbox_project_path = ""
+
                 sandbox_written_paths: list[str] = [
                     str(p)
-                    for p in (latest_artifact.get("sandbox_written_paths") or [])
+                    for p in (
+                        latest_sandbox_artifact.get("sandbox_written_paths") or []
+                    )
                     if str(p).strip()
                 ]
+                if not sandbox_written_paths and sandbox_target_path:
+                    sandbox_written_paths = [sandbox_target_path]
+
                 if sandbox_project_path:
                     file_lines = (
                         "\n".join(f"  - {p}" for p in sandbox_written_paths[:8])
@@ -2459,6 +2501,14 @@ class AnswerContract:
                             "artifact_generation": "sandbox_location_query",
                             "sandbox_project_path": sandbox_project_path,
                             "sandbox_written_paths": sandbox_written_paths,
+                            "sandbox_target_path": sandbox_target_path,
+                            "sandbox_root": str(
+                                latest_sandbox_artifact.get("sandbox_root") or ""
+                            ),
+                            "sandbox_project_slug": str(
+                                latest_sandbox_artifact.get("sandbox_project_slug")
+                                or ""
+                            ),
                         },
                     }
             return {
@@ -2571,16 +2621,23 @@ class AnswerContract:
             assert isinstance(latest_artifact, dict)
             _filename = str(latest_artifact.get("filename") or "index.html")
             _content = str(latest_artifact.get("content") or "")
-            _language = str(latest_artifact.get("language") or "html")
             _artifact_id = str(
                 latest_artifact.get("artifact_id")
                 or self._slugify_artifact_name(_filename)
                 or "artifact-export"
             )
-            # Derive project slug from artifact_id (strip "-artifact" suffix if present).
-            _export_slug = self._safe_slug(
-                _artifact_id.replace("-artifact", ""), fallback="artifact-export"
+            _source_prompt = str(latest_artifact.get("source_prompt") or "")
+            _business_from_prompt = self._extract_artifact_name(_source_prompt)
+            _business_from_html = self._extract_business_name_from_html(_content)
+            _project_seed = str(
+                latest_artifact.get("project_slug")
+                or latest_artifact.get("sandbox_project_slug")
+                or latest_artifact.get("slug")
+                or _business_from_prompt
+                or _business_from_html
+                or _artifact_id.replace("-artifact", "")
             )
+            _export_slug = self._safe_slug(_project_seed, fallback="artifact-export")
             if not _content.strip():
                 return {
                     "visible_text": "The active artifact has no content to write to sandbox.",
@@ -2601,20 +2658,27 @@ class AnswerContract:
                 filename=_filename,
                 content=_content,
             )
-            _sandbox_root_str = str(self._sandbox_root())
+            _sandbox_root_display = self._sandbox_display_root()
+            _sandbox_target_display = SandboxWriteManager.display_path_for_write_target(
+                _sandbox_target_path
+            )
+            _sandbox_project_display = str(Path(_sandbox_target_display).parent)
             return {
                 "visible_text": (
-                    f"Wrote the active artifact to sandbox: {_sandbox_target_path}\n"
-                    f"Sandbox root: {_sandbox_root_str}"
+                    f"Wrote the active artifact to sandbox: {_sandbox_target_display}\n"
+                    f"Sandbox root: {_sandbox_root_display}"
                 ),
                 "code_artifact": {
                     **latest_artifact,
+                    "project_slug": _export_slug,
                     "delivery_mode": "sandbox_write",
                     "applied": True,
-                    "sandbox_root": _sandbox_root_str,
+                    "sandbox_root": _sandbox_root_display,
                     "sandbox_project_slug": _export_slug,
                     "sandbox_relative_path": _sandbox_relative_path,
-                    "sandbox_target_path": _sandbox_target_path,
+                    "sandbox_project_path": _sandbox_project_display,
+                    "sandbox_target_path": _sandbox_target_display,
+                    "sandbox_written_paths": [_sandbox_target_display],
                 },
                 "artifact_patch_proposal": {},
                 "context_receipt": {
@@ -2626,10 +2690,12 @@ class AnswerContract:
                     "artifact_generation": "sandbox_artifact_export",
                     "artifact_validation": "passed",
                     "delivery_mode": "sandbox_write",
-                    "sandbox_root": _sandbox_root_str,
+                    "sandbox_root": _sandbox_root_display,
                     "sandbox_project_slug": _export_slug,
                     "sandbox_relative_path": _sandbox_relative_path,
-                    "sandbox_target_path": _sandbox_target_path,
+                    "sandbox_project_path": _sandbox_project_display,
+                    "sandbox_target_path": _sandbox_target_display,
+                    "sandbox_written_paths": [_sandbox_target_display],
                 },
             }
 
@@ -4260,6 +4326,9 @@ class AnswerContract:
                 "prompt_fidelity": prompt_fidelity_payload,
                 "typography_refinement": typography_refinement_payload or {},
                 "delivery_mode": delivery_mode,
+                "project_slug": self._safe_slug(
+                    business_name, fallback="site-artifact"
+                ),
                 "sandbox_root": str(self._sandbox_root()) if deliver_to_sandbox else "",
                 "sandbox_project_slug": project_slug if deliver_to_sandbox else "",
                 "sandbox_relative_path": sandbox_relative_path or "",
