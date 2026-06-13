@@ -96,10 +96,30 @@ def _new_session(client: TestClient) -> str:
 
 
 def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "branch", "-M", "main"], cwd=root, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.name", "XV7 Test"], cwd=root, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.email", "xv7-test@example.com"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, text=True
+    )
+    subprocess.run(
+        ["git", "branch", "-M", "main"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "XV7 Test"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "xv7-test@example.com"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _extract_business_name(prompt: str) -> str:
@@ -122,7 +142,20 @@ def _make_fake_model_html(prompt: str) -> str:
     name = _extract_business_name(prompt)
     lowered = prompt.lower()
     colors: list[str] = []
-    for token in ("pink", "cream", "gold", "yellow", "black", "silver", "blue", "purple", "cyan", "red", "green", "white"):
+    for token in (
+        "pink",
+        "cream",
+        "gold",
+        "yellow",
+        "black",
+        "silver",
+        "blue",
+        "purple",
+        "cyan",
+        "red",
+        "green",
+        "white",
+    ):
         if token in lowered:
             colors.append(token)
     color_css = ", ".join(colors) if colors else "slate, sky"
@@ -137,7 +170,9 @@ def _make_fake_model_html(prompt: str) -> str:
     lowered_name = name.lower()
     if "locksmith" in lowered_name:
         hero = f"{name} emergency locksmith security response."
-        detail = "Urgent trustworthy lockout, rekey, key security, and emergency service."
+        detail = (
+            "Urgent trustworthy lockout, rekey, key security, and emergency service."
+        )
     elif "flowers" in lowered_name or "flor" in lowered_name:
         hero = f"{name} elegant bouquet and floral studio."
         detail = "Seasonal blooms, bouquet design, and same-day floral delivery."
@@ -147,7 +182,18 @@ def _make_fake_model_html(prompt: str) -> str:
     elif "arcade" in lowered_name:
         hero = f"{name} neon retro arcade experience."
         detail = "Retro game grid, high scores, and futuristic arcade nights."
-    elif any(token in lowered for token in ("grooming", "pet grooming", "dog grooming", "dog wash", "trim", "fur", "paw")):
+    elif any(
+        token in lowered
+        for token in (
+            "grooming",
+            "pet grooming",
+            "dog grooming",
+            "dog wash",
+            "trim",
+            "fur",
+            "paw",
+        )
+    ):
         hero = f"{name} pet grooming, bath, trim, and fur care."
         detail = "Friendly dog grooming with bath, wash, paw tidy, coat care, and easy booking."
 
@@ -174,7 +220,9 @@ def _make_fake_model_html(prompt: str) -> str:
 </html>"""
 
 
-def _use_fake_local_model(monkeypatch, *, should_fail: bool = False, reason: str = "invalid_html") -> None:
+def _use_fake_local_model(
+    monkeypatch, *, should_fail: bool = False, reason: str = "invalid_html"
+) -> None:
     async def _fake_generate(
         self,
         *,
@@ -562,7 +610,7 @@ def test_code_artifact_generation_prompt_emits_code_artifact_payload(
         headers={"X-XV7-API-Key": "test-secret"},
         json={
             "raw_text": (
-                "Generate a small HTML code artifact for a one-page \"Harry's Hot Dog Cart\" website. "
+                'Generate a small HTML code artifact for a one-page "Harry\'s Hot Dog Cart" website. '
                 "Return it as a code artifact with filename index.html, language html, previewable true, "
                 "and do not apply it to the repo."
             )
@@ -593,9 +641,10 @@ def test_code_artifact_generation_prompt_emits_code_artifact_payload(
 
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
     assert assistant_payload.get("code_artifact", {}).get("filename") == "index.html"
-    assert assistant_payload.get("policy_provenance", {}).get(
-        "artifact_generation"
-    ) == "local_model"
+    assert (
+        assistant_payload.get("policy_provenance", {}).get("artifact_generation")
+        == "local_model"
+    )
     assert (
         assistant_payload.get("policy_provenance", {}).get("model_used")
         == "fake-code-model:test"
@@ -647,7 +696,10 @@ def test_generate_website_prompt_emits_preview_code_artifact_payload(
     assert "harry" in content.lower()
 
     assert metadata.get("site_bundle", {}) == {}
-    assert "generate a patch for this site" not in str(message.get("content") or "").lower()
+    assert (
+        "generate a patch for this site"
+        not in str(message.get("content") or "").lower()
+    )
 
 
 def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -> None:
@@ -657,19 +709,19 @@ def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -
 
     cases = [
         (
-            "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. Use soft pink, cream, and gold colors with an elegant script-style heading. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            'Generate a small HTML code artifact for a one-page "Flow Flowers" website. Use soft pink, cream, and gold colors with an elegant script-style heading. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
             ["Flow Flowers", "pink", "cream", "gold", "elegant"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website. Make it black, silver, and electric blue with a bold automotive feel. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            'Generate a small HTML code artifact for a one-page "Rico\'s Mobile Detailing" website. Make it black, silver, and electric blue with a bold automotive feel. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
             ["Rico's Mobile Detailing", "black", "silver", "blue", "bold"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website. Use bright purple and cyan colors, a retro arcade feel, and a bold futuristic font style. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            'Generate a small HTML code artifact for a one-page "Neon Byte Arcade" website. Use bright purple and cyan colors, a retro arcade feel, and a bold futuristic font style. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
             ["Neon Byte Arcade", "purple", "cyan", "futuristic"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+            'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
             ["Crimson Turtle Locksmiths", "black", "red", "silver", "trustworthy"],
         ),
     ]
@@ -682,7 +734,9 @@ def test_code_artifact_generation_is_prompt_aware(monkeypatch, tmp_path: Path) -
             json={"raw_text": prompt},
         )
         assert response.status_code == 200
-        content = response.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+        content = response.json()["messages"][-1]["metadata"]["code_artifact"][
+            "content"
+        ]
         seen_contents.append(content)
         for fragment in required_fragments:
             assert fragment in content
@@ -701,17 +755,24 @@ def test_code_artifact_generation_has_no_cross_category_leakage(
 
     cases = [
         (
-            "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website.",
+            'Generate a small HTML code artifact for a one-page "Flow Flowers" website.',
             ["flow flowers", "one-page website"],
-            ["harry", "hot dog", "loaded chili dog", "chicago-style dog", "detailing", "arcade"],
+            [
+                "harry",
+                "hot dog",
+                "loaded chili dog",
+                "chicago-style dog",
+                "detailing",
+                "arcade",
+            ],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website.",
+            'Generate a small HTML code artifact for a one-page "Rico\'s Mobile Detailing" website.',
             ["rico's mobile detailing", "one-page website"],
             ["harry", "hot dog", "flow flowers", "bouquet", "arcade", "neon byte"],
         ),
         (
-            "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website with purple and cyan futuristic styling.",
+            'Generate a small HTML code artifact for a one-page "Neon Byte Arcade" website with purple and cyan futuristic styling.',
             ["neon byte arcade", "futuristic"],
             ["harry", "hot dog", "flow flowers", "bouquet", "detailing", "rico"],
         ),
@@ -725,7 +786,9 @@ def test_code_artifact_generation_has_no_cross_category_leakage(
         )
         assert response.status_code == 200
         payload = response.json()
-        content = payload["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+        content = payload["messages"][-1]["metadata"]["code_artifact"][
+            "content"
+        ].lower()
         for token in must_have:
             assert token in content
         for token in must_not_have:
@@ -739,13 +802,15 @@ def test_code_artifact_generation_has_no_cross_category_leakage(
         )
 
 
-def test_code_artifact_generation_sentinel_business_name(monkeypatch, tmp_path: Path) -> None:
+def test_code_artifact_generation_sentinel_business_name(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     prompt = (
-        "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. "
+        'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. '
         "Use black, red, and silver colors. Return it as a code artifact with filename index.html, "
         "language html, previewable true, and do not apply it to the repo."
     )
@@ -797,7 +862,9 @@ def test_code_artifact_generation_sentinel_business_name(monkeypatch, tmp_path: 
     )
 
 
-def test_code_artifact_generation_fallback_is_honest(monkeypatch, tmp_path: Path) -> None:
+def test_code_artifact_generation_fallback_is_honest(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch, should_fail=True, reason="timeout")
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
@@ -807,7 +874,7 @@ def test_code_artifact_generation_fallback_is_honest(monkeypatch, tmp_path: Path
         headers={"X-XV7-API-Key": "test-secret"},
         json={
             "raw_text": (
-                "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. "
+                'Generate a small HTML code artifact for a one-page "Flow Flowers" website. '
                 "Return it as a code artifact with filename index.html, language html, previewable true, "
                 "and do not apply it to the repo."
             )
@@ -821,11 +888,16 @@ def test_code_artifact_generation_fallback_is_honest(monkeypatch, tmp_path: Path
         .get("last_assistant_payload", {})
         .get("policy_provenance", {})
     )
-    assert provenance.get("artifact_generation") == "deterministic_prompt_template_fallback"
+    assert (
+        provenance.get("artifact_generation")
+        == "deterministic_prompt_template_fallback"
+    )
     assert provenance.get("fallback_reason")
 
 
-def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Path) -> None:
+def test_lookup_prompt_still_uses_lookup_refusal_path(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -840,7 +912,12 @@ def test_lookup_prompt_still_uses_lookup_refusal_path(monkeypatch, tmp_path: Pat
     answer = payload["messages"][-1]["content"].lower()
     assert "cannot execute live web searches" in answer
     assert "browser tool" in answer
-    assert payload.get("metadata", {}).get("last_assistant_payload", {}).get("code_artifact") == {}
+    assert (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("code_artifact")
+        == {}
+    )
 
 
 def test_runtime_artifact_connectivity_endpoint(monkeypatch, tmp_path: Path) -> None:
@@ -914,7 +991,9 @@ def test_local_capability_prompts_are_honest_and_current(
         assert "context required" not in answer
 
 
-def test_crimson_fidelity_contains_locksmith_language_and_visual_cues(monkeypatch, tmp_path: Path) -> None:
+def test_crimson_fidelity_contains_locksmith_language_and_visual_cues(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
@@ -935,14 +1014,19 @@ def test_crimson_fidelity_contains_locksmith_language_and_visual_cues(monkeypatc
     payload = response.json()
     content = payload["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
     assert "crimson turtle locksmiths" in content
-    assert any(token in content for token in ("locksmith", "security", "key", "lock", "emergency", "lockout"))
+    assert any(
+        token in content
+        for token in ("locksmith", "security", "key", "lock", "emergency", "lockout")
+    )
     assert "black" in content
     assert "red" in content
     assert "silver" in content or "gray" in content or "grey" in content
     assert "clean one-page website with a clear offer" not in content
 
 
-def test_unquoted_soggy_doggy_prompt_is_prompt_aware(monkeypatch, tmp_path: Path) -> None:
+def test_unquoted_soggy_doggy_prompt_is_prompt_aware(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
@@ -950,7 +1034,9 @@ def test_unquoted_soggy_doggy_prompt_is_prompt_aware(monkeypatch, tmp_path: Path
     response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
 
     assert response.status_code == 200
@@ -966,18 +1052,29 @@ def test_unquoted_soggy_doggy_prompt_is_prompt_aware(monkeypatch, tmp_path: Path
 
     assert artifact.get("filename") == "index.html"
     assert "Soggy Doggy" in content
-    assert any(token in lowered for token in ("groom", "pet", "dog", "bath", "trim", "fur", "paw"))
+    assert any(
+        token in lowered
+        for token in ("groom", "pet", "dog", "bath", "trim", "fur", "paw")
+    )
     assert any(token in lowered for token in ("white", "#ffffff"))
     assert any(token in lowered for token in ("purple", "#7c3aed", "#a855f7"))
     assert any(token in lowered for token in ("green", "#22c55e"))
     assert "local business website" not in lowered
-    assert "a clean one-page website with a clear offer and simple call to action." not in content
+    assert (
+        "a clean one-page website with a clear offer and simple call to action."
+        not in content
+    )
     for forbidden in ("harry", "flow", "rico", "neon", "crimson"):
         assert forbidden not in lowered
-    assert provenance.get("artifact_generation") in {"local_model", "deterministic_prompt_template_fallback"}
+    assert provenance.get("artifact_generation") in {
+        "local_model",
+        "deterministic_prompt_template_fallback",
+    }
 
 
-def test_code16_tony_tavern_fidelity_gate_blocks_stale_palette(monkeypatch, tmp_path: Path) -> None:
+def test_code16_tony_tavern_fidelity_gate_blocks_stale_palette(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
@@ -985,7 +1082,9 @@ def test_code16_tony_tavern_fidelity_gate_blocks_stale_palette(monkeypatch, tmp_
     response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"
+        },
     )
 
     assert response.status_code == 200
@@ -993,7 +1092,11 @@ def test_code16_tony_tavern_fidelity_gate_blocks_stale_palette(monkeypatch, tmp_
     artifact = payload["messages"][-1]["metadata"]["code_artifact"]
     content = str(artifact.get("content", "")).lower()
     fidelity = artifact.get("prompt_fidelity", {})
-    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
 
     assert "tony tavern" in content
     assert "groom" in content
@@ -1008,7 +1111,9 @@ def test_code16_tony_tavern_fidelity_gate_blocks_stale_palette(monkeypatch, tmp_
     assert provenance.get("prompt_fidelity", {}).get("status") in {"passed", "repaired"}
 
 
-def test_code16_soggy_then_tony_back_to_back_prevents_leakage_and_patch_targets_latest(monkeypatch, tmp_path: Path) -> None:
+def test_code16_soggy_then_tony_back_to_back_prevents_leakage_and_patch_targets_latest(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
@@ -1016,20 +1121,28 @@ def test_code16_soggy_then_tony_back_to_back_prevents_leakage_and_patch_targets_
     soggy = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert soggy.status_code == 200
-    soggy_content = soggy.json()["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+    soggy_content = soggy.json()["messages"][-1]["metadata"]["code_artifact"][
+        "content"
+    ].lower()
     assert "soggy doggy" in soggy_content
     assert "tony tavern" not in soggy_content
 
     tony = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"
+        },
     )
     assert tony.status_code == 200
-    tony_content = tony.json()["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+    tony_content = tony.json()["messages"][-1]["metadata"]["code_artifact"][
+        "content"
+    ].lower()
     assert "tony tavern" in tony_content
     assert "soggy doggy" not in tony_content
     assert "white, purple, and green" not in tony_content
@@ -1044,7 +1157,9 @@ def test_code16_soggy_then_tony_back_to_back_prevents_leakage_and_patch_targets_
     assert proposal.get("target_path") == "generated-sites/tony-tavern/index.html"
 
 
-def test_code16_color_refinement_changes_palette_terms(monkeypatch, tmp_path: Path) -> None:
+def test_code16_color_refinement_changes_palette_terms(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
@@ -1052,7 +1167,9 @@ def test_code16_color_refinement_changes_palette_terms(monkeypatch, tmp_path: Pa
     initial = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for tony tavern grooming using black yellow and green"
+        },
     )
     assert initial.status_code == 200
 
@@ -1062,7 +1179,9 @@ def test_code16_color_refinement_changes_palette_terms(monkeypatch, tmp_path: Pa
         json={"raw_text": "change colors to red and gold"},
     )
     assert refined.status_code == 200
-    content = refined.json()["messages"][-1]["metadata"]["code_artifact"]["content"].lower()
+    content = refined.json()["messages"][-1]["metadata"]["code_artifact"][
+        "content"
+    ].lower()
 
     assert "red" in content or "#dc2626" in content
     assert "gold" in content or "#d4af37" in content
@@ -1070,7 +1189,9 @@ def test_code16_color_refinement_changes_palette_terms(monkeypatch, tmp_path: Pa
     assert "soggy doggy" not in content
 
 
-def test_generation_validation_failure_returns_clear_answer(monkeypatch, tmp_path: Path) -> None:
+def test_generation_validation_failure_returns_clear_answer(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1094,35 +1215,47 @@ def test_generation_validation_failure_returns_clear_answer(monkeypatch, tmp_pat
     )
     monkeypatch.setattr(
         "core.brain.answer_contract.AnswerContract._default_code_artifact_content",
-        staticmethod(lambda filename, language, question: "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"),
+        staticmethod(
+            lambda filename, language, question: (
+                "<!doctype html><html><head><style>body{background:black;color:red;}</style></head><body><h1>Local Business Website</h1><p>A clean one-page website with a clear offer and simple call to action.</p></body></html>"
+            )
+        ),
     )
 
     response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
 
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
     assert "could not generate a safe artifact draft" in answer
     assert "content_length_out_of_bounds" not in answer
     assert provenance.get("artifact_generation") == "artifact_generation_failed"
     assert provenance.get("failure_reason") == "fallback_validation_failed"
 
 
-def test_industry_outputs_do_not_collapse_to_same_hero(monkeypatch, tmp_path: Path) -> None:
+def test_industry_outputs_do_not_collapse_to_same_hero(
+    monkeypatch, tmp_path: Path
+) -> None:
     _use_fake_local_model(monkeypatch)
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
     prompts = [
-        "Generate a small HTML code artifact for a one-page \"Flow Flowers\" website. Use soft pink, cream, and gold colors with an elegant script-style heading. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
-        "Generate a small HTML code artifact for a one-page \"Rico's Mobile Detailing\" website. Make it black, silver, and electric blue with a bold automotive feel. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
-        "Generate a small HTML code artifact for a one-page \"Neon Byte Arcade\" website. Use bright purple and cyan colors, a retro arcade feel, and a bold futuristic font style. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
-        "Generate a small HTML code artifact for a one-page \"Crimson Turtle Locksmiths\" website. Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.",
+        'Generate a small HTML code artifact for a one-page "Flow Flowers" website. Use soft pink, cream, and gold colors with an elegant script-style heading. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
+        'Generate a small HTML code artifact for a one-page "Rico\'s Mobile Detailing" website. Make it black, silver, and electric blue with a bold automotive feel. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
+        'Generate a small HTML code artifact for a one-page "Neon Byte Arcade" website. Use bright purple and cyan colors, a retro arcade feel, and a bold futuristic font style. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
+        'Generate a small HTML code artifact for a one-page "Crimson Turtle Locksmiths" website. Use black, red, and silver colors, make it trustworthy and urgent, and include emergency lockout service. Return it as a code artifact with filename index.html, language html, previewable true, and do not apply it to the repo.',
     ]
 
     heroes: list[str] = []
@@ -1133,15 +1266,21 @@ def test_industry_outputs_do_not_collapse_to_same_hero(monkeypatch, tmp_path: Pa
             json={"raw_text": prompt},
         )
         assert response.status_code == 200
-        content = response.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
-        hero_match = re.search(r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL)
+        content = response.json()["messages"][-1]["metadata"]["code_artifact"][
+            "content"
+        ]
+        hero_match = re.search(
+            r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL
+        )
         assert hero_match is not None
         heroes.append(hero_match.group(1).strip().lower())
 
     assert len(set(heroes)) == len(heroes)
 
 
-def test_artifact_edit_followups_route_to_revision_not_sms(monkeypatch, tmp_path: Path) -> None:
+def test_artifact_edit_followups_route_to_revision_not_sms(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1162,7 +1301,9 @@ def test_artifact_edit_followups_route_to_revision_not_sms(monkeypatch, tmp_path
             "fake-code-model:test",
         )
 
-    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+    async def _fake_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ) -> tuple[str, str, str]:
         if "black and gold" in question.lower():
             return (
                 "<!doctype html><html><head><style>body{background:#070707;color:#f5d27a;} h1{font-family:'Brush Script MT',cursive;} .metal{color:#d4af37;}</style></head><body><h1>Crimson Turtle Locksmiths</h1><p>Premium urgent locksmith emergency lockout service.</p></body></html>",
@@ -1215,12 +1356,18 @@ def test_artifact_edit_followups_route_to_revision_not_sms(monkeypatch, tmp_path
         assert artifact.get("language") == "html"
         assert artifact.get("previewable") is True
         assert artifact.get("applied") is False
-        provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+        provenance = (
+            payload.get("metadata", {})
+            .get("last_assistant_payload", {})
+            .get("policy_provenance", {})
+        )
         assert provenance.get("artifact_generation") == "local_model_revision"
         assert provenance.get("artifact_validation") == "passed"
 
 
-def test_explicit_sms_still_returns_refusal_even_after_artifact(monkeypatch, tmp_path: Path) -> None:
+def test_explicit_sms_still_returns_refusal_even_after_artifact(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1268,7 +1415,9 @@ def test_explicit_sms_still_returns_refusal_even_after_artifact(monkeypatch, tmp
     assert "sms connector" in answer
 
 
-def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypatch, tmp_path: Path) -> None:
+def test_refinement_loop_routes_revision_modes_and_increments_revision(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1289,7 +1438,9 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
             "fake-code-model:test",
         )
 
-    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+    async def _fake_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ) -> tuple[str, str, str]:
         lowered = question.lower()
         if "black and gold" in lowered:
             return (
@@ -1321,13 +1472,21 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
             "http://ollama:11434",
         )
 
-    monkeypatch.setattr("core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model", _fake_generate)
-    monkeypatch.setattr("core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model", _fake_revise)
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "core.brain.answer_contract.AnswerContract._revise_artifact_with_local_model",
+        _fake_revise,
+    )
 
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -1339,7 +1498,9 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
     assert premium.status_code == 200
     premium_payload = premium.json()
     premium_artifact = premium_payload["messages"][-1]["metadata"]["code_artifact"]
-    premium_prov = premium_payload["metadata"]["last_assistant_payload"]["policy_provenance"]
+    premium_prov = premium_payload["metadata"]["last_assistant_payload"][
+        "policy_provenance"
+    ]
     assert premium_artifact["filename"] == "index.html"
     assert "sms connector" not in premium_payload["messages"][-1]["content"].lower()
     assert premium_prov["artifact_generation"] == "local_model_revision"
@@ -1348,7 +1509,9 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
     colors = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "change the colors to black and gold and make it more premium"},
+        json={
+            "raw_text": "change the colors to black and gold and make it more premium"
+        },
     )
     assert colors.status_code == 200
     colors_artifact = colors.json()["messages"][-1]["metadata"]["code_artifact"]
@@ -1362,10 +1525,14 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
     headline = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": 'change only the main headline to "Pampered Paws, Clean Coats"'},
+        json={
+            "raw_text": 'change only the main headline to "Pampered Paws, Clean Coats"'
+        },
     )
     assert headline.status_code == 200
-    headline_content = headline.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+    headline_content = headline.json()["messages"][-1]["metadata"]["code_artifact"][
+        "content"
+    ]
     assert "Pampered Paws, Clean Coats" in headline_content
     assert "Soggy Doggy" in headline_content
     assert "bath trim fur care" in headline_content
@@ -1376,7 +1543,9 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
         json={"raw_text": "change the text on the website to script"},
     )
     assert script.status_code == 200
-    script_content = script.json()["messages"][-1]["metadata"]["code_artifact"]["content"]
+    script_content = script.json()["messages"][-1]["metadata"]["code_artifact"][
+        "content"
+    ]
     assert "Brush Script MT" in script_content or "cursive" in script_content
     assert "sms connector" not in script.json()["messages"][-1]["content"].lower()
 
@@ -1388,7 +1557,10 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
     assert explain.status_code == 200
     explain_payload = explain.json()
     assert explain_payload["messages"][-1]["metadata"].get("code_artifact", {}) == {}
-    assert "changed" in explain_payload["messages"][-1]["content"].lower() or "typography" in explain_payload["messages"][-1]["content"].lower()
+    assert (
+        "changed" in explain_payload["messages"][-1]["content"].lower()
+        or "typography" in explain_payload["messages"][-1]["content"].lower()
+    )
 
     undo = client.post(
         f"/sessions/{session_id}/messages",
@@ -1403,7 +1575,9 @@ def test_refinement_loop_routes_revision_modes_and_increments_revision(monkeypat
     assert "Brush Script MT" not in undo_artifact["content"]
 
 
-def test_harry_site_revision_prompt_updates_existing_artifact_payload(monkeypatch, tmp_path: Path) -> None:
+def test_harry_site_revision_prompt_updates_existing_artifact_payload(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1439,7 +1613,9 @@ def test_harry_site_revision_prompt_updates_existing_artifact_payload(monkeypatc
     ) -> tuple[str, str]:
         return (base_html, "fake-code-model:test")
 
-    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+    async def _fake_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ) -> tuple[str, str, str]:
         lowered = question.lower()
         source = str(source_artifact.get("content") or "")
         if "premium" in lowered and "special" in lowered:
@@ -1471,14 +1647,20 @@ def test_harry_site_revision_prompt_updates_existing_artifact_payload(monkeypatc
     revise = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "Make this site look more premium and add a Specials section."},
+        json={
+            "raw_text": "Make this site look more premium and add a Specials section."
+        },
     )
     assert revise.status_code == 200
     revise_payload = revise.json()
     revise_message = revise_payload["messages"][-1]
     revise_artifact = revise_message["metadata"]["code_artifact"]
     revise_content = revise_artifact["content"]
-    provenance = revise_payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        revise_payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
 
     assert "sms connector" not in revise_message["content"].lower()
     assert revise_artifact["filename"] == "index.html"
@@ -1492,7 +1674,9 @@ def test_harry_site_revision_prompt_updates_existing_artifact_payload(monkeypatc
     assert provenance.get("revision_number") == 2
 
 
-def test_refinement_without_active_artifact_requests_context(monkeypatch, tmp_path: Path) -> None:
+def test_refinement_without_active_artifact_requests_context(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1508,7 +1692,9 @@ def test_refinement_without_active_artifact_requests_context(monkeypatch, tmp_pa
     assert "sms connector" not in answer
 
 
-def test_typography_blackletter_refinement_is_deterministic_and_preserves_identity(monkeypatch, tmp_path: Path) -> None:
+def test_typography_blackletter_refinement_is_deterministic_and_preserves_identity(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1529,8 +1715,12 @@ def test_typography_blackletter_refinement_is_deterministic_and_preserves_identi
             "fake-code-model:test",
         )
 
-    async def _should_not_run_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
-        raise AssertionError("typography-only refinement should not call local model revision")
+    async def _should_not_run_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ) -> tuple[str, str, str]:
+        raise AssertionError(
+            "typography-only refinement should not call local model revision"
+        )
 
     monkeypatch.setattr(
         "core.brain.answer_contract.AnswerContract._generate_artifact_with_local_model",
@@ -1544,20 +1734,28 @@ def test_typography_blackletter_refinement_is_deterministic_and_preserves_identi
     create = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar using white pink and purple."},
+        json={
+            "raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar using white pink and purple."
+        },
     )
     assert create.status_code == 200
 
     refine = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "Please change the heading font to old English blackletter gothic, keep everything else exactly the same."},
+        json={
+            "raw_text": "Please change the heading font to old English blackletter gothic, keep everything else exactly the same."
+        },
     )
     assert refine.status_code == 200
     payload = refine.json()
     message = payload["messages"][-1]
     content = message["metadata"]["code_artifact"]["content"]
-    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
     typography = provenance.get("typography_refinement", {})
 
     assert "Tony's Tavern" in content
@@ -1565,12 +1763,16 @@ def test_typography_blackletter_refinement_is_deterministic_and_preserves_identi
     assert "blackletter-heading" in content
     assert "xv7-typography-refinement" in content
     assert "content_length_out_of_bounds" not in message["content"].lower()
-    assert provenance.get("artifact_generation") == "deterministic_typography_refinement"
+    assert (
+        provenance.get("artifact_generation") == "deterministic_typography_refinement"
+    )
     assert typography.get("requested_style") == "blackletter/gothic"
     assert typography.get("status") == "passed"
 
 
-def test_typography_script_refinement_applies_script_style(monkeypatch, tmp_path: Path) -> None:
+def test_typography_script_refinement_applies_script_style(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1599,7 +1801,9 @@ def test_typography_script_refinement_applies_script_style(monkeypatch, tmp_path
     create = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar."},
+        json={
+            "raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar."
+        },
     )
     assert create.status_code == 200
 
@@ -1611,7 +1815,11 @@ def test_typography_script_refinement_applies_script_style(monkeypatch, tmp_path
     assert refine.status_code == 200
     payload = refine.json()
     content = payload["messages"][-1]["metadata"]["code_artifact"]["content"]
-    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
     typography = provenance.get("typography_refinement", {})
 
     assert "script-heading" in content
@@ -1620,7 +1828,9 @@ def test_typography_script_refinement_applies_script_style(monkeypatch, tmp_path
     assert typography.get("status") == "passed"
 
 
-def test_typography_refinement_without_active_artifact_returns_guidance(monkeypatch, tmp_path: Path) -> None:
+def test_typography_refinement_without_active_artifact_returns_guidance(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1632,13 +1842,19 @@ def test_typography_refinement_without_active_artifact_returns_guidance(monkeypa
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
 
     assert "active artifact" in answer
     assert provenance.get("artifact_generation") == "artifact_refinement_unavailable"
 
 
-def test_typography_refinement_failure_is_sanitized_and_previous_artifact_stays_active(monkeypatch, tmp_path: Path) -> None:
+def test_typography_refinement_failure_is_sanitized_and_previous_artifact_stays_active(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1683,7 +1899,9 @@ def test_typography_refinement_failure_is_sanitized_and_previous_artifact_stays_
     create = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar."},
+        json={
+            "raw_text": "Generate a small HTML artifact for Tony's Tavern biker bar."
+        },
     )
     assert create.status_code == 200
 
@@ -1707,7 +1925,9 @@ def test_typography_refinement_failure_is_sanitized_and_previous_artifact_stays_
         json={"raw_text": "generate patch"},
     )
     assert patch.status_code == 200
-    proposal = patch.json()["messages"][-1]["metadata"].get("artifact_patch_proposal", {})
+    proposal = patch.json()["messages"][-1]["metadata"].get(
+        "artifact_patch_proposal", {}
+    )
     target_path = str(proposal.get("target_path") or "")
     assert target_path.startswith("generated-sites/")
     assert target_path.endswith("/index.html")
@@ -1734,8 +1954,16 @@ def test_revision_retry_prompt_includes_missing_requirements(monkeypatch) -> Non
     )
 
     responses = [
-        {"message": {"content": "<!doctype html><html><head><style>body{background:black;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming</p></body></html>"}},
-        {"message": {"content": "<!doctype html><html><head><style>body{background:black;color:#f5e7b4;} h1{font-family:'Brush Script MT',cursive;} .button{color:#d4af37;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>"}},
+        {
+            "message": {
+                "content": "<!doctype html><html><head><style>body{background:black;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming</p></body></html>"
+            }
+        },
+        {
+            "message": {
+                "content": "<!doctype html><html><head><style>body{background:black;color:#f5e7b4;} h1{font-family:'Brush Script MT',cursive;} .button{color:#d4af37;}</style></head><body><h1>Soggy Doggy</h1><p>Pet grooming bath trim fur care.</p><a class='button'>Book Grooming</a></body></html>"
+            }
+        },
     ]
 
     class _FakeResponse:
@@ -1938,12 +2166,12 @@ def test_normal_preference_prompts_still_save_with_unique_memory_ids(
     second = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "Keep answers direct and short unless I ask for a deep dive."},
+        json={
+            "raw_text": "Keep answers direct and short unless I ask for a deep dive."
+        },
     )
     assert second.status_code == 200
-    second_payload = (
-        second.json().get("metadata", {}).get("last_assistant_payload", {})
-    )
+    second_payload = second.json().get("metadata", {}).get("last_assistant_payload", {})
     second_id = str(second_payload.get("learned_record_id", ""))
     assert second_id.startswith("XV7-MEMORY-")
     assert second_payload.get("learning_layer") == "memory"
@@ -1962,7 +2190,9 @@ def test_patch_proposal_flow_from_active_artifact(monkeypatch, tmp_path: Path) -
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -1982,7 +2212,9 @@ def test_patch_proposal_flow_from_active_artifact(monkeypatch, tmp_path: Path) -
     assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
 
 
-def test_generate_patch_without_artifact_returns_clear_message(monkeypatch, tmp_path: Path) -> None:
+def test_generate_patch_without_artifact_returns_clear_message(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -1993,10 +2225,15 @@ def test_generate_patch_without_artifact_returns_clear_message(monkeypatch, tmp_
     )
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"]
-    assert answer == "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first."
+    assert (
+        answer
+        == "I do not have an active code artifact to turn into a patch yet. Generate or paste an artifact first."
+    )
 
 
-def test_apply_patch_requires_pending_proposal_in_session(monkeypatch, tmp_path: Path) -> None:
+def test_apply_patch_requires_pending_proposal_in_session(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -2006,10 +2243,15 @@ def test_apply_patch_requires_pending_proposal_in_session(monkeypatch, tmp_path:
         json={"raw_text": "apply patch"},
     )
     assert response.status_code == 200
-    assert response.json()["messages"][-1]["content"] == "I do not have a pending patch proposal to apply."
+    assert (
+        response.json()["messages"][-1]["content"]
+        == "I do not have a pending patch proposal to apply."
+    )
 
 
-def test_apply_patch_writes_file_after_explicit_approval(monkeypatch, tmp_path: Path) -> None:
+def test_apply_patch_writes_file_after_explicit_approval(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     _use_fake_local_model(monkeypatch)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -2018,7 +2260,9 @@ def test_apply_patch_writes_file_after_explicit_approval(monkeypatch, tmp_path: 
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -2028,7 +2272,9 @@ def test_apply_patch_writes_file_after_explicit_approval(monkeypatch, tmp_path: 
         json={"raw_text": "generate patch"},
     )
     assert proposal_resp.status_code == 200
-    proposal = proposal_resp.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]
+    proposal = proposal_resp.json()["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]
     target = tmp_path / str(proposal.get("target_path"))
     assert not target.exists()
 
@@ -2068,7 +2314,13 @@ def test_failed_patch_validation_is_not_applied(monkeypatch, tmp_path: Path) -> 
             "diff": "--- /dev/null\n+++ b/generated-sites/soggy-doggy/index.html\n",
             "validation": {
                 "status": "failed",
-                "checks": [{"name": "html_inline_css", "status": "failed", "detail": "missing inline css"}],
+                "checks": [
+                    {
+                        "name": "html_inline_css",
+                        "status": "failed",
+                        "detail": "missing inline css",
+                    }
+                ],
                 "failures": ["html_inline_css: missing inline css"],
             },
         }
@@ -2081,7 +2333,9 @@ def test_failed_patch_validation_is_not_applied(monkeypatch, tmp_path: Path) -> 
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -2091,7 +2345,9 @@ def test_failed_patch_validation_is_not_applied(monkeypatch, tmp_path: Path) -> 
         json={"raw_text": "generate patch"},
     )
     assert proposal_resp.status_code == 200
-    proposal = proposal_resp.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]
+    proposal = proposal_resp.json()["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]
     assert proposal.get("validation", {}).get("status") == "failed"
 
     apply_resp = client.post(
@@ -2105,7 +2361,9 @@ def test_failed_patch_validation_is_not_applied(monkeypatch, tmp_path: Path) -> 
     assert not (tmp_path / "generated-sites" / "soggy-doggy" / "index.html").exists()
 
 
-def test_verify_it_without_applied_patch_returns_clear_message(monkeypatch, tmp_path: Path) -> None:
+def test_verify_it_without_applied_patch_returns_clear_message(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
@@ -2119,7 +2377,9 @@ def test_verify_it_without_applied_patch_returns_clear_message(monkeypatch, tmp_
     assert "do not have an applied patch to verify in this session" in answer
 
 
-def test_post_apply_targeted_validation_flow_reports_success(monkeypatch, tmp_path: Path) -> None:
+def test_post_apply_targeted_validation_flow_reports_success(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     _use_fake_local_model(monkeypatch)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -2128,7 +2388,9 @@ def test_post_apply_targeted_validation_flow_reports_success(monkeypatch, tmp_pa
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -2155,11 +2417,15 @@ def test_post_apply_targeted_validation_flow_reports_success(monkeypatch, tmp_pa
     verify_payload = verify_resp.json()
     answer = verify_payload["messages"][-1]["content"].lower()
     assert "targeted validation passed" in answer
-    proposal = verify_payload["messages"][-1]["metadata"].get("artifact_patch_proposal", {})
+    proposal = verify_payload["messages"][-1]["metadata"].get(
+        "artifact_patch_proposal", {}
+    )
     assert proposal.get("targeted_validation", {}).get("status") == "passed"
 
 
-def test_post_apply_verify_and_preview_prompts_route_to_artifact_lane(monkeypatch, tmp_path: Path) -> None:
+def test_post_apply_verify_and_preview_prompts_route_to_artifact_lane(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     _use_fake_local_model(monkeypatch)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -2168,7 +2434,9 @@ def test_post_apply_verify_and_preview_prompts_route_to_artifact_lane(monkeypatc
     _ = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     _ = client.post(
         f"/sessions/{session_id}/messages",
@@ -2190,7 +2458,9 @@ def test_post_apply_verify_and_preview_prompts_route_to_artifact_lane(monkeypatc
     verify_payload = verify_resp.json()
     verify_answer = verify_payload["messages"][-1]["content"].lower()
     assert "post-apply verification passed" in verify_answer
-    verify_proposal = verify_payload["messages"][-1]["metadata"].get("artifact_patch_proposal", {})
+    verify_proposal = verify_payload["messages"][-1]["metadata"].get(
+        "artifact_patch_proposal", {}
+    )
     assert verify_proposal.get("post_apply_verification", {}).get("status") == "passed"
 
     preview_resp = client.post(
@@ -2202,10 +2472,17 @@ def test_post_apply_verify_and_preview_prompts_route_to_artifact_lane(monkeypatc
     preview_payload = preview_resp.json()
     preview_answer = preview_payload["messages"][-1]["content"].lower()
     assert "/generated-sites/soggy-doggy/index.html" in preview_answer
-    assert preview_payload["messages"][-1]["metadata"].get("artifact_patch_proposal", {}).get("preview_path") == "/generated-sites/soggy-doggy/index.html"
+    assert (
+        preview_payload["messages"][-1]["metadata"]
+        .get("artifact_patch_proposal", {})
+        .get("preview_path")
+        == "/generated-sites/soggy-doggy/index.html"
+    )
 
 
-def test_post_apply_full_test_prompt_returns_guard_message(monkeypatch, tmp_path: Path) -> None:
+def test_post_apply_full_test_prompt_returns_guard_message(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     _use_fake_local_model(monkeypatch)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -2214,7 +2491,9 @@ def test_post_apply_full_test_prompt_returns_guard_message(monkeypatch, tmp_path
     _ = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     _ = client.post(
         f"/sessions/{session_id}/messages",
@@ -2236,11 +2515,17 @@ def test_post_apply_full_test_prompt_returns_guard_message(monkeypatch, tmp_path
     payload = full_test_resp.json()
     answer = payload["messages"][-1]["content"].lower()
     assert "did not run full tests automatically" in answer
-    provenance = payload.get("metadata", {}).get("last_assistant_payload", {}).get("policy_provenance", {})
+    provenance = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("policy_provenance", {})
+    )
     assert provenance.get("artifact_patch") == "full_test_guard"
 
 
-def test_explicit_create_html_artifact_prompt_routes_to_artifact_generation(monkeypatch, tmp_path: Path) -> None:
+def test_explicit_create_html_artifact_prompt_routes_to_artifact_generation(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
 
     async def _fake_generate(
@@ -2301,7 +2586,9 @@ def test_explicit_create_html_artifact_prompt_routes_to_artifact_generation(monk
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(monkeypatch, tmp_path: Path) -> None:
+def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
 
     async def _fake_generate(
@@ -2331,7 +2618,9 @@ def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(monk
     response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "build an HTML artifact for Tony's Tavern biker bar using black orange and yellow"},
+        json={
+            "raw_text": "build an HTML artifact for Tony's Tavern biker bar using black orange and yellow"
+        },
     )
     assert response.status_code == 200
     payload = response.json()
@@ -2341,13 +2630,18 @@ def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(monk
     compact = str(metadata.get("context_receipt", {}).get("compact", ""))
 
     assert "build task" not in answer
-    assert metadata.get("policy_provenance", {}).get("brain_answer_source") != "implementation_task_guard"
+    assert (
+        metadata.get("policy_provenance", {}).get("brain_answer_source")
+        != "implementation_task_guard"
+    )
     assert metadata.get("code_artifact", {}).get("type") == "code_artifact"
     assert "code-artifact-draft" in compact
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_preview_style_prompt_stays_in_chat_artifact_mode_without_sandbox_write(monkeypatch, tmp_path: Path) -> None:
+def test_preview_style_prompt_stays_in_chat_artifact_mode_without_sandbox_write(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     sandbox_root = tmp_path / "sandbox"
     monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
@@ -2390,7 +2684,9 @@ def test_preview_style_prompt_stays_in_chat_artifact_mode_without_sandbox_write(
     assert not sandbox_root.exists()
 
 
-def test_natural_language_build_prompt_writes_to_sandbox_and_returns_renderable_artifact(monkeypatch, tmp_path: Path) -> None:
+def test_natural_language_build_prompt_stays_chat_artifact_until_explicit_sandbox_write(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     sandbox_root = tmp_path / "sandbox"
     monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
@@ -2431,18 +2727,20 @@ def test_natural_language_build_prompt_writes_to_sandbox_and_returns_renderable_
     answer = str(message["content"]).lower()
     metadata = message["metadata"]
     artifact = metadata.get("code_artifact", {})
-    target_path = Path(str(artifact.get("sandbox_target_path") or ""))
     assert "protected location" not in answer
-    assert metadata.get("policy_provenance", {}).get("brain_answer_source") != "implementation_task_guard"
+    assert (
+        metadata.get("policy_provenance", {}).get("brain_answer_source")
+        != "implementation_task_guard"
+    )
     assert artifact.get("type") == "code_artifact"
-    assert artifact.get("applied") is True
-    assert artifact.get("delivery_mode") == "sandbox_write"
-    assert target_path.exists()
-    assert str(sandbox_root.resolve()).lower() in str(target_path).lower()
-    assert "another business" in target_path.read_text(encoding="utf-8").lower()
+    assert artifact.get("applied") is False
+    assert artifact.get("delivery_mode") == "chat_artifact"
+    assert not sandbox_root.exists()
 
 
-def test_sandbox_build_followup_revision_updates_latest_sandbox_target(monkeypatch, tmp_path: Path) -> None:
+def test_sandbox_build_followup_revision_updates_latest_sandbox_target(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     sandbox_root = tmp_path / "sandbox"
     monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
@@ -2465,7 +2763,9 @@ def test_sandbox_build_followup_revision_updates_latest_sandbox_target(monkeypat
             "http://127.0.0.1:11434",
         )
 
-    async def _fake_revise(self, *, question: str, source_artifact: dict[str, object]) -> tuple[str, str, str]:
+    async def _fake_revise(
+        self, *, question: str, source_artifact: dict[str, object]
+    ) -> tuple[str, str, str]:
         assert source_artifact.get("delivery_mode") == "sandbox_write"
         return (
             "<!doctype html><html><body><main><h1 class='premium'>Soggy Doggy</h1><p>Premium pet grooming bath trim fur care.</p><section><h2>Specials</h2></section></main></body></html>",
@@ -2490,8 +2790,17 @@ def test_sandbox_build_followup_revision_updates_latest_sandbox_target(monkeypat
         json={"raw_text": "Build a website for Soggy Doggy grooming."},
     )
     assert create.status_code == 200
-    create_artifact = create.json()["messages"][-1]["metadata"]["code_artifact"]
-    target_path = Path(str(create_artifact.get("sandbox_target_path") or ""))
+    create_artifact = create.json()["messages"][-1]["metadata"].get("code_artifact", {})
+    assert create_artifact.get("delivery_mode") == "chat_artifact"
+
+    write = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Write it to the sandbox."},
+    )
+    assert write.status_code == 200
+    write_artifact = write.json()["messages"][-1]["metadata"].get("code_artifact", {})
+    target_path = Path(str(write_artifact.get("sandbox_target_path") or ""))
     assert target_path.exists()
 
     revise = client.post(
@@ -2509,7 +2818,9 @@ def test_sandbox_build_followup_revision_updates_latest_sandbox_target(monkeypat
     assert revise_artifact.get("delivery_mode") == "sandbox_write"
 
 
-def test_build_guard_still_wins_when_commit_words_are_present(monkeypatch, tmp_path: Path) -> None:
+def test_build_guard_still_wins_when_commit_words_are_present(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     session_id = _new_session(client)
@@ -2523,12 +2834,17 @@ def test_build_guard_still_wins_when_commit_words_are_present(monkeypatch, tmp_p
     message = response.json()["messages"][-1]
     answer = message["content"].lower()
     assert "protected location" in answer
-    assert message["metadata"].get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
+    assert (
+        message["metadata"].get("policy_provenance", {}).get("brain_answer_source")
+        == "implementation_task_guard"
+    )
     assert message["metadata"].get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_repo_mutation_wording_still_hits_build_guard(monkeypatch, tmp_path: Path) -> None:
+def test_repo_mutation_wording_still_hits_build_guard(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     session_id = _new_session(client)
@@ -2542,12 +2858,17 @@ def test_repo_mutation_wording_still_hits_build_guard(monkeypatch, tmp_path: Pat
     message = response.json()["messages"][-1]
     answer = str(message["content"]).lower()
     assert "protected location" in answer
-    assert message["metadata"].get("policy_provenance", {}).get("brain_answer_source") == "implementation_task_guard"
+    assert (
+        message["metadata"].get("policy_provenance", {}).get("brain_answer_source")
+        == "implementation_task_guard"
+    )
     assert message["metadata"].get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_back_to_back_create_artifact_preserves_code16_fidelity(monkeypatch, tmp_path: Path) -> None:
+def test_back_to_back_create_artifact_preserves_code16_fidelity(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
 
     async def _fake_generate(
@@ -2577,14 +2898,18 @@ def test_back_to_back_create_artifact_preserves_code16_fidelity(monkeypatch, tmp
     soggy = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert soggy.status_code == 200
 
     tony = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"},
+        json={
+            "raw_text": "create a HTML artifact Tony's Tavern and biker bar using black orange and yellow as the colors"
+        },
     )
     assert tony.status_code == 200
     payload = tony.json()
@@ -2603,7 +2928,9 @@ def test_back_to_back_create_artifact_preserves_code16_fidelity(monkeypatch, tmp
     assert "green" not in content
 
 
-def test_commit_proposal_on_clean_repo_returns_clear_message(monkeypatch, tmp_path: Path) -> None:
+def test_commit_proposal_on_clean_repo_returns_clear_message(
+    monkeypatch, tmp_path: Path
+) -> None:
     # No applied patch in session: falls back to generic git status scan
     _init_git_repo(tmp_path)
     client = _setup_contract_only(monkeypatch, tmp_path)
@@ -2619,13 +2946,19 @@ def test_commit_proposal_on_clean_repo_returns_clear_message(monkeypatch, tmp_pa
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
     assert "did not find any safe changes" in answer
-    proposal = payload.get("metadata", {}).get("last_assistant_payload", {}).get("commit_proposal", {})
+    proposal = (
+        payload.get("metadata", {})
+        .get("last_assistant_payload", {})
+        .get("commit_proposal", {})
+    )
     assert proposal.get("type") == "commit_proposal"
     assert proposal.get("included_files") == []
     assert proposal.get("committed") is False
 
 
-def test_commit_proposal_with_applied_patch_includes_untracked_target(monkeypatch, tmp_path: Path) -> None:
+def test_commit_proposal_with_applied_patch_includes_untracked_target(
+    monkeypatch, tmp_path: Path
+) -> None:
     # Applied patch exists in session → commit proposal includes the patch target directly
     _init_git_repo(tmp_path)
     _use_fake_local_model(monkeypatch)
@@ -2636,7 +2969,9 @@ def test_commit_proposal_with_applied_patch_includes_untracked_target(monkeypatc
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -2652,7 +2987,9 @@ def test_commit_proposal_with_applied_patch_includes_untracked_target(monkeypatc
     )
     assert apply_resp.status_code == 200
     apply_payload = apply_resp.json()
-    applied_target = apply_payload["messages"][-1]["metadata"]["artifact_patch_proposal"]["target_path"]
+    applied_target = apply_payload["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]["target_path"]
     assert (tmp_path / applied_target).exists()
 
     proposal_resp = client.post(
@@ -2673,7 +3010,9 @@ def test_commit_proposal_with_applied_patch_includes_untracked_target(monkeypatc
     assert proposal.get("push_performed") is False
 
 
-def test_commit_proposal_applied_patch_no_diff_returns_no_diff_message(monkeypatch, tmp_path: Path) -> None:
+def test_commit_proposal_applied_patch_no_diff_returns_no_diff_message(
+    monkeypatch, tmp_path: Path
+) -> None:
     # Applied patch target exists and is already committed → git shows no diff
     _init_git_repo(tmp_path)
     _use_fake_local_model(monkeypatch)
@@ -2684,7 +3023,9 @@ def test_commit_proposal_applied_patch_no_diff_returns_no_diff_message(monkeypat
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
     _ = client.post(
@@ -2698,11 +3039,15 @@ def test_commit_proposal_applied_patch_no_diff_returns_no_diff_message(monkeypat
         json={"raw_text": "apply patch"},
     )
     assert apply_resp.status_code == 200
-    applied_target = apply_resp.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]["target_path"]
+    applied_target = apply_resp.json()["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]["target_path"]
     target_abs = tmp_path / applied_target
 
     # Commit the file so git shows no diff
-    subprocess.run(["git", "add", str(target_abs)], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", str(target_abs)], cwd=tmp_path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "pre-test commit"],
         cwd=tmp_path,
@@ -2720,7 +3065,9 @@ def test_commit_proposal_applied_patch_no_diff_returns_no_diff_message(monkeypat
     assert "does not show a diff" in answer or "nothing to commit" in answer
 
 
-def test_commit_proposal_ignored_path_returns_ignored_diagnostic(monkeypatch, tmp_path: Path) -> None:
+def test_commit_proposal_ignored_path_returns_ignored_diagnostic(
+    monkeypatch, tmp_path: Path
+) -> None:
     # Applied patch target is gitignored → clear diagnostic returned
     _init_git_repo(tmp_path)
     _use_fake_local_model(monkeypatch)
@@ -2728,7 +3075,9 @@ def test_commit_proposal_ignored_path_returns_ignored_diagnostic(monkeypatch, tm
 
     # Add a .gitignore that ignores generated-sites
     (tmp_path / ".gitignore").write_text("generated-sites/\n", encoding="utf-8")
-    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", ".gitignore"], cwd=tmp_path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "add gitignore"],
         cwd=tmp_path,
@@ -2742,7 +3091,9 @@ def test_commit_proposal_ignored_path_returns_ignored_diagnostic(monkeypatch, tm
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
     _ = client.post(
@@ -2779,10 +3130,14 @@ def test_push_it_is_refused(monkeypatch, tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     answer = response.json()["messages"][-1]["content"].lower()
-    assert "no commit or push occurred" in answer or "not verified as successful" in answer
+    assert (
+        "no commit or push occurred" in answer or "not verified as successful" in answer
+    )
 
 
-def test_commit_proposal_and_approval_with_applied_patch(monkeypatch, tmp_path: Path) -> None:
+def test_commit_proposal_and_approval_with_applied_patch(
+    monkeypatch, tmp_path: Path
+) -> None:
     # Full flow: apply patch → prepare commit → commit it
     _init_git_repo(tmp_path)
     _use_fake_local_model(monkeypatch)
@@ -2793,7 +3148,9 @@ def test_commit_proposal_and_approval_with_applied_patch(monkeypatch, tmp_path: 
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
     _ = client.post(
@@ -2807,7 +3164,9 @@ def test_commit_proposal_and_approval_with_applied_patch(monkeypatch, tmp_path: 
         json={"raw_text": "apply patch"},
     )
     assert apply_resp.status_code == 200
-    applied_target = apply_resp.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]["target_path"]
+    applied_target = apply_resp.json()["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]["target_path"]
 
     proposal_resp = client.post(
         f"/sessions/{session_id}/messages",
@@ -2843,7 +3202,9 @@ def test_commit_proposal_and_approval_with_applied_patch(monkeypatch, tmp_path: 
     assert log == committed.get("proposed_commit_message")
 
 
-def test_commit_proposal_excludes_blocked_paths_and_commits_only_safe_files(monkeypatch, tmp_path: Path) -> None:
+def test_commit_proposal_excludes_blocked_paths_and_commits_only_safe_files(
+    monkeypatch, tmp_path: Path
+) -> None:
     _init_git_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("local notes\n", encoding="utf-8")
     blocked_log = tmp_path / "runtime" / "logs" / "debug.log"
@@ -2899,7 +3260,9 @@ def test_commit_proposal_excludes_blocked_paths_and_commits_only_safe_files(monk
     assert log_message == committed.get("proposed_commit_message")
 
 
-def test_commit_approval_without_pending_proposal_is_refused(monkeypatch, tmp_path: Path) -> None:
+def test_commit_approval_without_pending_proposal_is_refused(
+    monkeypatch, tmp_path: Path
+) -> None:
     _init_git_repo(tmp_path)
     client = _setup_contract_only(monkeypatch, tmp_path)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -2915,7 +3278,9 @@ def test_commit_approval_without_pending_proposal_is_refused(monkeypatch, tmp_pa
     assert "do not have a pending commit proposal" in answer
 
 
-def test_refinement_still_works_after_patch_proposal(monkeypatch, tmp_path: Path) -> None:
+def test_refinement_still_works_after_patch_proposal(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     _use_fake_local_model(monkeypatch)
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
@@ -2924,7 +3289,9 @@ def test_refinement_still_works_after_patch_proposal(monkeypatch, tmp_path: Path
     gen = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     assert gen.status_code == 200
 
@@ -2934,12 +3301,16 @@ def test_refinement_still_works_after_patch_proposal(monkeypatch, tmp_path: Path
         json={"raw_text": "generate patch"},
     )
     assert first_patch.status_code == 200
-    first_content = first_patch.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]["content"]
+    first_content = first_patch.json()["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]["content"]
 
     refine = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "change the colors to black and gold and make it more premium"},
+        json={
+            "raw_text": "change the colors to black and gold and make it more premium"
+        },
     )
     assert refine.status_code == 200
 
@@ -2949,11 +3320,15 @@ def test_refinement_still_works_after_patch_proposal(monkeypatch, tmp_path: Path
         json={"raw_text": "generate patch"},
     )
     assert second_patch.status_code == 200
-    second_content = second_patch.json()["messages"][-1]["metadata"]["artifact_patch_proposal"]["content"]
+    second_content = second_patch.json()["messages"][-1]["metadata"][
+        "artifact_patch_proposal"
+    ]["content"]
     assert second_content != first_content
 
 
-def test_sms_refusal_still_preserved_with_patch_lane(monkeypatch, tmp_path: Path) -> None:
+def test_sms_refusal_still_preserved_with_patch_lane(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
     _use_fake_local_model(monkeypatch)
     session_id = _new_session(client)
@@ -2961,7 +3336,9 @@ def test_sms_refusal_still_preserved_with_patch_lane(monkeypatch, tmp_path: Path
     _ = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"},
+        json={
+            "raw_text": "generate a small HTML artifact for Soggy Doggy grooming using white purple and green"
+        },
     )
     _ = client.post(
         f"/sessions/{session_id}/messages",

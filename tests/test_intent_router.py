@@ -105,7 +105,7 @@ def test_intent_router_classifies_command_language_contract() -> None:
     )
     assert (
         IntentRouter.classify("Build me a website for another business").kind
-        == IntentKind.SANDBOX_BUILD
+        == IntentKind.CODE_ARTIFACT
     )
     assert (
         IntentRouter.classify(

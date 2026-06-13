@@ -63,8 +63,13 @@ class SandboxWriteManager:
         try:
             target = Path(target_text).resolve()
             relative = target.relative_to(write_root)
-            rel_text = str(relative).replace("/", "\\")
-            separator = "" if display_root.endswith(("/", "\\")) else "\\"
+            is_windows_display = cls._is_windows_style_path(display_root)
+            separator = "\\" if is_windows_display else "/"
+            rel_text = separator.join(part for part in relative.parts if part)
+            if not rel_text:
+                return display_root
+            if display_root.endswith(("/", "\\")):
+                return f"{display_root}{rel_text}"
             return f"{display_root}{separator}{rel_text}"
         except Exception:
             return target_text

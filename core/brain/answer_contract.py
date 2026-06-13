@@ -2662,7 +2662,11 @@ class AnswerContract:
             _sandbox_target_display = SandboxWriteManager.display_path_for_write_target(
                 _sandbox_target_path
             )
-            _sandbox_project_display = str(Path(_sandbox_target_display).parent)
+            _sandbox_project_display = (
+                SandboxWriteManager.display_path_for_write_target(
+                    str(Path(_sandbox_target_path).parent)
+                )
+            )
             return {
                 "visible_text": (
                     f"Wrote the active artifact to sandbox: {_sandbox_target_display}\n"
