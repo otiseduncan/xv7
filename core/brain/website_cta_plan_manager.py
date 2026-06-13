@@ -138,7 +138,9 @@ class WebsiteCallToActionManager:
         """Infer fallback CTA labels from website profile."""
 
         profile = cls.infer_profile(prompt, business_type)
-        return list(cls.BUSINESS_DEFAULTS.get(profile, cls.BUSINESS_DEFAULTS["default"]))
+        return list(
+            cls.BUSINESS_DEFAULTS.get(profile, cls.BUSINESS_DEFAULTS["default"])
+        )
 
     @classmethod
     def href_for_label(cls, label: str) -> str:

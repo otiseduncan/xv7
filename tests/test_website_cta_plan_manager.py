@@ -2,7 +2,9 @@ from core.brain.website_cta_plan_manager import WebsiteCallToActionManager
 
 
 def test_normalize_label_title_cases_and_preserves_acronyms() -> None:
-    assert WebsiteCallToActionManager.normalize_label("request-quote") == "Request Quote"
+    assert (
+        WebsiteCallToActionManager.normalize_label("request-quote") == "Request Quote"
+    )
     assert WebsiteCallToActionManager.normalize_label("adas service") == "ADAS Service"
     assert WebsiteCallToActionManager.normalize_label("") == "Contact Us"
 
@@ -39,7 +41,9 @@ def test_extract_requested_labels_dedupes_aliases() -> None:
 
 def test_infer_profile_from_prompt() -> None:
     assert WebsiteCallToActionManager.infer_profile("Harry's hot dog cart") == "food"
-    assert WebsiteCallToActionManager.infer_profile("ADAS calibration website") == "auto"
+    assert (
+        WebsiteCallToActionManager.infer_profile("ADAS calibration website") == "auto"
+    )
     assert WebsiteCallToActionManager.infer_profile("Bible study ministry") == "church"
     assert WebsiteCallToActionManager.infer_profile("Network security firm") == "cyber"
     assert WebsiteCallToActionManager.infer_profile("General landing page") == "default"
