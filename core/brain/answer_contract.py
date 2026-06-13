@@ -21,8 +21,12 @@ from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.brain.session_signal_manager import SessionSignalManager
+from core.brain.website_content_block_plan_manager import (
+    WebsiteContentBlockPlanManager,
+)
 from core.brain.website_page_plan_manager import WebsitePagePlanManager
 from core.brain.website_project_name_manager import WebsiteProjectNameManager
+from core.brain.website_section_plan_manager import WebsiteSectionPlanManager
 from core.brain.website_style_plan_manager import WebsiteStylePlanManager
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
@@ -3090,6 +3094,10 @@ class AnswerContract:
             )
             _page_plan = WebsitePagePlanManager.build_manifest_pages(question)
             _style_plan = WebsiteStylePlanManager.build_style_plan(question)
+            _section_plan = WebsiteSectionPlanManager.build_section_plan(question)
+            _content_block_plan = (
+                WebsiteContentBlockPlanManager.build_content_block_plan(question)
+            )
             _style = self._extract_style_hints(question)
             _slug = self._safe_slug(_biz, fallback="site-bundle")
             _pages = sb.default_pages_for_business(_biz, question)
@@ -3165,6 +3173,8 @@ class AnswerContract:
                 "project_plan": _project_plan,
                 "page_plan": _page_plan,
                 "style_plan": _style_plan,
+                "section_plan": _section_plan,
+                "content_block_plan": _content_block_plan,
                 "source_prompt": question.strip(),
                 "site_bundle": {"files": _files},
             }
@@ -3221,6 +3231,8 @@ class AnswerContract:
                     "project_plan": _project_plan,
                     "page_plan": _page_plan,
                     "style_plan": _style_plan,
+                    "section_plan": _section_plan,
+                    "content_block_plan": _content_block_plan,
                     "file_count": len(_files),
                     "delivery_mode": "sandbox_write"
                     if deliver_to_sandbox
