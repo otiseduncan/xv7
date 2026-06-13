@@ -15,6 +15,7 @@ import httpx
 
 from core.brain import site_bundle as sb
 from core.brain.artifact_fidelity_manager import ArtifactFidelityManager
+from core.brain.artifact_history_manager import ArtifactHistoryManager
 from core.brain.code_artifact_builder import CodeArtifactBuilder
 from core.brain.commit_proposal_manager import CommitProposalManager
 from core.brain.intent_router import IntentRouter
@@ -360,75 +361,13 @@ class AnswerContract:
 
     @staticmethod
     def _extract_business_name_from_html(content: str) -> str | None:
-        title_match = re.search(
-            r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL
-        )
-        if title_match:
-            value = html.unescape(re.sub(r"\s+", " ", title_match.group(1))).strip()
-            if value:
-                return value
-        h1_match = re.search(
-            r"<h1[^>]*>(.*?)</h1>", content, flags=re.IGNORECASE | re.DOTALL
-        )
-        if h1_match:
-            raw = re.sub(r"<[^>]+>", "", h1_match.group(1))
-            value = html.unescape(re.sub(r"\s+", " ", raw)).strip()
-            if value:
-                return value
-        return None
+        return ArtifactHistoryManager.extract_business_name_from_html(content)
 
     @staticmethod
     def _extract_artifact_from_metadata(
         metadata: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if not isinstance(metadata, dict):
-            return None
-
-        # Site bundle takes priority when present.
-        _site_bundle = metadata.get("site_bundle")
-        if (
-            isinstance(_site_bundle, dict)
-            and _site_bundle.get("artifact_type") == "site_bundle"
-        ):
-            return dict(_site_bundle)
-
-        artifacts: list[Any] = []
-        code_artifacts = metadata.get("code_artifacts")
-        if isinstance(code_artifacts, list):
-            artifacts.extend(code_artifacts)
-
-        single = metadata.get("code_artifact")
-        if isinstance(single, dict):
-            artifacts.append(single)
-
-        for artifact in artifacts:
-            if not isinstance(artifact, dict):
-                continue
-            filename = str(artifact.get("filename", "")).strip()
-            content = artifact.get("content")
-            if filename and isinstance(content, str) and content.strip():
-                return {
-                    "type": "code_artifact",
-                    "filename": filename,
-                    "language": str(artifact.get("language") or "html").strip()
-                    or "html",
-                    "previewable": bool(artifact.get("previewable", True)),
-                    "applied": bool(artifact.get("applied", False)),
-                    "content": content,
-                    "artifact_id": artifact.get("artifact_id"),
-                    "revision_id": artifact.get("revision_id"),
-                    "revision_number": artifact.get("revision_number"),
-                    "source_prompt": artifact.get("source_prompt"),
-                    "prompt_fidelity": artifact.get("prompt_fidelity"),
-                    "delivery_mode": artifact.get("delivery_mode"),
-                    "sandbox_root": artifact.get("sandbox_root"),
-                    "sandbox_project_slug": artifact.get("sandbox_project_slug"),
-                    "sandbox_relative_path": artifact.get("sandbox_relative_path"),
-                    "sandbox_target_path": artifact.get("sandbox_target_path"),
-                    "created_at": artifact.get("created_at"),
-                    "message_id": artifact.get("message_id"),
-                }
-        return None
+        return ArtifactHistoryManager.extract_artifact_from_metadata(metadata)
 
     @classmethod
     def _prompt_fidelity_history_metadata(
