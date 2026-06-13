@@ -135,16 +135,16 @@ class WebsiteBundleAssemblyManager:
 
         html_files = [item["path"] for item in files if item["kind"] == "html"]
         asset_paths = [item["path"] for item in files if item["kind"] == "asset"]
-        page_routes = [
-            {
-                "slug": "index" if path == "index.html" else PurePosixPath(path).stem,
+        page_routes: list[PageRoute] = []
+        for path in html_files:
+            slug = "index" if path == "index.html" else PurePosixPath(path).stem
+            route = "/" if path == "index.html" else f"/{slug}"
+            page_route: PageRoute = {
+                "slug": slug,
                 "path": path,
-                "route": "/"
-                if path == "index.html"
-                else f"/{PurePosixPath(path).stem}",
+                "route": route,
             }
-            for path in html_files
-        ]
+            page_routes.append(page_route)
         entrypoint = "index.html" if "index.html" in html_files else html_files[0]
         return {
             "entrypoint": entrypoint,
