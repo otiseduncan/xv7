@@ -18,6 +18,7 @@ from core.brain.artifact_fidelity_manager import ArtifactFidelityManager
 from core.brain.code_artifact_builder import CodeArtifactBuilder
 from core.brain.commit_proposal_manager import CommitProposalManager
 from core.brain.intent_router import IntentRouter
+from core.brain.patch_proposal_manager import PatchProposalManager
 from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
@@ -1490,31 +1491,25 @@ class AnswerContract:
             business_name=business_name,
             operation=operation,
         )
-        proposal_id = f"patch-{uuid4().hex[:12]}"
-        diff_text = cls._build_unified_diff(
+        proposal = PatchProposalManager.build_patch_proposal_payload(
+            question="",
             target_path=target_path,
+            content=current_content,
+            language=language,
+            source_artifact_id=source_artifact_id,
             before_content=existing_content,
-            after_content=current_content,
-        )
-
-        return {
-            "type": "artifact_patch_proposal",
-            "proposal_id": proposal_id,
-            "source_artifact_id": source_artifact_id,
-            "filename": filename,
-            "target_path": target_path,
-            "operation": operation,
-            "language": language,
-            "applied": False,
-            "requires_confirmation": True,
-            "content": current_content,
-            "diff": diff_text,
-            "validation": {
+            proposal_id=f"patch-{uuid4().hex[:12]}",
+            validation={
                 "status": validation_status,
                 "checks": checks,
                 "failures": failures,
             },
-        }
+        )
+        proposal.pop("question", None)
+        proposal.pop("content_length", None)
+        proposal.pop("content_sha256", None)
+        proposal["filename"] = filename
+        return proposal
 
     @classmethod
     def _artifact_history(
