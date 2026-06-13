@@ -33,7 +33,9 @@ class WebsiteSectionPlanManager:
         "Contact": ("contact", "contact us", "get in touch"),
     }
 
-    BUSINESS_HINT_SECTIONS: ClassVar[tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]] = (
+    BUSINESS_HINT_SECTIONS: ClassVar[
+        tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]
+    ] = (
         (
             ("hot dog", "hotdog", "food cart", "restaurant", "cafe", "menu"),
             (
@@ -116,7 +118,10 @@ class WebsiteSectionPlanManager:
     @classmethod
     def _contains_alias(cls, prompt: str, alias: str) -> bool:
         pattern = re.compile(rf"(?<![\w-]){re.escape(alias)}(?![\w-])", re.IGNORECASE)
-        return any(cls._has_request_context(prompt, match.start(), match.end()) for match in pattern.finditer(prompt))
+        return any(
+            cls._has_request_context(prompt, match.start(), match.end())
+            for match in pattern.finditer(prompt)
+        )
 
     @classmethod
     def extract_requested_sections(cls, prompt: str) -> list[str]:
@@ -158,7 +163,9 @@ class WebsiteSectionPlanManager:
             titles = list(requested_sections)
 
         normalized = cls._dedupe_sections(
-            title for title in (cls.normalize_section_title(item) for item in titles) if title
+            title
+            for title in (cls.normalize_section_title(item) for item in titles)
+            if title
         )
         if "Hero" not in normalized:
             normalized.insert(0, "Hero")
@@ -185,7 +192,9 @@ class WebsiteSectionPlanManager:
             return "action"
         if any(term in lowered for term in ("contact", "visit", "hours", "location")):
             return "contact"
-        if any(term in lowered for term in ("review", "portfolio", "case stud", "gallery")):
+        if any(
+            term in lowered for term in ("review", "portfolio", "case stud", "gallery")
+        ):
             return "proof"
         return "content"
 

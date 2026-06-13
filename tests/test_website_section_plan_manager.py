@@ -3,13 +3,22 @@ from core.brain.website_section_plan_manager import WebsiteSectionPlanManager
 
 def test_normalize_section_title_maps_aliases_to_canonical_titles() -> None:
     assert WebsiteSectionPlanManager.normalize_section_title("our story") == "About"
-    assert WebsiteSectionPlanManager.normalize_section_title("featured items") == "Menu Highlights"
-    assert WebsiteSectionPlanManager.normalize_section_title("cta") == "Order / Catering CTA"
+    assert (
+        WebsiteSectionPlanManager.normalize_section_title("featured items")
+        == "Menu Highlights"
+    )
+    assert (
+        WebsiteSectionPlanManager.normalize_section_title("cta")
+        == "Order / Catering CTA"
+    )
 
 
 def test_slugify_section_creates_stable_anchor_slugs() -> None:
     assert WebsiteSectionPlanManager.slugify_section("Visit / Hours") == "visit-hours"
-    assert WebsiteSectionPlanManager.slugify_section("Order & Catering CTA") == "order-and-catering-cta"
+    assert (
+        WebsiteSectionPlanManager.slugify_section("Order & Catering CTA")
+        == "order-and-catering-cta"
+    )
     assert WebsiteSectionPlanManager.slugify_section("") == "section"
 
 
@@ -62,7 +71,9 @@ def test_infer_business_sections_for_automotive_service() -> None:
 
 
 def test_build_section_plan_uses_inferred_sections_without_explicit_request() -> None:
-    plan = WebsiteSectionPlanManager.build_section_plan("Build a CBD vape shop website.")
+    plan = WebsiteSectionPlanManager.build_section_plan(
+        "Build a CBD vape shop website."
+    )
 
     assert [section["title"] for section in plan] == [
         "Hero",
@@ -103,7 +114,9 @@ def test_build_section_plan_dedupes_and_prepends_hero() -> None:
 def test_classify_section_groups_proof_contact_and_action_roles() -> None:
     assert WebsiteSectionPlanManager.classify_section("Reviews") == "proof"
     assert WebsiteSectionPlanManager.classify_section("Visit / Hours") == "contact"
-    assert WebsiteSectionPlanManager.classify_section("Order / Catering CTA") == "action"
+    assert (
+        WebsiteSectionPlanManager.classify_section("Order / Catering CTA") == "action"
+    )
     assert WebsiteSectionPlanManager.classify_section("Services") == "content"
 
 
