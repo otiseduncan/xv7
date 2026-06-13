@@ -2457,37 +2457,37 @@ class AnswerContract:
                 artifact_history
             )
             if latest_sandbox_artifact is not None:
-                sandbox_target_path = str(
+                location_target_path = str(
                     latest_sandbox_artifact.get("sandbox_target_path") or ""
                 ).strip()
-                sandbox_project_path = str(
+                location_project_path = str(
                     latest_sandbox_artifact.get("sandbox_project_path") or ""
                 ).strip()
-                if not sandbox_project_path and sandbox_target_path:
+                if not location_project_path and location_target_path:
                     try:
-                        sandbox_project_path = str(Path(sandbox_target_path).parent)
+                        location_project_path = str(Path(location_target_path).parent)
                     except Exception:
-                        sandbox_project_path = ""
+                        location_project_path = ""
 
-                sandbox_written_paths: list[str] = [
+                location_written_paths: list[str] = [
                     str(p)
                     for p in (
                         latest_sandbox_artifact.get("sandbox_written_paths") or []
                     )
                     if str(p).strip()
                 ]
-                if not sandbox_written_paths and sandbox_target_path:
-                    sandbox_written_paths = [sandbox_target_path]
+                if not location_written_paths and location_target_path:
+                    location_written_paths = [location_target_path]
 
-                if sandbox_project_path:
+                if location_project_path:
                     file_lines = (
-                        "\n".join(f"  - {p}" for p in sandbox_written_paths[:8])
-                        if sandbox_written_paths
+                        "\n".join(f"  - {p}" for p in location_written_paths[:8])
+                        if location_written_paths
                         else "  (paths not recorded)"
                     )
                     return {
                         "visible_text": (
-                            f"The sandbox files are in: {sandbox_project_path}\n\n"
+                            f"The sandbox files are in: {location_project_path}\n\n"
                             f"Written files:\n{file_lines}"
                         ),
                         "code_artifact": {},
@@ -2499,9 +2499,9 @@ class AnswerContract:
                         },
                         "provenance": {
                             "artifact_generation": "sandbox_location_query",
-                            "sandbox_project_path": sandbox_project_path,
-                            "sandbox_written_paths": sandbox_written_paths,
-                            "sandbox_target_path": sandbox_target_path,
+                            "sandbox_project_path": location_project_path,
+                            "sandbox_written_paths": location_written_paths,
+                            "sandbox_target_path": location_target_path,
                             "sandbox_root": str(
                                 latest_sandbox_artifact.get("sandbox_root") or ""
                             ),
