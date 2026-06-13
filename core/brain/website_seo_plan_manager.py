@@ -16,7 +16,7 @@ class WebsiteSeoPlanManager:
     MAX_TITLE_LENGTH = 60
     MAX_DESCRIPTION_LENGTH = 160
 
-    _QUOTE_RE = re.compile(r"[\"“”']([^\"“”']{3,90})[\"“”']")
+    _QUOTE_RE = re.compile(r'"([^"]{3,90})"|“([^”]{3,90})”|\'([^\']{3,90})\'')
     _META_RE = re.compile(
         r"(?:meta\s+description|seo\s+description|description)\s*[:\-]\s*(.+)",
         re.IGNORECASE,
@@ -51,7 +51,8 @@ class WebsiteSeoPlanManager:
 
         quoted = cls._QUOTE_RE.search(prompt)
         if quoted:
-            return cls.truncate(quoted.group(1), cls.MAX_TITLE_LENGTH)
+            quoted_value = next((group for group in quoted.groups() if group), "")
+            return cls.truncate(quoted_value, cls.MAX_TITLE_LENGTH)
 
         lowered = prompt.lower()
         for marker in (" for ", " about ", " called ", " named "):
@@ -70,7 +71,7 @@ class WebsiteSeoPlanManager:
         """Extract or infer a safe meta description."""
         match = cls._META_RE.search(prompt)
         if match:
-            description = match.group(1).strip().strip('"\'')
+            description = cls.clean_text(match.group(1)).strip('"\'').strip(" ,.;:-")
             return cls.truncate(description, cls.MAX_DESCRIPTION_LENGTH)
 
         clean_title = cls.clean_text(title) or cls.extract_title(prompt)
