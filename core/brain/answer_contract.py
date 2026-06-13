@@ -14,6 +14,7 @@ from uuid import uuid4
 import httpx
 
 from core.brain import site_bundle as sb
+from core.brain.code_artifact_builder import CodeArtifactBuilder
 from core.brain.intent_router import IntentRouter
 from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
@@ -1223,6 +1224,72 @@ if __name__ == \"__main__\":
         if "html" in lowered:
             return "HTML artifact"
         return "code artifact"
+
+    @staticmethod
+    def _code_artifact_language(normalized_question: str) -> str:
+        return CodeArtifactBuilder.code_artifact_language(normalized_question)
+
+    @staticmethod
+    def _code_artifact_filename(language: str) -> str:
+        return CodeArtifactBuilder.code_artifact_filename(language)
+
+    @staticmethod
+    def _clean_artifact_label(text: str) -> str:
+        return CodeArtifactBuilder.clean_artifact_label(text)
+
+    @classmethod
+    def _extract_artifact_name(cls, question: str) -> str | None:
+        return CodeArtifactBuilder.extract_artifact_name(question)
+
+    @staticmethod
+    def _artifact_business_category(question: str, name: str | None) -> str:
+        return CodeArtifactBuilder.artifact_business_category(question, name)
+
+    @staticmethod
+    def _artifact_style_profile(question: str, category: str) -> dict[str, str]:
+        return CodeArtifactBuilder.artifact_style_profile(question, category)
+
+    @staticmethod
+    def _format_business_name(name: str | None, fallback: str) -> str:
+        return CodeArtifactBuilder.format_business_name(name, fallback)
+
+    @classmethod
+    def _build_business_site_template(cls, question: str) -> dict[str, Any]:
+        return CodeArtifactBuilder.build_business_site_template(question)
+
+    @staticmethod
+    def _default_code_artifact_content(
+        filename: str, language: str, question: str
+    ) -> str:
+        return CodeArtifactBuilder.default_code_artifact_content(
+            filename,
+            language,
+            question,
+        )
+
+    @staticmethod
+    def _extract_requested_filename(question: str, language: str) -> str:
+        return CodeArtifactBuilder.extract_requested_filename(question, language)
+
+    @staticmethod
+    def _extract_requested_previewable(question: str, language: str) -> bool:
+        return CodeArtifactBuilder.extract_requested_previewable(question, language)
+
+    @staticmethod
+    def _extract_apply_intent(question: str) -> bool:
+        return CodeArtifactBuilder.extract_apply_intent(question)
+
+    @staticmethod
+    def _extract_style_hints(question: str) -> dict[str, list[str]]:
+        return CodeArtifactBuilder.extract_style_hints(question)
+
+    @staticmethod
+    def _extract_layout_hints(question: str) -> list[str]:
+        return CodeArtifactBuilder.extract_layout_hints(question)
+
+    @staticmethod
+    def _artifact_intent_label(question: str) -> str:
+        return CodeArtifactBuilder.artifact_intent_label(question)
 
     @classmethod
     def _extract_prompt_fidelity_contract(cls, question: str) -> dict[str, Any]:
