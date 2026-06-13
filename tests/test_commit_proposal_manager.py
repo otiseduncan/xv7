@@ -5,7 +5,9 @@ from core.brain.commit_proposal_manager import CommitProposalManager, GitStatusE
 
 def test_normalize_status_path_unwraps_rename_and_backslashes() -> None:
     assert (
-        CommitProposalManager.normalize_status_path(r"old\\path.txt -> generated-sites\\demo\\index.html")
+        CommitProposalManager.normalize_status_path(
+            r"old\\path.txt -> generated-sites\\demo\\index.html"
+        )
         == "generated-sites/demo/index.html"
     )
 
@@ -23,7 +25,10 @@ def test_parse_status_lines_ignores_short_or_empty_lines() -> None:
 
 def test_filter_safe_entries_splits_included_and_blocked_paths() -> None:
     entries = [
-        GitStatusEntry("M  generated-sites/demo/index.html", "generated-sites/demo/index.html"),
+        GitStatusEntry(
+            "M  generated-sites/demo/index.html",
+            "generated-sites/demo/index.html",
+        ),
         GitStatusEntry("M  data/brain/private.json", "data/brain/private.json"),
     ]
 
@@ -36,7 +41,9 @@ def test_filter_safe_entries_splits_included_and_blocked_paths() -> None:
 
 def test_proposed_commit_message_uses_single_file_stem() -> None:
     assert (
-        CommitProposalManager.proposed_commit_message(["generated-sites/demo/index.html"])
+        CommitProposalManager.proposed_commit_message(
+            ["generated-sites/demo/index.html"]
+        )
         == "chore: update index"
     )
     assert (
@@ -107,7 +114,8 @@ def test_build_status_scan_proposal_supports_injected_block_policy() -> None:
 
 def test_build_no_git_proposal_preserves_no_git_visible_message() -> None:
     proposal = CommitProposalManager.build_no_git_proposal(
-        question="prepare commit", proposal_id="commit-test"
+        question="prepare commit",
+        proposal_id="commit-test",
     )
 
     assert proposal["type"] == "commit_proposal"
