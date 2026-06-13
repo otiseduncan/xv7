@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from core.brain.website_page_plan_manager import WebsitePagePlanManager
+
 # ─── Intent detection ──────────────────────────────────────────────────────────
 
 SITE_BUNDLE_ACTION_PATTERN = re.compile(r"\b(create|build|make|generate|draft)\b")
@@ -97,7 +99,7 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
     ]
 
 
-# ─── Path helpers ──────────────────────────────────────────────────────────────
+# ─── Path helpers ─────────────────────────────────────────────────────────────
 
 _NAV_LABELS: dict[str, str] = {
     "index": "Home",
@@ -196,47 +198,36 @@ def normalize_page_path(label: str) -> str:
     return f"{slug}.html" if slug else "page.html"
 
 
-def extract_requested_page_paths(question: str) -> list[str]:
-    """Extract explicitly requested page names in prompt order."""
-    if not isinstance(question, str) or not question.strip():
-        return []
-
+def _page_aliases() -> list[tuple[str, str]]:
     aliases: list[tuple[str, str]] = [
         ("frequently asked questions", "faq"),
         ("home", "home"),
         ("products", "products"),
         ("product", "products"),
-        ("about", "about"),
-        ("faq", "faq"),
-        ("faqs", "faq"),
-        ("contact", "contact"),
-        ("services", "services"),
-        ("gallery", "gallery"),
-        ("menu", "menu"),
-        ("events", "events"),
-        ("specials", "specials"),
-        ("deals", "specials"),
-        ("offers", "specials"),
-        ("catering", "catering"),
-        ("locations", "locations"),
-        ("location", "locations"),
-        ("pricing", "pricing"),
-        ("prices", "pricing"),
-        ("reviews", "reviews"),
-        ("testimonials", "reviews"),
-        ("portfolio", "portfolio"),
-        ("booking", "booking"),
-        ("book", "booking"),
-        ("aftercare", "aftercare"),
-        ("rentals", "rentals"),
-        ("safety", "safety"),
-        ("guided tours", "guided tours"),
-        ("tours", "guided tours"),
     ]
+    for alias, title in WebsitePagePlanManager.PAGE_ALIASES:
+        aliases.append((alias, WebsitePagePlanManager.page_slug(title)))
+    aliases.extend(
+        [
+            ("faq", "faq"),
+            ("faqs", "faq"),
+            ("events", "events"),
+            ("deals", "specials"),
+            ("offers", "specials"),
+            ("testimonials", "reviews"),
+        ]
+    )
+    return aliases
+
+
+def extract_requested_page_paths(question: str) -> list[str]:
+    """Extract explicitly requested page names in prompt order."""
+    if not isinstance(question, str) or not question.strip():
+        return []
 
     lowered = question.lower()
     hits: list[tuple[int, str]] = []
-    for token, canonical in aliases:
+    for token, canonical in _page_aliases():
         pattern = re.compile(rf"\b{re.escape(token)}\b", re.IGNORECASE)
         for match in pattern.finditer(lowered):
             hits.append((match.start(), canonical))
