@@ -18,8 +18,12 @@ def test_parse_status_lines_ignores_short_or_empty_lines() -> None:
     )
 
     assert entries == [
-        GitStatusEntry("M  core/brain/answer_contract.py", "core/brain/answer_contract.py"),
-        GitStatusEntry("?? generated-sites/demo/index.html", "generated-sites/demo/index.html"),
+        GitStatusEntry(
+            "M  core/brain/answer_contract.py", "core/brain/answer_contract.py"
+        ),
+        GitStatusEntry(
+            "?? generated-sites/demo/index.html", "generated-sites/demo/index.html"
+        ),
     ]
 
 
@@ -32,7 +36,9 @@ def test_filter_safe_entries_splits_included_and_blocked_paths() -> None:
         GitStatusEntry("M  data/brain/private.json", "data/brain/private.json"),
     ]
 
-    included, excluded, change_lines = CommitProposalManager.filter_safe_entries(entries)
+    included, excluded, change_lines = CommitProposalManager.filter_safe_entries(
+        entries
+    )
 
     assert included == ["generated-sites/demo/index.html"]
     assert excluded == ["data/brain/private.json"]
