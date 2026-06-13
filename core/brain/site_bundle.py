@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from core.brain.website_business_type_manager import WebsiteBusinessTypeManager
 from core.brain.website_page_plan_manager import WebsitePagePlanManager
 
 # ─── Intent detection ──────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ _FOOD_TERMS = (
     "bbq",
     "barbeque",
 )
+_FOOD_BUSINESS_TYPES = {"food_cart", "restaurant"}
 
 
 def default_pages_for_business(business_name: str, question: str) -> list[str]:
@@ -76,9 +78,12 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
             "assets/site.js",
         ]
 
+    prompt_context = f"{business_name} {question}"
+    business_type = WebsiteBusinessTypeManager.infer_business_type(prompt_context)
     q = question.lower()
     b = business_name.lower()
-    if any(w in q or w in b for w in _FOOD_TERMS):
+    has_legacy_food_term = any(w in q or w in b for w in _FOOD_TERMS)
+    if business_type.kind in _FOOD_BUSINESS_TYPES or has_legacy_food_term:
         return [
             "index.html",
             "about.html",
