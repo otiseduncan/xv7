@@ -2561,17 +2561,19 @@ class AnswerContract:
         is_explicit_single_artifact_sandbox_export = (
             explicit_sandbox_delivery_request
             and latest_artifact is not None
+            and isinstance(latest_artifact, dict)
             and _latest_artifact_kind == "code_artifact"
             and not is_site_bundle_sandbox_delivery_request
             and not is_generation
             and not is_site_bundle_generation
         )
         if is_explicit_single_artifact_sandbox_export:
-            _filename = str(latest_artifact.get("filename") or "index.html")  # type: ignore[union-attr]
+            assert isinstance(latest_artifact, dict)
+            _filename = str(latest_artifact.get("filename") or "index.html")
             _content = str(latest_artifact.get("content") or "")
             _language = str(latest_artifact.get("language") or "html")
             _artifact_id = str(
-                latest_artifact.get("artifact_id")  # type: ignore[union-attr]
+                latest_artifact.get("artifact_id")
                 or self._slugify_artifact_name(_filename)
                 or "artifact-export"
             )
