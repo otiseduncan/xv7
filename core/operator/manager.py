@@ -49,6 +49,13 @@ NON_MUTATION_WRITING_PATTERNS = (
     "test planning",
     "debugging guidance",
     "documentation help",
+    # Sandbox export/write intent: writing the active artifact to the approved sandbox
+    # is allowed without Operator Mode — it is not repo mutation.
+    "to the sandbox",
+    "to sandbox",
+    "export to sandbox",
+    "save to sandbox",
+    "write to sandbox",
 )
 
 
