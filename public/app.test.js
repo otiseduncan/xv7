@@ -1213,6 +1213,85 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('promptInput').disabled).toBe(false);
   });
 
+  it('shows Processing while request is in flight and restores controls on success', async () => {
+    const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(okJson({
+            session_id: 'session-1',
+            current_persona: 'default',
+            metadata: {},
+            messages: [
+              { role: 'user', content: 'Prompt in flight', metadata: {} },
+              { role: 'assistant', content: 'Recovered after pending.', metadata: {} },
+            ],
+          }));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    const sendButton = document.getElementById('sendButton');
+    prompt.value = 'Prompt in flight';
+    sendButton.click();
+    await flushAsync();
+
+    expect(sendButton.textContent).toBe('Processing...');
+    expect(sendButton.disabled).toBe(true);
+    expect(prompt.disabled).toBe(true);
+    expect(typeof resolveMessage).toBe('function');
+
+    resolveMessage();
+    await flushAsync();
+
+    expect(sendButton.textContent).toBe('Send');
+    expect(sendButton.disabled).toBe(false);
+    expect(prompt.disabled).toBe(false);
+    expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Recovered after pending.');
+  });
+
+  it('prefers the latest assistant role message over metadata fallback payload', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            last_assistant_payload: {
+              visible_text: 'Metadata fallback text should not win.',
+            },
+          },
+          messages: [
+            { role: 'user', content: 'First', metadata: {} },
+            { role: 'assistant', content: 'Assistant in messages should win.', metadata: {} },
+            { role: 'tool', content: 'trailing non-assistant event', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Prefer assistant from messages';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Assistant in messages should win.');
+  });
+
   it('recovers from a malformed assistant response and still unlocks the composer', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = vi.fn(async (input, init = {}) => {
@@ -1239,7 +1318,10 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(prompt.disabled).toBe(false);
-    expect(document.querySelector('.chat-render-error')?.textContent).toContain('Recovered from a render error.');
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('Xoduz response was received, but the UI could not render the assistant message.');
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('response had messages array: true');
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('assistant message found: false');
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('last_assistant_payload found: false');
     expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
     expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('No assistant content returned.');
     expect(document.getElementById('alertBox').textContent).toContain('Recovered from malformed assistant response');
@@ -1300,10 +1382,34 @@ describe('ModelProfileControl', () => {
 
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
-    expect(document.querySelector('.chat-render-error')?.textContent).toContain('Recovered from a render error.');
+    expect(document.querySelector('.chat-render-error')?.textContent).toContain('The assistant response rendered, but the code artifact card could not be displayed.');
     expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
     expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Here is your artifact.');
-    expect(document.getElementById('alertBox').textContent).toContain('Recovered from assistant render failure');
+    expect(document.getElementById('alertBox').textContent).toContain('Recovered from assistant artifact rendering failure');
+  });
+
+  it('shows error feedback and unlocks composer for non-200 backend responses', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return errorText(500, 'backend exploded');
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    const prompt = document.getElementById('promptInput');
+    prompt.value = 'Force a 500';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.getElementById('sendButton').disabled).toBe(false);
+    expect(document.getElementById('sendButton').textContent).toBe('Send');
+    expect(prompt.disabled).toBe(false);
+    expect(document.getElementById('alertBox').textContent).toContain('backend exploded');
   });
 
   it('times out hanging chat requests and restores the composer', async () => {
@@ -1372,7 +1478,7 @@ describe('ModelProfileControl', () => {
 
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
-    expect(document.getElementById('alertBox').textContent).toContain('Request timed out before xv7-core responded');
+    expect(document.getElementById('alertBox').textContent).toContain('The request timed out or stayed pending too long. The UI recovered so you can retry.');
     expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(0);
   });
 

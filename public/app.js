@@ -91,7 +91,10 @@ class Xv7UI {
   voiceAvailabilityNote = '';
 
   /** @type {number} */
-  chatMessageTimeoutMs = 2 * 60 * 1000;
+  chatMessageTimeoutMs = 3 * 60 * 1000;
+
+  /** @type {boolean} */
+  isSending = false;
 
   /** @type {number} */
   messageCounter = 0;
@@ -669,6 +672,7 @@ class Xv7UI {
   handlePromptInputChanged() {
     const text = String(this.els.promptInput.value || '');
     const trimmed = text.trimStart();
+    this.syncComposerSendAvailability();
     if (!trimmed.startsWith('/')) {
       this.slashMenuOpen = false;
       this.slashFilter = '';
@@ -1034,13 +1038,15 @@ class Xv7UI {
   }
 
   async sendMessage() {
+    if (this.isSending) return;
+
     const raw = this.els.promptInput.value.trim();
     if (!raw) return;
 
     this.setAvatarState('thinking', 'message-sent');
 
     this.showAlert('', false);
-    this.lockInput(true);
+    this.setSendBusy(true);
     this.setHardwareLoad('Inference', 74);
 
     try {
@@ -1082,7 +1088,7 @@ class Xv7UI {
       this.setAvatarState('error', 'message-error');
       this.scheduleAvatarReset('idle', 1800);
     } finally {
-      this.lockInput(false);
+      this.setSendBusy(false);
       this.els.promptInput.focus();
     }
   }
@@ -1091,27 +1097,31 @@ class Xv7UI {
     const response = data && typeof data === 'object' ? data : {};
     const responseMetadata = response.metadata && typeof response.metadata === 'object' ? response.metadata : {};
     const messages = Array.isArray(response.messages) ? response.messages : [];
-    const assistantMessage = messages.length ? messages[messages.length - 1] : null;
+    const resolvedAssistant = this.resolveAssistantPayload(response);
+    const assistantMessage = resolvedAssistant.payload;
     const hasValidAssistantMessage = assistantMessage && typeof assistantMessage === 'object';
-    const assistantContent =
-      hasValidAssistantMessage && typeof assistantMessage.content === 'string'
-        ? assistantMessage.content
-        : '';
-    const assistantMeta =
-      hasValidAssistantMessage && assistantMessage.metadata && typeof assistantMessage.metadata === 'object'
-        ? assistantMessage.metadata
-        : {};
-    const fallbackAssistantMeta =
+    const assistantContent = hasValidAssistantMessage && typeof assistantMessage.content === 'string'
+      ? assistantMessage.content
+      : '';
+    const assistantMeta = hasValidAssistantMessage && assistantMessage.metadata && typeof assistantMessage.metadata === 'object'
+      ? assistantMessage.metadata
+      : (hasValidAssistantMessage ? assistantMessage : {});
+    const fallbackAssistantMetaRaw =
       responseMetadata.last_assistant_payload && typeof responseMetadata.last_assistant_payload === 'object'
         ? responseMetadata.last_assistant_payload
         : {};
+    const fallbackAssistantMeta = { ...fallbackAssistantMetaRaw };
+    if (resolvedAssistant.assistantFromMessages) {
+      delete fallbackAssistantMeta.visible_text;
+      delete fallbackAssistantMeta.content;
+    }
     const mergedAssistantMeta = {
       ...fallbackAssistantMeta,
       ...assistantMeta,
     };
     const responseError = hasValidAssistantMessage
       ? null
-      : new Error('Assistant response did not include a valid assistant message.');
+      : new Error('Assistant response did not include a valid assistant payload.');
     const assistantArtifacts = this.collectCodeArtifacts(assistantMessage);
     if (assistantArtifacts.length) {
       mergedAssistantMeta.code_artifacts = assistantArtifacts;
@@ -1146,7 +1156,17 @@ class Xv7UI {
     }
 
     if (responseError && assistantArticle) {
-      this.appendRenderErrorNotice(assistantArticle, responseError);
+      const detailLines = [
+        `response had messages array: ${resolvedAssistant.hasMessagesArray}`,
+        `assistant message found: ${resolvedAssistant.assistantFromMessages}`,
+        `last_assistant_payload found: ${resolvedAssistant.hasLastAssistantPayload}`,
+      ];
+      this.appendRenderErrorNotice(
+        assistantArticle,
+        responseError,
+        'Xoduz response was received, but the UI could not render the assistant message.',
+        detailLines,
+      );
       this.showAlert('Recovered from malformed assistant response. Please retry if needed.', true, 2600);
     }
 
@@ -1187,6 +1207,26 @@ class Xv7UI {
     this.updateSessionTelemetry();
     this.renderRetrievalJournal(response);
     this.setHardwareLoad('Ready', 12);
+  }
+
+  resolveAssistantPayload(responseJson) {
+    const response = responseJson && typeof responseJson === 'object' ? responseJson : {};
+    const messages = Array.isArray(response.messages) ? response.messages : [];
+    const latestAssistant = [...messages]
+      .reverse()
+      .find((message) => message && typeof message === 'object' && String(message.role || '').toLowerCase() === 'assistant');
+
+    const metadata = response.metadata && typeof response.metadata === 'object' ? response.metadata : {};
+    const lastAssistantPayload = metadata.last_assistant_payload && typeof metadata.last_assistant_payload === 'object'
+      ? metadata.last_assistant_payload
+      : null;
+
+    return {
+      payload: latestAssistant || lastAssistantPayload,
+      hasMessagesArray: Array.isArray(response.messages),
+      assistantFromMessages: Boolean(latestAssistant),
+      hasLastAssistantPayload: Boolean(lastAssistantPayload),
+    };
   }
 
   async sendQuickPrompt(text) {
@@ -1433,7 +1473,7 @@ class Xv7UI {
     return article;
   }
 
-  appendRenderErrorNotice(article, error) {
+  appendRenderErrorNotice(article, error, titleText = 'Recovered from a render error.', extraLines = []) {
     if (!article) return;
 
     const notice = document.createElement('div');
@@ -1441,20 +1481,31 @@ class Xv7UI {
 
     const title = document.createElement('p');
     title.className = 'chat-render-error-title';
-    title.textContent = 'Recovered from a render error.';
+    title.textContent = titleText;
 
     const message = document.createElement('p');
     message.className = 'chat-render-error-message';
     message.textContent = `Details: ${this.humanizeError(error)}`;
 
     notice.append(title, message);
+
+    extraLines
+      .filter((line) => typeof line === 'string' && line.trim())
+      .forEach((line) => {
+        const detail = document.createElement('p');
+        detail.className = 'chat-render-error-message';
+        detail.textContent = line;
+        notice.append(detail);
+      });
+
     article.append(notice);
   }
 
   appendCodeArtifacts(article, messageMetadata) {
     const artifacts = this.collectCodeArtifacts(messageMetadata);
+    const renderErrors = [];
 
-    if (!artifacts.length) return;
+    if (!artifacts.length) return renderErrors;
 
     const artifactTray = document.createElement('div');
     artifactTray.className = 'code-artifact-tray';
@@ -1464,19 +1515,34 @@ class Xv7UI {
       const filename = typeof artifact.filename === 'string' ? artifact.filename.trim() : '';
       const content = typeof artifact.content === 'string' ? artifact.content : '';
       if (!filename || !content) return;
-      artifactTray.append(
-        this.createCodeArtifactCard({
-          ...artifact,
-          filename,
-          content,
-          artifactIndex: index,
-        }),
-      );
+      try {
+        artifactTray.append(
+          this.createCodeArtifactCard({
+            ...artifact,
+            filename,
+            content,
+            artifactIndex: index,
+          }),
+        );
+      } catch (error) {
+        renderErrors.push(error);
+      }
     });
 
     if (artifactTray.childElementCount > 0) {
       article.append(artifactTray);
     }
+
+    if (renderErrors.length) {
+      this.appendRenderErrorNotice(
+        article,
+        renderErrors[0],
+        'The assistant response rendered, but the code artifact card could not be displayed.',
+      );
+      this.showAlert('Recovered from assistant artifact rendering failure. You can retry the request.', true, 3000);
+    }
+
+    return renderErrors;
   }
 
   createCodeArtifactCard(artifact) {
@@ -3728,10 +3794,19 @@ class Xv7UI {
   /**
    * @param {boolean} locked
    */
-  lockInput(locked) {
+  setSendBusy(locked) {
+    this.isSending = locked;
     this.els.promptInput.disabled = locked;
-    this.els.sendButton.disabled = locked;
-    this.els.sendButton.textContent = locked ? 'Processing…' : 'Send';
+    this.els.sendButton.textContent = locked ? 'Processing...' : 'Send';
+    this.syncComposerSendAvailability();
+  }
+
+  syncComposerSendAvailability() {
+    this.els.sendButton.disabled = this.isSending;
+  }
+
+  lockInput(locked) {
+    this.setSendBusy(locked);
   }
 
   /**
@@ -3742,7 +3817,7 @@ class Xv7UI {
       'xv7-core is currently resetting or loading heavy model weights. Wait a moment and retry your request.';
 
     if (error && typeof error === 'object' && error.name === 'AbortError') {
-      return 'Request timed out before xv7-core responded. The UI recovered so you can retry.';
+      return 'The request timed out or stayed pending too long. The UI recovered so you can retry.';
     }
 
     if (error instanceof Error) return error.message || fallback;
