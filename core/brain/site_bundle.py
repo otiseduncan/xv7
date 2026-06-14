@@ -123,12 +123,17 @@ def is_site_bundle_request(normalized_question: str) -> bool:
 
     if _EXPLICIT_SINGLE_PATTERN.search(normalized_question):
         return False
+    if re.search(
+        r"\b(change|revise|edit|update|restyle|refresh|tweak|adjust|rewrite|switch|preserve|keep|undo|revert)\b",
+        normalized_question,
+    ):
+        return False
     if _WEBSITE_ARTIFACT_PATTERN.search(normalized_question):
         return True
     has_action = bool(SITE_BUNDLE_ACTION_PATTERN.search(normalized_question))
     has_site_hint = bool(SITE_BUNDLE_HINT_PATTERN.search(normalized_question))
     has_multi_hint = bool(SITE_BUNDLE_INTENT_PATTERN.search(normalized_question))
-    return has_action and has_site_hint and has_multi_hint
+    return has_multi_hint or (has_action and has_site_hint)
 
 
 def default_pages_for_business(business_name: str, question: str) -> list[str]:

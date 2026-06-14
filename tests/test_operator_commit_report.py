@@ -181,3 +181,31 @@ def test_force_push_request_is_blocked(
     assert "Force push" in result.stderr_summary
     assert result.data["commit_created"] is False
     assert result.data["push_performed"] is False
+
+
+def test_commit_report_sanitizes_not_git_repo_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def _fake_run_git(
+        _root: Path, _args: list[str]
+    ) -> subprocess.CompletedProcess[str]:
+        return _Proc(
+            128,
+            "",
+            "fatal: not a git repository: /workspace/X:/XV7/xv7/.git/worktrees/xv7-fix-live-smoke",
+        )  # type: ignore[return-value]
+
+    monkeypatch.setattr(repo_actions, "_run_git", _fake_run_git)
+
+    result = operator_commit_report(
+        action_id="OP-COMMIT-6",
+        repo_root=tmp_path,
+        request={"mode": "apply", "approval": {"approved": True}, "push": True},
+    )
+
+    assert result.status == "denied"
+    assert result.safety.requires_approval is True
+    assert "runtime repo root is not a usable git workspace" in result.stderr_summary
+    assert "/workspace/X:/XV7" not in result.stderr_summary
+    assert result.data["commit_created"] is False
+    assert result.data["push_performed"] is False

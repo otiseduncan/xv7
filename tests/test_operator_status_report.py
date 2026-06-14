@@ -103,9 +103,30 @@ def test_operator_status_report_reports_git_failure(
 
     assert result.status == "failed"
     assert result.exit_code == 128
-    assert "not a git repository" in result.stderr_summary
+    assert "runtime repo root is not a usable git workspace" in result.stderr_summary
     assert result.safety.read_only is True
     assert result.safety.allowed is True
+
+
+def test_operator_status_report_sanitizes_not_git_repo_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def _fake_run_git(
+        _root: Path, _args: list[str]
+    ) -> subprocess.CompletedProcess[str]:
+        return _Proc(
+            128,
+            "",
+            "fatal: not a git repository: /workspace/X:/XV7/xv7/.git/worktrees/xv7-fix-live-smoke",
+        )  # type: ignore[return-value]
+
+    monkeypatch.setattr(status_report_module, "_run_git", _fake_run_git)
+
+    result = operator_status_report(action_id="OP-STATUS-5", repo_root=tmp_path)
+
+    assert result.status == "failed"
+    assert "runtime repo root is not a usable git workspace" in result.stderr_summary
+    assert "/workspace/X:/XV7" not in result.stderr_summary
 
 
 def test_operator_status_report_is_available_through_registry(

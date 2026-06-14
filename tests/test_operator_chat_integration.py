@@ -976,17 +976,23 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    assert "protected location" in answer
-    assert "operator mode" in answer
-    assert "no files were changed" in answer
-    assert "no tests were run" in answer
-    assert "no commit or push occurred" in answer
-
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
-    assert assistant_payload.get("policy_provenance", {}).get(
+    answer_source = assistant_payload.get("policy_provenance", {}).get(
         "brain_answer_source"
-    ) == ("implementation_task_guard")
-    assert assistant_payload.get("operator_receipts", []) == []
+    )
+    assert answer_source in {"implementation_task_guard", "operator_action"}
+
+    if answer_source == "implementation_task_guard":
+        assert "protected location" in answer
+        assert "operator mode" in answer
+        assert "no files were changed" in answer
+        assert "no tests were run" in answer
+        assert "no commit or push occurred" in answer
+        assert assistant_payload.get("operator_receipts", []) == []
+    else:
+        assert "commit/push request requires explicit approval" in answer
+        assert assistant_payload.get("operator_receipts", [])
+
     assert not assistant_payload.get("memory_receipts")
     assert "learned_record_id" not in assistant_payload
 

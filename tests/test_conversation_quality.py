@@ -2499,7 +2499,7 @@ def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_natural_language_build_prompt_does_not_mutate_repo(
+def test_natural_language_website_build_routes_to_site_bundle(
     monkeypatch, tmp_path: Path
 ) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
@@ -2516,13 +2516,87 @@ def test_natural_language_build_prompt_does_not_mutate_repo(
     message = payload["messages"][-1]
     answer = str(message["content"]).lower()
     metadata = message["metadata"]
-    assert "build task" in answer
+    assert "build task" not in answer
     assert (
         metadata.get("policy_provenance", {}).get("brain_answer_source")
-        == "implementation_task_guard"
+        != "implementation_task_guard"
     )
-    assert metadata.get("code_artifact", {}) == {}
+    site_bundle = metadata.get("site_bundle", {})
+    assert isinstance(site_bundle, dict)
+    assert site_bundle.get("artifact_type") == "site_bundle"
     assert not (tmp_path / "generated-sites").exists()
+
+
+def test_site_bundle_refine_then_export_to_sandbox(monkeypatch, tmp_path: Path) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    build_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "build me a website for Tony's Tavern biker bar"},
+    )
+    assert build_response.status_code == 200
+    build_message = build_response.json()["messages"][-1]
+    assert "build task" not in str(build_message["content"]).lower()
+    build_bundle = build_message["metadata"].get("site_bundle", {})
+    assert isinstance(build_bundle, dict)
+    assert build_bundle.get("artifact_type") == "site_bundle"
+
+    refine_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "change the website to a cleaner black and gold style"},
+    )
+    assert refine_response.status_code == 200
+    refine_message = refine_response.json()["messages"][-1]
+    refine_answer = str(refine_message["content"]).lower()
+    assert "do not have a current code artifact" not in refine_answer
+    assert "no active site bundle" not in refine_answer
+    refine_bundle = refine_message["metadata"].get("site_bundle", {})
+    assert isinstance(refine_bundle, dict)
+    assert refine_bundle.get("artifact_type") == "site_bundle"
+
+    export_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "write this to the sandbox"},
+    )
+    assert export_response.status_code == 200
+    export_message = export_response.json()["messages"][-1]
+    export_answer = str(export_message["content"]).lower()
+    assert "applied" in export_answer
+    assert "generated-sites/" in export_answer
+
+    html_files = list((tmp_path / "generated-sites").rglob("*.html"))
+    assert len(html_files) >= 2
+
+
+def test_site_bundle_export_phrase_with_slashes_is_handled(
+    monkeypatch, tmp_path: Path
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    build_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "build me a website for Tony's Tavern biker bar"},
+    )
+    assert build_response.status_code == 200
+
+    export_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Write/export/save it to the sandbox."},
+    )
+    assert export_response.status_code == 200
+    export_message = export_response.json()["messages"][-1]
+    export_answer = str(export_message["content"]).lower()
+    assert "applied" in export_answer
+    assert "generated-sites/" in export_answer
 
 
 def test_build_guard_still_wins_when_commit_words_are_present(

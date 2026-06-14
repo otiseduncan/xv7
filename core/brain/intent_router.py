@@ -70,7 +70,7 @@ class IntentRouter:
         r"\b(build|write|create|scaffold)\b|\bmake\s+(?:a\s+)?project\b|\bgenerate\s+files\b|\bwrite\s+files\b"
     )
     SANDBOX_BUILD_TARGET_PATTERN = re.compile(
-        r"\b(website|site|page|design|project|app|files|react|vite|frontend|landing page|web page|homepage)\b"
+        r"\b(website|site|page|design|project|app|files|react|vite|frontend|landing page|web page|homepage|sandbox)\b"
     )
     ARTIFACT_REPO_MUTATION_PATTERN = re.compile(
         r"\b(create a website in the repo|make the app|implement this feature|"

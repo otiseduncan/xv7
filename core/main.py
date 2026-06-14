@@ -201,6 +201,40 @@ else:
 facts_db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _resolve_operator_repo_root(
+    *,
+    env_value: str | None = None,
+    fallback: Path | None = None,
+    current_os_name: str | None = None,
+) -> Path:
+    fallback_root = (fallback or Path.cwd()).resolve()
+    raw = str(
+        env_value
+        if env_value is not None
+        else os.getenv("XV7_OPERATOR_REPO_ROOT", str(fallback_root))
+    ).strip()
+    if not raw:
+        return fallback_root
+
+    os_name = current_os_name or os.name
+    if os_name != "nt" and re.match(r"^[A-Za-z]:[\\/]", raw):
+        return fallback_root
+
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = fallback_root / candidate
+
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return fallback_root
+
+    if not resolved.exists():
+        return fallback_root
+
+    return resolved
+
+
 def build_facts_system_prompt(facts: dict[str, Any]) -> str:
     if not facts:
         return ""
@@ -1468,7 +1502,7 @@ base_agent = BaseAgent()
 vector_store = VectorMemoryEngine()
 brain_context_manager = BrainContextManager()
 persistent_memory_manager = PersistentMemoryManager()
-_operator_repo_root = Path(os.getenv("XV7_OPERATOR_REPO_ROOT", str(Path.cwd())))
+_operator_repo_root = _resolve_operator_repo_root()
 operator_manager = OperatorManager(repo_root=_operator_repo_root)
 
 
@@ -2660,6 +2694,11 @@ async def add_session_message(
         )
         and latest_applied_patch is not None
     )
+    prioritize_artifact_over_build_guard = (
+        brain_context_manager.answer_contract._prioritize_artifact_over_build_guard(
+            normalized_question
+        )
+    )
     is_artifact_patch_lane_prompt = (
         brain_context_manager.answer_contract._is_patch_proposal_request(
             normalized_question
@@ -2667,13 +2706,18 @@ async def add_session_message(
         or brain_context_manager.answer_contract._is_patch_apply_request(
             normalized_question
         )
-        or is_post_apply_file_check_prompt
-        or is_post_apply_full_test_prompt
-    )
-    prioritize_artifact_over_build_guard = (
-        brain_context_manager.answer_contract._prioritize_artifact_over_build_guard(
+        or brain_context_manager.answer_contract._is_preview_artifact_request(
             normalized_question
         )
+        or brain_context_manager.answer_contract._looks_like_artifact_edit(
+            normalized_question
+        )
+        or brain_context_manager.answer_contract._is_sandbox_build_request(
+            normalized_question
+        )
+        or is_post_apply_file_check_prompt
+        or is_post_apply_full_test_prompt
+        or prioritize_artifact_over_build_guard
     )
 
     if is_artifact_patch_lane_prompt:

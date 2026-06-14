@@ -155,6 +155,16 @@ def _extract_commit_sha(commit_stdout: str) -> str:
     return match.group(1)
 
 
+def _sanitize_git_failure(stderr_text: str, repo_root: Path) -> str:
+    message = str(stderr_text or "").strip()
+    if "not a git repository" in message.lower():
+        return (
+            "commit/push unavailable: runtime repo root is not a usable git workspace "
+            f"({repo_root})."
+        )
+    return message or "git status unavailable"
+
+
 def operator_commit_report(
     *,
     action_id: str,
@@ -189,17 +199,18 @@ def operator_commit_report(
     status_proc = _run_git(repo_root, ["status", "--short", "--branch"])
     completed = datetime.now(UTC)
     if status_proc.returncode != 0:
+        safe_error = _sanitize_git_failure(status_proc.stderr, repo_root)
         return OperatorActionResult(
             action_id=action_id,
             action_name="operator_commit_report",
             mode="operator",
-            status="failed",
+            status="denied",
             started_at=started,
             completed_at=completed,
             command_or_operation="git status --short --branch",
             target=str(repo_root),
             stdout_summary=status_proc.stdout[:500],
-            stderr_summary=status_proc.stderr[:500],
+            stderr_summary=safe_error[:500],
             exit_code=status_proc.returncode,
             data={
                 "mode": mode,
@@ -210,15 +221,19 @@ def operator_commit_report(
                 "commit_sha": "",
                 "commit_created": False,
                 "push_performed": False,
-                "safety_notes": ["Git status failed; commit/push not attempted."],
+                "safety_notes": [
+                    "Git status failed; commit/push not attempted.",
+                    safe_error,
+                ],
                 "local_only_files": [],
                 "local_only_files_warning": [],
             },
             safety=OperatorSafety(
-                allowed=True,
+                allowed=False,
                 read_only=False,
                 mutates_git=True,
                 requires_approval=True,
+                denial_reason=safe_error,
             ),
             receipt_label=f"operator_commit_report {action_id}",
         )
