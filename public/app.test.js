@@ -1346,7 +1346,16 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('promptInput').disabled).toBe(false);
   });
 
-  it('shows Processing while request is in flight and restores controls on success', async () => {
+  it('does not render a persistent runtime status bar in the composer', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('runtimeStatus')).toBeNull();
+  });
+
+  it('shows stop mode and a pending assistant card while a normal request is in flight and replaces it on success', async () => {
     const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
     let resolveMessage;
 
@@ -1377,9 +1386,13 @@ describe('ModelProfileControl', () => {
     sendButton.click();
     await flushAsync();
 
-    expect(sendButton.textContent).toBe('Processing...');
-    expect(sendButton.disabled).toBe(true);
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(sendButton.textContent).toBe('Stop');
+    expect(sendButton.disabled).toBe(false);
+    expect(sendButton.classList.contains('is-stop')).toBe(true);
     expect(prompt.disabled).toBe(true);
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('thinking');
+    expect(pendingCard?.textContent).toContain('Thinking');
     expect(typeof resolveMessage).toBe('function');
 
     resolveMessage();
@@ -1387,8 +1400,218 @@ describe('ModelProfileControl', () => {
 
     expect(sendButton.textContent).toBe('Send');
     expect(sendButton.disabled).toBe(false);
+    expect(sendButton.classList.contains('is-stop')).toBe(false);
     expect(prompt.disabled).toBe(false);
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
     expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Recovered after pending.');
+  });
+
+  it('shows website preview status in a pending assistant card and preserves site bundle rendering', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(okJson({
+            session_id: 'session-1',
+            current_persona: 'default',
+            visible_text: 'Here is a 2-page site bundle for Thinking Test Hot Dog Cart.',
+            site_bundle: {
+              artifact_type: 'site_bundle',
+              artifact_id: 'thinking-test-hot-dog-cart',
+              title: 'Thinking Test Hot Dog Cart',
+              slug: 'thinking-test-hot-dog-cart',
+              entry: 'index.html',
+              site_bundle: {
+                files: [
+                  { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+                  { path: 'menu.html', language: 'html', content: '<!doctype html><html><body>menu</body></html>' },
+                ],
+              },
+            },
+          }));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Build me a website for Thinking Test Hot Dog Cart.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
+    expect(pendingCard?.textContent).toContain('Building site preview');
+
+    resolveMessage();
+    await flushAsync();
+
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    expect(document.querySelector('.site-bundle-card')).toBeTruthy();
+  });
+
+  it('shows checking repo status for operator prompts in a pending assistant card while active', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(fetchMock(input, init));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'check the repo';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
+    expect(pendingCard?.textContent).toContain('Checking repo');
+
+    resolveMessage();
+    await flushAsync();
+
+    expect(document.querySelector('.site-bundle-card')).toBeNull();
+    expect(document.querySelector('.site-bundle-mode-button')).toBeNull();
+  });
+
+  it('shows running validation status for validation prompts in a pending assistant card while active', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(fetchMock(input, init));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'run validation';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
+    expect(pendingCard?.textContent).toContain('Running validation');
+
+    resolveMessage();
+    await flushAsync();
+  });
+
+  it('stop click updates the pending assistant card and restores send mode', async () => {
+    const fetchMock = createRuntimeFetchMock();
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Request cancelled.', 'AbortError'));
+          }, { once: true });
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Hello X.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const sendButton = document.getElementById('sendButton');
+    sendButton.click();
+    await flushAsync();
+
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(sendButton.textContent).toBe('Send');
+    expect(sendButton.classList.contains('is-stop')).toBe(false);
+    expect(pendingCard?.textContent).toContain('Stopped');
+    expect(pendingCard?.textContent).toContain('Request cancelled.');
+  });
+
+  it('shows failed status in the pending assistant card when a request errors and restores send mode', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return errorText(500, 'server exploded');
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Hello X.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const sendButton = document.getElementById('sendButton');
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(sendButton.textContent).toBe('Send');
+    expect(sendButton.disabled).toBe(false);
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('failed');
+    expect(pendingCard?.textContent).toContain('Failed');
+  });
+
+  it('shows approval-required operator receipts without exposing hidden reasoning', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            operator_action_history: [
+              {
+                action_id: 'OP-COMMIT-1',
+                action_name: 'operator_commit_report',
+                status: 'needs_approval',
+              },
+            ],
+          },
+          messages: [
+            { role: 'user', content: 'commit and push', metadata: {} },
+            { role: 'assistant', content: 'Internal reasoning should never appear here.', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'commit and push';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const assistantText = document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent || '';
+    expect(assistantText).not.toContain('Internal reasoning');
+    expect(assistantText).not.toContain('chain-of-thought');
+    expect(assistantText).toBe('Response withheld for safety.');
   });
 
   it('prefers the latest assistant role message over metadata fallback payload', async () => {
@@ -1612,7 +1835,8 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(document.getElementById('alertBox').textContent).toContain('The request timed out or stayed pending too long. The UI recovered so you can retry.');
-    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(0);
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
+    expect(document.querySelector('.pending-assistant')?.textContent).toContain('Failed');
   });
 
   it('renders an inline code artifact card inside the assistant chat flow', async () => {
@@ -1953,7 +2177,7 @@ describe('ModelProfileControl', () => {
     expect(cards[2].textContent || '').toContain('After artifact');
   });
 
-  it('renders operator receipt chip and expandable details', async () => {
+  it('renders one collapsed response details disclosure with operator info', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
 
@@ -1970,26 +2194,24 @@ describe('ModelProfileControl', () => {
     );
     expect(chip).toBeTruthy();
 
-    const details = [...document.querySelectorAll('.receipt-details summary')].find((node) =>
-      (node.textContent || '').includes('repo_status OP-1'),
-    );
-    expect(details).toBeTruthy();
-  });
+    const disclosures = [...document.querySelectorAll('.chat-card-assistant .response-details-disclosure')];
+    expect(disclosures).toHaveLength(1);
+    const disclosure = disclosures[0];
+    expect(disclosure).toBeTruthy();
+    expect(disclosure?.hasAttribute('open')).toBe(false);
+    expect(disclosure?.querySelector('.response-details-summary')?.textContent).toContain('Details');
+    expect(document.querySelector('.operator-result-disclosure')).toBeNull();
+    expect(document.querySelector('.why-answer-drawer')).toBeNull();
+    expect(document.querySelector('.receipt-details')).toBeNull();
 
-  it('renders compact operator result card for check the repo', async () => {
-    global.fetch = createRuntimeFetchMock();
-
-    new Xv7UI();
+    disclosure.open = true;
     await flushAsync();
 
-    document.getElementById('promptInput').value = 'Check the repo.';
-    document.getElementById('sendButton').click();
-    await flushAsync();
-
-    const card = document.querySelector('.operator-result-card');
-    expect(card).toBeTruthy();
-    const text = (card?.textContent || '').toLowerCase();
-    expect(text).toContain('operator result');
+    expect(document.querySelector('.site-bundle-card')).toBeNull();
+    expect(document.querySelector('.site-bundle-mode-button')).toBeNull();
+    const text = (disclosure?.textContent || '').toLowerCase();
+    expect(text).toContain('operator status');
+    expect(text).toContain('repo_status op-1');
     expect(text).toContain('operator_status_report');
     expect(text).toContain('passed');
     expect(text).toContain('changed_files');
@@ -1997,9 +2219,43 @@ describe('ModelProfileControl', () => {
     expect(text).toContain('commit_push');
     expect(text).toContain('commit_created=false');
     expect(text).toContain('push_performed=false');
+    expect(text).toContain('why this answer');
+    expect(text).toContain('model_used');
+    expect(text).not.toContain('intent_class');
+    expect(text).not.toContain('speech_act');
+    expect(text).not.toContain('validation_commands');
   });
 
-  it('run validation shows validation commands summary in operator result card', async () => {
+  it('suppresses placeholder operator result cards without meaningful payload', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Website artifact ready.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_action',
+          status: 'unknown',
+          changed_files: [],
+          validation_commands_run: [],
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {},
+        },
+      },
+      new Date().toISOString(),
+    );
+
+    expect(document.querySelector('.response-details-disclosure')).toBeFalsy();
+    expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('operator_action');
+    expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('unknown');
+  });
+
+  it('run validation shows validation commands summary inside response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -2009,13 +2265,48 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    const cardText = (document.querySelector('.response-details-disclosure')?.textContent || '').toLowerCase();
     expect(cardText).toContain('operator_validation_report');
     expect(cardText).toContain('validation_commands');
     expect(cardText).toContain('python -m ruff format --check core tests scripts');
   });
 
-  it('fix it shows needs_patch and first failure in operator result card', async () => {
+  it('omits Why this answer section when there are no meaningful why fields', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Operator-only metadata response.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_status_report',
+          status: 'passed',
+          changed_files: ['public/app.js'],
+          validation_commands_run: [],
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {
+            commit_created: false,
+            push_performed: false,
+            requires_separate_approval: true,
+          },
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.chat-card-assistant:last-child .response-details-disclosure');
+    expect(drawer).toBeTruthy();
+    const detailText = (drawer?.textContent || '').toLowerCase();
+    expect(detailText).toContain('operator result');
+    expect(detailText).not.toContain('why this answer');
+  });
+
+  it('fix it shows needs_patch and first failure in response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -2025,7 +2316,7 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    const cardText = (document.querySelector('.response-details-disclosure')?.textContent || '').toLowerCase();
     expect(cardText).toContain('operator_repair_report');
     expect(cardText).toContain('needs_patch');
     expect(cardText).toContain('patch');
@@ -2033,7 +2324,7 @@ describe('ModelProfileControl', () => {
     expect(cardText).toContain('python -m pytest');
   });
 
-  it('apply this patch without approval shows needs_approval in operator result card', async () => {
+  it('apply this patch without approval shows needs_approval in response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -2043,7 +2334,7 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    const cardText = (document.querySelector('.response-details-disclosure')?.textContent || '').toLowerCase();
     expect(cardText).toContain('operator_patch_report');
     expect(cardText).toContain('needs_approval');
     expect(cardText).toContain('approval');
@@ -3313,7 +3604,7 @@ describe('ModelProfileControl', () => {
     expect(modelChip).toBeTruthy();
   });
 
-  it('renders per-message Why this answer drawer with focus metadata', async () => {
+  it('renders why-this-answer metadata inside response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
     const ui = new Xv7UI();
     await flushAsync();
@@ -3345,15 +3636,17 @@ describe('ModelProfileControl', () => {
       '2026-06-11T00:00:00Z',
     );
 
-    const drawer = document.querySelector('.why-answer-drawer');
+    const drawer = document.querySelector('.response-details-disclosure');
     expect(drawer).toBeTruthy();
+    expect(drawer?.hasAttribute('open')).toBe(false);
+    expect((drawer?.textContent || '').toLowerCase()).toContain('details');
     expect((drawer?.textContent || '').toLowerCase()).toContain('why this answer');
     expect(drawer?.textContent || '').toContain('active_focus_follow_up');
     expect(drawer?.textContent || '').toContain('XV7-FOCUS-0005');
     expect(drawer?.textContent || '').toContain('Focus');
   });
 
-  it('renders prompt fidelity metadata in Why this answer drawer', async () => {
+  it('renders prompt fidelity metadata inside response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
     const ui = new Xv7UI();
     await flushAsync();
@@ -3393,13 +3686,44 @@ describe('ModelProfileControl', () => {
       '2026-06-11T00:00:00Z',
     );
 
-    const drawer = document.querySelector('.why-answer-drawer');
+    const drawer = document.querySelector('.response-details-disclosure');
     expect(drawer).toBeTruthy();
     const text = drawer?.textContent || '';
     expect(text).toContain('prompt_fidelity_status');
     expect(text).toContain('repaired');
     expect(text).toContain('Tony Tavern');
     expect(text).toContain('black, yellow, green');
+  });
+
+  it('renders fallback_reason and source_record_ids when they are provided', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Metadata-rich response',
+      null,
+      {
+        source_record_ids: ['XV7-FOCUS-0004'],
+        fallback_reason: 'operator_action',
+        model_use_receipt: { model_tag: 'policy_only' },
+        context_receipt: {
+          context_receipts: [
+            { layer: 'active_focus', record_id: 'XV7-FOCUS-0004' },
+          ],
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.chat-card-assistant:last-child .response-details-disclosure');
+    expect(drawer).toBeTruthy();
+    const detailText = (drawer?.textContent || '').toLowerCase();
+    expect(detailText).toContain('fallback_reason');
+    expect(detailText).toContain('operator_action');
+    expect(detailText).toContain('source_record_ids');
+    expect(detailText).toContain('xv7-focus-0004');
   });
 
   it('renders artifact patch proposal with diff and draft/apply controls', async () => {
@@ -4041,17 +4365,43 @@ describe('ModelProfileControl', () => {
 
     const bundleCard = document.querySelector('.site-bundle-card');
     expect(bundleCard).toBeTruthy();
-    expect(document.querySelector('.operator-result-card')).toBe(null);
+    expect(document.querySelector('.response-details-disclosure')).toBe(null);
     expect(bundleCard.querySelector('.site-bundle-label')?.textContent).toContain('Site bundle artifact');
     expect(bundleCard.querySelector('.site-bundle-title')?.textContent).toContain("Tony's Tavern");
     const meta = bundleCard.querySelector('.site-bundle-meta')?.textContent || '';
     expect(meta).toContain('7 file');
     expect(meta).toContain('index.html');
+    expect(bundleCard.querySelector('.site-bundle-mode-button.is-active')?.textContent).toBe('Code');
+    expect(bundleCard.querySelectorAll('.site-bundle-file-button').length).toBeGreaterThan(0);
+    expect(bundleCard.querySelector('.site-bundle-files-disclosure')?.hasAttribute('open')).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-workspace')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-list-panel')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-active-label')?.textContent).toContain('index.html');
+    expect(bundleCard.querySelector('.site-bundle-code-panel')?.hidden).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(true);
+
+    const filesDisclosure = bundleCard.querySelector('.site-bundle-files-disclosure');
+    filesDisclosure.open = true;
+    await flushAsync();
+    expect(filesDisclosure?.open).toBe(true);
+
     const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
     expect(fileItems.length).toBe(7);
     const filePaths = fileItems.map((el) => el.textContent || '');
     expect(filePaths.some((t) => t.includes('index.html'))).toBe(true);
     expect(filePaths.some((t) => t.includes('assets/site.css'))).toBe(true);
+
+    const previewButton = [...bundleCard.querySelectorAll('.site-bundle-mode-button')].find((node) =>
+      (node.textContent || '').includes('Preview'),
+    );
+    previewButton?.click();
+    await flushAsync();
+
+    expect(bundleCard.querySelector('.site-bundle-mode-button.is-active')?.textContent).toBe('Preview');
+    expect(bundleCard.querySelector('.site-bundle-code-panel')?.hidden).toBe(true);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel iframe')?.getAttribute('srcdoc')).toContain('<body>home</body>');
+
     expect(bundleCard.querySelector('.site-bundle-notice')?.textContent).toContain('7 file');
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
@@ -4110,7 +4460,11 @@ describe('ModelProfileControl', () => {
             title: 'Tony\'s Tavern',
             slug: 'tonys-tavern',
             entry: 'index.html',
-            site_bundle: { files: [] },
+            site_bundle: {
+              files: [
+                { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+              ],
+            },
           },
           metadata: {},
           messages: [
@@ -4203,14 +4557,41 @@ describe('ModelProfileControl', () => {
     const bundleCards = [...document.querySelectorAll('.site-bundle-card')];
     expect(bundleCards.length).toBeGreaterThan(0);
     const bundleCard = bundleCards[0];
+    expect(bundleCard.querySelector('.site-bundle-files-disclosure')?.hasAttribute('open')).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-workspace')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-list-panel')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-mode-button.is-active')?.textContent).toBe('Code');
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(true);
 
     // The site bundle card file list must include products.html and faq.html.
+    const filesDisclosure = bundleCard.querySelector('.site-bundle-files-disclosure');
+    filesDisclosure.open = true;
+    await flushAsync();
+
     const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
     const filePaths = fileItems.map((li) => li.textContent.trim().split(' ')[0]);
     expect(filePaths).toContain('products.html');
     expect(filePaths).toContain('faq.html');
     expect(filePaths).not.toContain('services.html');
     expect(filePaths).not.toContain('gallery.html');
+
+    const productsButton = [...bundleCard.querySelectorAll('.site-bundle-file-button')].find((button) =>
+      (button.textContent || '').includes('Products'),
+    );
+    expect(productsButton).toBeTruthy();
+    productsButton?.click();
+    await flushAsync();
+    expect(bundleCard.querySelector('.site-bundle-active-label')?.textContent).toContain('products.html');
+
+    const previewButton = [...bundleCard.querySelectorAll('.site-bundle-mode-button')].find((button) =>
+      (button.textContent || '').includes('Preview'),
+    );
+    expect(previewButton?.disabled).toBe(false);
+    previewButton?.click();
+    await flushAsync();
+
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel iframe')?.getAttribute('srcdoc')).toContain('<body>products</body>');
   });
 
   it('renders revised artifact content for premium + Specials follow-up prompts', async () => {

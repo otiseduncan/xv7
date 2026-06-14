@@ -380,24 +380,26 @@ describe('Code 8 browser/UI receipt visibility proof', () => {
     expect(document.getElementById('chatReceiptProfile').textContent).toBe('-');
   });
 
-  it('keeps detailed source/provenance in the closed why-this-answer drawer', async () => {
+  it('keeps detailed source/provenance in the closed response details drawer', async () => {
     global.fetch = createCode8FetchMock();
     const ui = new Xv7UI();
     await flushAsync();
 
     const assistantCard = await sendPrompt(ui, 'what did I just change your focus to?');
-    const whyDrawer = assistantCard.querySelector('.why-answer-drawer');
+    const whyDrawer = assistantCard.querySelector('.response-details-disclosure');
     const whyText = whyDrawer?.textContent || '';
 
     expect(whyDrawer).toBeTruthy();
     expect(whyDrawer.open).toBe(false);
-    expect(whyDrawer.querySelector('summary')?.textContent).toBe('Why this answer?');
+    expect(whyDrawer.querySelector('summary')?.textContent).toBe('Details');
+    expect(whyText.toLowerCase()).toContain('why this answer');
     expect(whyText).toContain('response_mode');
     expect(whyText).toContain('policy_only');
     expect(whyText).toContain('active_focus_id');
     expect(whyText).toContain('XV7-FOCUS-0800');
-    expect(whyText).toContain('fallback_used');
-    expect(whyText).toContain('false');
+    expect(whyText).not.toContain('fallback_used');
+    expect(whyText).toContain('context_includes_focus');
+    expect(whyText).toContain('true');
   });
 
   it('copies only visible answer plus compact receipt summary, not raw provenance metadata', async () => {
