@@ -113,6 +113,12 @@ class Xv7UI {
   /** @type {{phase:string,label:string,hint:string,actionName:string,startedAt:number,endedAt:number|null,busy:boolean}|null} */
   runtimeStatusModel = null;
 
+  /** @type {HTMLElement | null} */
+  pendingAssistantArticle = null;
+
+  /** @type {HTMLElement | null} */
+  pendingAssistantStatusElement = null;
+
   /** @type {number} */
   messageCounter = 0;
 
@@ -246,7 +252,6 @@ class Xv7UI {
       chatTimeline: document.getElementById('chatTimeline'),
       promptInput: document.getElementById('promptInput'),
       slashMenu: document.getElementById('slashMenu'),
-      runtimeStatus: document.getElementById('runtimeStatus'),
       sendButton: document.getElementById('sendButton'),
       operatorModeToggle: document.getElementById('operatorModeToggle'),
       operatorModeBanner: document.getElementById('operatorModeBanner'),
@@ -1078,11 +1083,6 @@ class Xv7UI {
 
     this.requestStopRequested = false;
     this.activeRequestController = new AbortController();
-    this.setRuntimeStatus({
-      phase: activePhase,
-      label: classifiedRuntime.label,
-      actionName: '',
-    });
 
     this.setAvatarState('thinking', 'message-sent');
 
@@ -1091,8 +1091,6 @@ class Xv7UI {
     this.setHardwareLoad('Inference', 74);
 
     try {
-      await this.ensureSession(this.activeRequestController.signal);
-
       this.appendMessageCard('user', raw, null, null, this.nowIso());
       this.els.promptInput.value = '';
       this.slashMenuOpen = false;
@@ -1104,8 +1102,16 @@ class Xv7UI {
       this.voiceState.lastVoiceError = '';
       this.renderVoiceDiagnostics();
 
+      const pendingArticle = this.beginPendingAssistantCard({
+        phase: activePhase,
+        label: classifiedRuntime.label,
+        actionName: '',
+      });
+
+      await this.ensureSession(this.activeRequestController.signal);
+
       if (raw.startsWith('/')) {
-        await this.sendSlashCommand(raw, this.activeRequestController.signal);
+        await this.sendSlashCommand(raw, this.activeRequestController.signal, pendingArticle);
         this.memoryLogCount += 1;
         this.updateSessionTelemetry();
         this.setHardwareLoad('Ready', 12);
@@ -1167,31 +1173,23 @@ class Xv7UI {
     const response = data && typeof data === 'object' ? data : {};
     const responseMetadata = response.metadata && typeof response.metadata === 'object' ? response.metadata : {};
       // ─── Site bundle rendering ────────────────────────────────────────────────
-      const siteBundlePayload = response.site_bundle && typeof response.site_bundle === 'object'
-        ? response.site_bundle
-        : (responseMetadata.site_bundle && typeof responseMetadata.site_bundle === 'object' ? responseMetadata.site_bundle : null);
-      if (siteBundlePayload && siteBundlePayload.artifact_type === 'site_bundle') {
+      const siteBundlePayload = this.getMessageSiteBundle({
+        ...response,
+        metadata: responseMetadata,
+      });
+      if (siteBundlePayload) {
         const bundleText = typeof response.visible_text === 'string' ? response.visible_text : 'Site bundle generated.';
-        const bundleFiles = this.collectSiteBundleFiles(siteBundlePayload);
-        const bundleCodeArtifacts = bundleFiles
-          .filter((file) => file && typeof file === 'object')
-          .map((file) => {
-            const path = String(file.path || '');
-            const language = String(file.language || this.inferLanguageFromFilename(path));
-            return {
-              filename: path,
-              language,
-              content: String(file.content || ''),
-              previewable: path.endsWith('.html'),
-              applied: false,
-            };
-          })
-          .filter((artifact) => artifact.filename && artifact.content);
         const bundleMeta = {
           site_bundle: siteBundlePayload,
-          code_artifacts: bundleCodeArtifacts,
         };
-        const bundleArticle = this.appendMessageCard('assistant', bundleText, null, bundleMeta, this.nowIso());
+        const bundleArticle = this.appendMessageCard(
+          'assistant',
+          bundleText,
+          null,
+          bundleMeta,
+          this.nowIso(),
+          this.consumePendingAssistantCard(),
+        );
         if (bundleArticle) {
           try {
             this.appendSiteBundleCard(bundleArticle, siteBundlePayload);
@@ -1242,6 +1240,7 @@ class Xv7UI {
       ...fallbackAssistantMeta,
       ...assistantMeta,
     };
+    const mergedSiteBundlePayload = this.getMessageSiteBundle(mergedAssistantMeta);
     const responseError = hasValidAssistantMessage
       ? null
       : new Error('Assistant response did not include a valid assistant payload.');
@@ -1266,6 +1265,7 @@ class Xv7UI {
         reasoningText,
         mergedAssistantMeta,
         this.inferAssistantTimestamp(mergedAssistantMeta),
+        this.consumePendingAssistantCard(),
       );
     } catch (error) {
       renderError = error;
@@ -1275,6 +1275,7 @@ class Xv7UI {
         reasoningText,
         null,
         this.nowIso(),
+        this.consumePendingAssistantCard(),
       );
     }
 
@@ -1296,6 +1297,19 @@ class Xv7UI {
     if (renderError && assistantArticle) {
       this.appendRenderErrorNotice(assistantArticle, renderError);
       this.showAlert(`Recovered from assistant render failure: ${this.humanizeError(renderError)}`, true, 2600);
+    }
+
+    if (mergedSiteBundlePayload && assistantArticle) {
+      try {
+        this.appendSiteBundleCard(assistantArticle, mergedSiteBundlePayload);
+      } catch (bundleError) {
+        this.appendRenderErrorNotice(
+          assistantArticle,
+          bundleError,
+          'The assistant response rendered, but the site bundle card could not be displayed.',
+        );
+        this.showAlert('Recovered from site bundle render failure. You can retry the request.', true, 3000);
+      }
     }
 
     this.setAvatarState('idle', 'assistant-response-received');
@@ -1387,7 +1401,7 @@ class Xv7UI {
     }
   }
 
-  async sendSlashCommand(commandText, signal = undefined) {
+  async sendSlashCommand(commandText, signal = undefined, replaceArticle = null) {
     let payload;
     try {
       payload = await this.fetchJson('/api/operator/stage', {
@@ -1414,7 +1428,14 @@ class Xv7UI {
       warnings: [],
       action_history_refs: receipt?.action_id ? [receipt.action_id] : [],
     };
-    this.appendMessageCard('assistant', payload?.answer || 'Operator action processed.', null, assistantMeta, this.nowIso());
+    this.appendMessageCard(
+      'assistant',
+      payload?.answer || 'Operator action processed.',
+      null,
+      assistantMeta,
+      this.nowIso(),
+      replaceArticle || this.consumePendingAssistantCard(),
+    );
 
     this.pendingOperatorAction = payload?.pending_action || null;
     this.renderPendingOperatorAction();
@@ -1507,7 +1528,7 @@ class Xv7UI {
    * @param {string} content
    * @param {string | null} reasoning
    */
-  appendMessageCard(role, content, reasoning, messageMetadata = null, timestamp = '') {
+  appendMessageCard(role, content, reasoning, messageMetadata = null, timestamp = '', replaceArticle = null) {
     const article = document.createElement('article');
     article.className = role === 'user' ? 'chat-card chat-card-user' : 'chat-card chat-card-assistant';
     article.dataset.role = role;
@@ -1558,6 +1579,7 @@ class Xv7UI {
       receiptSummary: [],
     };
 
+    const siteBundlePayload = role === 'assistant' ? this.getMessageSiteBundle(messageMetadata) : null;
     const hasCodeArtifacts = role === 'assistant' && this.collectCodeArtifacts(messageMetadata).length > 0;
     const patchProposal = role === 'assistant' ? this.collectArtifactPatchProposal(messageMetadata) : null;
 
@@ -1567,12 +1589,7 @@ class Xv7UI {
         this.appendOperatorResultCard(article, messageMetadata);
         // Site bundle payloads use appendSiteBundleCard (called by the caller after this
         // returns) — skip per-file card rendering to prevent duplicate individual cards.
-        const isSiteBundleMessage = (() => {
-          const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
-          const sb = meta.site_bundle;
-          return sb && typeof sb === 'object' && sb.artifact_type === 'site_bundle';
-        })();
-        if (!isSiteBundleMessage) {
+        if (!siteBundlePayload) {
           this.appendCodeArtifacts(article, messageMetadata);
         }
         this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
@@ -1603,7 +1620,15 @@ class Xv7UI {
       article.append(details);
     }
 
-    this.els.chatTimeline.append(article);
+    if (replaceArticle && replaceArticle.parentElement === this.els.chatTimeline) {
+      replaceArticle.replaceWith(article);
+      if (this.pendingAssistantArticle === replaceArticle) {
+        this.pendingAssistantArticle = null;
+        this.pendingAssistantStatusElement = null;
+      }
+    } else {
+      this.els.chatTimeline.append(article);
+    }
     if (hasCodeArtifacts || patchProposal) {
       if (typeof article.scrollIntoView === 'function') {
         article.scrollIntoView({ block: 'start', inline: 'nearest' });
@@ -1651,14 +1676,132 @@ class Xv7UI {
     return [];
   }
 
+  getMessageSiteBundle(message) {
+    const source = message && typeof message === 'object' ? message : null;
+    if (!source) return null;
+
+    const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : source;
+    const candidates = [];
+
+    if (source.site_bundle && typeof source.site_bundle === 'object') {
+      candidates.push(source.site_bundle);
+    }
+    if (metadata.site_bundle && typeof metadata.site_bundle === 'object') {
+      candidates.push(metadata.site_bundle);
+    }
+
+    for (const candidate of candidates) {
+      const normalized = this.normalizeSiteBundle(candidate);
+      if (normalized) return normalized;
+    }
+
+    return null;
+  }
+
+  normalizeSiteBundle(bundlePayload) {
+    const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : null;
+    if (!bundle) return null;
+
+    const files = this.collectSiteBundleFiles(bundle)
+      .filter((file) => file && typeof file === 'object')
+      .map((file) => {
+        const path = String(file.path || '').trim();
+        const content = typeof file.content === 'string' ? file.content : '';
+        const language = String(file.language || this.inferLanguageFromFilename(path));
+        return {
+          ...file,
+          path,
+          content,
+          language,
+        };
+      })
+      .filter((file) => file.path && file.content);
+
+    const hasBundleShape = String(bundle.artifact_type || '').trim() === 'site_bundle'
+      || Array.isArray(bundle.files)
+      || Boolean(bundle.site_bundle && Array.isArray(bundle.site_bundle.files))
+      || Array.isArray(bundle.route_manifest);
+
+    if (!hasBundleShape || !files.length) return null;
+
+    const htmlFiles = files.filter((file) => /\.html?$/i.test(file.path));
+    const entry = String(bundle.entry || htmlFiles[0]?.path || files[0]?.path || '').trim();
+    const activeFile = String(bundle.active_file || entry || htmlFiles[0]?.path || files[0]?.path || '').trim();
+    const previewEntrypoint = String(bundle.preview_entrypoint || entry || htmlFiles[0]?.path || files[0]?.path || '').trim();
+    const previewFile = htmlFiles.find((file) => file.path === previewEntrypoint)
+      || htmlFiles.find((file) => file.path === entry)
+      || htmlFiles.find((file) => file.path === activeFile)
+      || htmlFiles[0]
+      || null;
+
+    return {
+      ...bundle,
+      artifact_type: 'site_bundle',
+      files,
+      entry,
+      active_file: activeFile,
+      preview_entrypoint: previewFile?.path || previewEntrypoint || entry,
+    };
+  }
+
+  deriveSiteBundleFileLabel(path) {
+    const name = String(path || '').trim().split('/').pop() || 'file';
+    if (/^index\.html?$/i.test(name)) return 'Home';
+    return name.replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  getSiteBundleFileOptions(bundle) {
+    const files = Array.isArray(bundle?.files) ? bundle.files : [];
+    const htmlPaths = new Set(files.filter((file) => /\.html?$/i.test(file.path)).map((file) => file.path));
+    const manifest = Array.isArray(bundle?.route_manifest) ? bundle.route_manifest : [];
+    const manifestOptions = manifest
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => {
+        const path = String(entry.path || '').trim();
+        if (!path || !htmlPaths.has(path)) return null;
+        return {
+          path,
+          label: String(entry.label || this.deriveSiteBundleFileLabel(path)).trim() || this.deriveSiteBundleFileLabel(path),
+          route: String(entry.route || '').trim(),
+          isEntry: entry.is_entry === true,
+        };
+      })
+      .filter(Boolean);
+
+    if (manifestOptions.length) return manifestOptions;
+
+    return files.map((file) => ({
+      path: file.path,
+      label: this.deriveSiteBundleFileLabel(file.path),
+      route: /\.html?$/i.test(file.path) ? `/${file.path}` : '',
+      isEntry: file.path === bundle?.entry,
+    }));
+  }
+
+  findSiteBundleFile(bundle, path) {
+    const files = Array.isArray(bundle?.files) ? bundle.files : [];
+    return files.find((file) => file.path === path) || null;
+  }
+
+  isSiteBundlePreviewableFile(file) {
+    return Boolean(file && typeof file === 'object' && /\.html?$/i.test(String(file.path || '')));
+  }
+
   appendSiteBundleCard(article, bundlePayload) {
-    const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
+    const bundle = this.normalizeSiteBundle(bundlePayload);
+    if (!bundle) return;
     const title = String(bundle.title || 'Site Bundle');
     const slug = String(bundle.slug || '');
     const entry = String(bundle.entry || 'index.html');
     const activeFile = String(bundle.active_file || entry || 'index.html');
     const previewEntrypoint = String(bundle.preview_entrypoint || entry || 'index.html');
-    const allFiles = this.collectSiteBundleFiles(bundle);
+    const allFiles = Array.isArray(bundle.files) ? bundle.files : [];
+    const fileOptions = this.getSiteBundleFileOptions(bundle);
+    const initialFile = this.findSiteBundleFile(bundle, activeFile)
+      || this.findSiteBundleFile(bundle, previewEntrypoint)
+      || this.findSiteBundleFile(bundle, entry)
+      || allFiles[0]
+      || null;
 
     const card = document.createElement('section');
     card.className = 'site-bundle-card';
@@ -1681,23 +1824,150 @@ class Xv7UI {
 
     header.append(titleEl, label, meta);
 
+    const controls = document.createElement('div');
+    controls.className = 'site-bundle-controls';
+
+    const modeTabs = document.createElement('div');
+    modeTabs.className = 'site-bundle-mode-tabs';
+
+    const codeButton = document.createElement('button');
+    codeButton.type = 'button';
+    codeButton.className = 'code-artifact-tab site-bundle-mode-button is-active';
+    codeButton.textContent = 'Code';
+
+    const previewButton = document.createElement('button');
+    previewButton.type = 'button';
+    previewButton.className = 'code-artifact-tab site-bundle-mode-button';
+    previewButton.textContent = 'Preview';
+
+    modeTabs.append(codeButton, previewButton);
+
+    const filePicker = document.createElement('div');
+    filePicker.className = 'site-bundle-file-picker';
+    fileOptions.forEach((option) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'site-bundle-file-button';
+      button.dataset.path = option.path;
+      button.textContent = option.label;
+      button.title = option.route ? `${option.path} · ${option.route}` : option.path;
+      filePicker.append(button);
+    });
+
+    controls.append(modeTabs, filePicker);
+
+    const filesDisclosure = document.createElement('details');
+    filesDisclosure.className = 'site-bundle-files-disclosure';
+
+    const filesSummary = document.createElement('summary');
+    filesSummary.className = 'site-bundle-files-summary';
+    filesSummary.textContent = 'Bundle files';
+
+    const filesBody = document.createElement('div');
+    filesBody.className = 'site-bundle-files-body';
+
     const fileList = document.createElement('ul');
     fileList.className = 'site-bundle-file-list';
     allFiles.forEach((f) => {
-      if (!f || typeof f !== 'object') return;
-      const path = String(f.path || '');
-      const lang = String(f.language || '');
       const item = document.createElement('li');
       item.className = 'site-bundle-file-item';
-      item.textContent = path + (lang ? ` [${lang}]` : '');
+      item.textContent = f.path + (f.language ? ` [${f.language}]` : '');
       fileList.append(item);
     });
+
+    filesBody.append(fileList);
+    filesDisclosure.append(filesSummary, filesBody);
+
+    const viewerPanel = document.createElement('div');
+    viewerPanel.className = 'site-bundle-viewer';
+
+    const activeLabel = document.createElement('p');
+    activeLabel.className = 'site-bundle-active-label';
+
+    const codePane = document.createElement('div');
+    codePane.className = 'site-bundle-pane site-bundle-code-panel';
+    const codeViewport = document.createElement('div');
+    codeViewport.className = 'code-artifact-codeview';
+    codePane.append(codeViewport);
+
+    const previewPane = document.createElement('div');
+    previewPane.className = 'site-bundle-pane site-bundle-preview-panel';
+    previewPane.hidden = true;
+
+    viewerPanel.append(activeLabel, codePane, previewPane);
+
+    let selectedPath = initialFile?.path || '';
+    let activeMode = 'code';
+
+    const renderSelection = () => {
+      const selectedFile = this.findSiteBundleFile(bundle, selectedPath) || initialFile;
+      const previewable = this.isSiteBundlePreviewableFile(selectedFile);
+
+      filePicker.querySelectorAll('.site-bundle-file-button').forEach((button) => {
+        const isActive = button.dataset.path === selectedFile?.path;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+      });
+
+      if (activeMode === 'preview' && !previewable) {
+        activeMode = 'code';
+      }
+
+      codeButton.classList.toggle('is-active', activeMode === 'code');
+      previewButton.classList.toggle('is-active', activeMode === 'preview');
+      previewButton.disabled = !previewable;
+      activeLabel.textContent = selectedFile ? `Selected file: ${selectedFile.path}` : 'Selected file: none';
+
+      codeViewport.innerHTML = '';
+      if (selectedFile) {
+        codeViewport.append(this.renderArtifactCodeRows(selectedFile.content, selectedFile.language));
+      }
+
+      previewPane.innerHTML = '';
+      if (previewable && selectedFile) {
+        const iframe = document.createElement('iframe');
+        iframe.className = 'code-artifact-preview-frame';
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.setAttribute('title', `${selectedFile.path} preview`);
+        iframe.srcdoc = selectedFile.content;
+        previewPane.append(iframe);
+      } else {
+        const previewNote = document.createElement('p');
+        previewNote.className = 'code-artifact-preview-note';
+        previewNote.textContent = selectedFile
+          ? 'Preview is available for HTML pages in this site bundle.'
+          : 'Preview is unavailable for this bundle.';
+        previewPane.append(previewNote);
+      }
+
+      codePane.hidden = activeMode !== 'code';
+      previewPane.hidden = activeMode !== 'preview';
+    };
+
+    filePicker.addEventListener('click', (event) => {
+      const button = event.target instanceof HTMLElement ? event.target.closest('.site-bundle-file-button') : null;
+      if (!button) return;
+      selectedPath = String(button.dataset.path || selectedPath);
+      renderSelection();
+    });
+
+    codeButton.addEventListener('click', () => {
+      activeMode = 'code';
+      renderSelection();
+    });
+
+    previewButton.addEventListener('click', () => {
+      activeMode = 'preview';
+      renderSelection();
+    });
+
+    renderSelection();
 
     const notice = document.createElement('p');
     notice.className = 'site-bundle-notice';
     notice.textContent = `This artifact contains ${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}. Use "generate a patch for this site" to prepare them for writing.`;
 
-    card.append(header, fileList, notice);
+    card.append(header, controls, filesDisclosure, viewerPanel, notice);
     article.append(card);
 
     if (typeof article.scrollIntoView === 'function') {
@@ -2455,6 +2725,49 @@ class Xv7UI {
     return null;
   }
 
+  getMessageOperatorResult(message) {
+    const meta = message && typeof message === 'object' ? message : {};
+    const result = this.resolveOperatorResult(meta);
+    if (!result || typeof result !== 'object') return null;
+
+    const actionName = String(result.action_name || '').trim();
+    const status = String(result.status || '').trim();
+    const changedFiles = Array.isArray(result.changed_files) ? result.changed_files.filter(Boolean) : [];
+    const validationCommands = Array.isArray(result.validation_commands_run) ? result.validation_commands_run.filter(Boolean) : [];
+    const safetyNotes = Array.isArray(result.safety_notes) ? result.safety_notes.filter(Boolean) : [];
+    const localOnlyWarning = Array.isArray(result.local_only_files_warning) ? result.local_only_files_warning.filter(Boolean) : [];
+    const firstFailure = String(result.first_failure || '').trim();
+    const commitPushState = result.commit_push_state && typeof result.commit_push_state === 'object'
+      ? result.commit_push_state
+      : {};
+
+    const meaningfulAction = actionName && actionName !== 'operator_action' && actionName !== 'unknown';
+    const meaningfulStatus = status && status !== 'unknown';
+    const meaningfulCommitState = Object.values(commitPushState).some((value) => value === true);
+    const hasMeaningfulPayload = meaningfulAction
+      || meaningfulStatus
+      || changedFiles.length > 0
+      || validationCommands.length > 0
+      || safetyNotes.length > 0
+      || localOnlyWarning.length > 0
+      || Boolean(firstFailure)
+      || meaningfulCommitState;
+
+    if (!hasMeaningfulPayload) return null;
+
+    return {
+      ...result,
+      action_name: meaningfulAction ? actionName : '',
+      status: meaningfulStatus ? status : '',
+      changed_files: changedFiles,
+      validation_commands_run: validationCommands,
+      safety_notes: safetyNotes,
+      local_only_files_warning: localOnlyWarning,
+      first_failure: firstFailure,
+      commit_push_state: commitPushState,
+    };
+  }
+
   summarizeOperatorList(value, max = 3) {
     const items = Array.isArray(value)
       ? value.map((item) => String(item || '').trim()).filter(Boolean)
@@ -2465,12 +2778,11 @@ class Xv7UI {
   }
 
   appendOperatorResultCard(article, messageMetadata) {
-    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
-    const result = this.resolveOperatorResult(meta);
-    if (!result || typeof result !== 'object') return;
+    const result = this.getMessageOperatorResult(messageMetadata);
+    if (!result) return;
 
-    const actionName = String(result.action_name || '').trim() || 'operator_action';
-    const status = String(result.status || '').trim() || 'unknown';
+    const actionName = String(result.action_name || '').trim();
+    const status = String(result.status || '').trim();
     const changedFiles = Array.isArray(result.changed_files) ? result.changed_files : [];
     const validationCommands = Array.isArray(result.validation_commands_run) ? result.validation_commands_run : [];
     const firstFailure = String(result.first_failure || '').trim();
@@ -2484,6 +2796,16 @@ class Xv7UI {
     const pushPerformed = commitPushState.push_performed === true;
     const separateApproval = commitPushState.requires_separate_approval === true;
 
+    const disclosure = document.createElement('details');
+    disclosure.className = 'operator-result-disclosure';
+
+    const summary = document.createElement('summary');
+    summary.className = 'operator-result-summary';
+    const summaryParts = ['Operator details'];
+    if (actionName) summaryParts.push(actionName);
+    if (status) summaryParts.push(status);
+    summary.textContent = summaryParts.join(' · ');
+
     const card = document.createElement('section');
     card.className = 'operator-result-card';
 
@@ -2496,7 +2818,7 @@ class Xv7UI {
 
     const identity = document.createElement('p');
     identity.className = 'operator-result-identity';
-    identity.textContent = `${actionName} • ${status}`;
+    identity.textContent = [actionName, status].filter(Boolean).join(' • ') || 'Action metadata available';
 
     header.append(title, identity);
     card.append(header);
@@ -2531,7 +2853,8 @@ class Xv7UI {
     this.appendReceiptField(body, 'commit_push', commitState);
 
     card.append(body);
-    article.append(card);
+    disclosure.append(summary, card);
+    article.append(disclosure);
   }
 
   appendWhyThisAnswerDrawer(article, messageMetadata) {
@@ -4127,8 +4450,67 @@ class Xv7UI {
   }
 
   setRuntimeStatus(model) {
-    this.runtimeStatusModel = updateRuntimeStatusElement(this.els.runtimeStatus, model) || this.runtimeStatusModel;
+    this.runtimeStatusModel = createRuntimeStatusModel(model || {});
+    this.renderPendingAssistantStatus(this.runtimeStatusModel);
     return this.runtimeStatusModel;
+  }
+
+  beginPendingAssistantCard(model) {
+    this.removePendingAssistantCard();
+
+    const article = document.createElement('article');
+    article.className = 'chat-card chat-card-assistant pending-assistant';
+    article.dataset.role = 'assistant';
+    article.dataset.timestamp = this.nowIso();
+    article.dataset.messageId = `pending-${++this.messageCounter}`;
+
+    const roleLabel = document.createElement('p');
+    roleLabel.className = 'chat-role-label';
+    roleLabel.textContent = 'Assistant Output';
+
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    actions.hidden = true;
+
+    const status = document.createElement('div');
+    status.className = 'runtime-status assistant-runtime-status';
+
+    article.append(roleLabel, actions, status);
+    this.els.chatTimeline.append(article);
+    this.els.chatTimeline.scrollTop = this.els.chatTimeline.scrollHeight;
+
+    this.pendingAssistantArticle = article;
+    this.pendingAssistantStatusElement = status;
+    this.setRuntimeStatus(model);
+    return article;
+  }
+
+  renderPendingAssistantStatus(model) {
+    const article = this.pendingAssistantArticle;
+    const element = this.pendingAssistantStatusElement;
+    if (!article || !element || !article.isConnected) return null;
+
+    const status = updateRuntimeStatusElement(element, model) || createRuntimeStatusModel(model || {});
+    article.dataset.runtimePhase = status.phase;
+    article.classList.toggle('is-busy', status.busy);
+    article.classList.toggle('is-failed', status.phase === 'failed');
+    article.classList.toggle('is-blocked', status.phase === 'blocked');
+    article.classList.toggle('needs-approval', status.phase === 'needs_approval');
+    return status;
+  }
+
+  consumePendingAssistantCard() {
+    const article = this.pendingAssistantArticle && this.pendingAssistantArticle.isConnected
+      ? this.pendingAssistantArticle
+      : null;
+    this.pendingAssistantArticle = null;
+    this.pendingAssistantStatusElement = null;
+    return article;
+  }
+
+  removePendingAssistantCard() {
+    const article = this.consumePendingAssistantCard();
+    article?.remove();
   }
 
   updateRuntimeStatusFromHistory(history) {
@@ -5185,7 +5567,9 @@ class Xv7UI {
   resolveAssistantVisibleText(metadata, content) {
     const meta = metadata && typeof metadata === 'object' ? metadata : {};
     const fromMeta = typeof meta.visible_text === 'string' ? meta.visible_text.trim() : '';
-    if (fromMeta) return fromMeta;
+    const safeMeta = this.sanitizeVisibleAssistantText(fromMeta);
+    if (safeMeta) return safeMeta;
+    if (fromMeta) return 'Response withheld for safety.';
 
     const stripped = this.stripReasoningTokens(String(content || '')).trim();
     if (!stripped) return 'No assistant content returned.';
@@ -5194,7 +5578,29 @@ class Xv7UI {
       return 'Structured response received. Expand receipts for details.';
     }
 
-    return stripped;
+    const safeContent = this.sanitizeVisibleAssistantText(stripped);
+    return safeContent || 'Response withheld for safety.';
+  }
+
+  sanitizeVisibleAssistantText(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+
+    const blockedPatterns = [
+      /\binternal reasoning\b/i,
+      /\bhidden reasoning\b/i,
+      /\bprivate reasoning\b/i,
+      /\bchain(?:-|\s+)of(?:-|\s+)thought\b/i,
+    ];
+
+    const filtered = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !blockedPatterns.some((pattern) => pattern.test(line)))
+      .join('\n')
+      .trim();
+
+    return filtered;
   }
 
   looksLikeStructuredPayload(text) {

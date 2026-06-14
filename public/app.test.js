@@ -39,7 +39,6 @@ function buildDom() {
     <div id="operatorConfirmArea" class="hidden"></div>
     <textarea id="promptInput"></textarea>
     <div id="slashMenu" class="hidden"></div>
-    <div id="runtimeStatus"></div>
     <button id="micButton"></button>
     <button id="sendButton"></button>
     <section id="avatarCard" class="avatar-card">
@@ -1342,13 +1341,21 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('chatReceiptRole').textContent).toBe('chat');
     expect(document.getElementById('chatReceiptSelectionSource').textContent).toBe('registry_effective_profile');
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
-    expect(document.getElementById('runtimeStatus')?.dataset.runtimePhase).toBe('complete');
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(document.getElementById('promptInput').disabled).toBe(false);
   });
 
-  it('shows stop mode and thinking status while a normal request is in flight and restores controls on success', async () => {
+  it('does not render a persistent runtime status bar in the composer', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('runtimeStatus')).toBeNull();
+  });
+
+  it('shows stop mode and a pending assistant card while a normal request is in flight and replaces it on success', async () => {
     const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
     let resolveMessage;
 
@@ -1375,17 +1382,17 @@ describe('ModelProfileControl', () => {
 
     const prompt = document.getElementById('promptInput');
     const sendButton = document.getElementById('sendButton');
-    const runtimeStatus = document.getElementById('runtimeStatus');
     prompt.value = 'Prompt in flight';
     sendButton.click();
     await flushAsync();
 
+    const pendingCard = document.querySelector('.pending-assistant');
     expect(sendButton.textContent).toBe('Stop');
     expect(sendButton.disabled).toBe(false);
     expect(sendButton.classList.contains('is-stop')).toBe(true);
     expect(prompt.disabled).toBe(true);
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('thinking');
-    expect(runtimeStatus?.textContent).toContain('Thinking');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('thinking');
+    expect(pendingCard?.textContent).toContain('Thinking');
     expect(typeof resolveMessage).toBe('function');
 
     resolveMessage();
@@ -1395,23 +1402,12 @@ describe('ModelProfileControl', () => {
     expect(sendButton.disabled).toBe(false);
     expect(sendButton.classList.contains('is-stop')).toBe(false);
     expect(prompt.disabled).toBe(false);
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('complete');
-    expect(runtimeStatus?.textContent).toContain('Complete');
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
     expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Recovered after pending.');
   });
 
-  it('renders idle runtime status when the app is ready', async () => {
-    global.fetch = createRuntimeFetchMock();
-
-    new Xv7UI();
-    await flushAsync();
-
-    const runtimeStatus = document.getElementById('runtimeStatus');
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('idle');
-    expect(runtimeStatus?.textContent).toContain('Ready');
-  });
-
-  it('shows website preview status for website prompts while active', async () => {
+  it('shows website preview status in a pending assistant card and preserves site bundle rendering', async () => {
     const fetchMock = createRuntimeFetchMock();
     let resolveMessage;
 
@@ -1422,11 +1418,20 @@ describe('ModelProfileControl', () => {
           resolveMessage = () => resolve(okJson({
             session_id: 'session-1',
             current_persona: 'default',
-            metadata: {},
-            messages: [
-              { role: 'user', content: 'Build me a website for Thinking Test Hot Dog Cart.', metadata: {} },
-              { role: 'assistant', content: 'Site preview ready.', metadata: {} },
-            ],
+            visible_text: 'Here is a 2-page site bundle for Thinking Test Hot Dog Cart.',
+            site_bundle: {
+              artifact_type: 'site_bundle',
+              artifact_id: 'thinking-test-hot-dog-cart',
+              title: 'Thinking Test Hot Dog Cart',
+              slug: 'thinking-test-hot-dog-cart',
+              entry: 'index.html',
+              site_bundle: {
+                files: [
+                  { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+                  { path: 'menu.html', language: 'html', content: '<!doctype html><html><body>menu</body></html>' },
+                ],
+              },
+            },
           }));
         });
       }
@@ -1440,15 +1445,18 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const runtimeStatus = document.getElementById('runtimeStatus');
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('running');
-    expect(runtimeStatus?.textContent).toContain('Building site preview');
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
+    expect(pendingCard?.textContent).toContain('Building site preview');
 
     resolveMessage();
     await flushAsync();
+
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    expect(document.querySelector('.site-bundle-card')).toBeTruthy();
   });
 
-  it('shows checking repo status for operator status prompts while active', async () => {
+  it('shows checking repo status for operator prompts in a pending assistant card while active', async () => {
     const fetchMock = createRuntimeFetchMock();
     let resolveMessage;
 
@@ -1469,15 +1477,18 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const runtimeStatus = document.getElementById('runtimeStatus');
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('running');
-    expect(runtimeStatus?.textContent).toContain('Checking repo');
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
+    expect(pendingCard?.textContent).toContain('Checking repo');
 
     resolveMessage();
     await flushAsync();
+
+    expect(document.querySelector('.site-bundle-card')).toBeNull();
+    expect(document.querySelector('.site-bundle-mode-button')).toBeNull();
   });
 
-  it('shows running validation status for validation prompts while active', async () => {
+  it('shows running validation status for validation prompts in a pending assistant card while active', async () => {
     const fetchMock = createRuntimeFetchMock();
     let resolveMessage;
 
@@ -1498,15 +1509,15 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const runtimeStatus = document.getElementById('runtimeStatus');
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('running');
-    expect(runtimeStatus?.textContent).toContain('Running validation');
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
+    expect(pendingCard?.textContent).toContain('Running validation');
 
     resolveMessage();
     await flushAsync();
   });
 
-  it('stop click aborts the active request and restores send mode', async () => {
+  it('stop click updates the pending assistant card and restores send mode', async () => {
     const fetchMock = createRuntimeFetchMock();
 
     global.fetch = vi.fn((input, init = {}) => {
@@ -1529,18 +1540,17 @@ describe('ModelProfileControl', () => {
     await flushAsync();
 
     const sendButton = document.getElementById('sendButton');
-    const runtimeStatus = document.getElementById('runtimeStatus');
     sendButton.click();
     await flushAsync();
 
+    const pendingCard = document.querySelector('.pending-assistant');
     expect(sendButton.textContent).toBe('Send');
     expect(sendButton.classList.contains('is-stop')).toBe(false);
-    expect(runtimeStatus?.textContent).toContain('Stopped');
-    expect(runtimeStatus?.textContent).toContain('Request cancelled.');
-    expect(document.querySelector('.chat-card-assistant')).toBe(null);
+    expect(pendingCard?.textContent).toContain('Stopped');
+    expect(pendingCard?.textContent).toContain('Request cancelled.');
   });
 
-  it('shows failed status when a request errors and restores send mode', async () => {
+  it('shows failed status in the pending assistant card when a request errors and restores send mode', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = vi.fn(async (input, init = {}) => {
       const path = new URL(input, 'http://localhost').pathname;
@@ -1558,14 +1568,14 @@ describe('ModelProfileControl', () => {
     await flushAsync();
 
     const sendButton = document.getElementById('sendButton');
-    const runtimeStatus = document.getElementById('runtimeStatus');
+    const pendingCard = document.querySelector('.pending-assistant');
     expect(sendButton.textContent).toBe('Send');
     expect(sendButton.disabled).toBe(false);
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('failed');
-    expect(runtimeStatus?.textContent).toContain('Failed');
+    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('failed');
+    expect(pendingCard?.textContent).toContain('Failed');
   });
 
-  it('shows approval required for commit-and-push responses without exposing hidden reasoning', async () => {
+  it('shows approval-required operator receipts without exposing hidden reasoning', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = vi.fn(async (input, init = {}) => {
       const path = new URL(input, 'http://localhost').pathname;
@@ -1598,11 +1608,10 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const runtimeStatus = document.getElementById('runtimeStatus');
-    expect(runtimeStatus?.dataset.runtimePhase).toBe('needs_approval');
-    expect(runtimeStatus?.textContent).toContain('Approval required');
-    expect(runtimeStatus?.textContent || '').not.toContain('Internal reasoning');
-    expect(runtimeStatus?.textContent || '').not.toContain('chain-of-thought');
+    const assistantText = document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent || '';
+    expect(assistantText).not.toContain('Internal reasoning');
+    expect(assistantText).not.toContain('chain-of-thought');
+    expect(assistantText).toBe('Response withheld for safety.');
   });
 
   it('prefers the latest assistant role message over metadata fallback payload', async () => {
@@ -1826,7 +1835,8 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(document.getElementById('alertBox').textContent).toContain('The request timed out or stayed pending too long. The UI recovered so you can retry.');
-    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(0);
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
+    expect(document.querySelector('.pending-assistant')?.textContent).toContain('Failed');
   });
 
   it('renders an inline code artifact card inside the assistant chat flow', async () => {
@@ -2202,6 +2212,12 @@ describe('ModelProfileControl', () => {
 
     const card = document.querySelector('.operator-result-card');
     expect(card).toBeTruthy();
+    const disclosure = document.querySelector('.operator-result-disclosure');
+    expect(disclosure).toBeTruthy();
+    expect(disclosure?.hasAttribute('open')).toBe(false);
+    expect(disclosure?.querySelector('.operator-result-summary')?.textContent).toContain('Operator details');
+    expect(document.querySelector('.site-bundle-card')).toBeNull();
+    expect(document.querySelector('.site-bundle-mode-button')).toBeNull();
     const text = (card?.textContent || '').toLowerCase();
     expect(text).toContain('operator result');
     expect(text).toContain('operator_status_report');
@@ -2211,6 +2227,35 @@ describe('ModelProfileControl', () => {
     expect(text).toContain('commit_push');
     expect(text).toContain('commit_created=false');
     expect(text).toContain('push_performed=false');
+  });
+
+  it('suppresses placeholder operator result cards without meaningful payload', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Website artifact ready.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_action',
+          status: 'unknown',
+          changed_files: [],
+          validation_commands_run: [],
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {},
+        },
+      },
+      new Date().toISOString(),
+    );
+
+    expect(document.querySelector('.operator-result-card')).toBeFalsy();
+    expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('operator_action');
+    expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('unknown');
   });
 
   it('run validation shows validation commands summary in operator result card', async () => {
@@ -4261,11 +4306,37 @@ describe('ModelProfileControl', () => {
     const meta = bundleCard.querySelector('.site-bundle-meta')?.textContent || '';
     expect(meta).toContain('7 file');
     expect(meta).toContain('index.html');
+    expect(bundleCard.querySelector('.site-bundle-mode-button.is-active')?.textContent).toBe('Code');
+    expect(bundleCard.querySelectorAll('.site-bundle-file-button').length).toBeGreaterThan(0);
+    expect(bundleCard.querySelector('.site-bundle-files-disclosure')?.hasAttribute('open')).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-workspace')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-list-panel')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-active-label')?.textContent).toContain('index.html');
+    expect(bundleCard.querySelector('.site-bundle-code-panel')?.hidden).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(true);
+
+    const filesDisclosure = bundleCard.querySelector('.site-bundle-files-disclosure');
+    filesDisclosure.open = true;
+    await flushAsync();
+    expect(filesDisclosure?.open).toBe(true);
+
     const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
     expect(fileItems.length).toBe(7);
     const filePaths = fileItems.map((el) => el.textContent || '');
     expect(filePaths.some((t) => t.includes('index.html'))).toBe(true);
     expect(filePaths.some((t) => t.includes('assets/site.css'))).toBe(true);
+
+    const previewButton = [...bundleCard.querySelectorAll('.site-bundle-mode-button')].find((node) =>
+      (node.textContent || '').includes('Preview'),
+    );
+    previewButton?.click();
+    await flushAsync();
+
+    expect(bundleCard.querySelector('.site-bundle-mode-button.is-active')?.textContent).toBe('Preview');
+    expect(bundleCard.querySelector('.site-bundle-code-panel')?.hidden).toBe(true);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel iframe')?.getAttribute('srcdoc')).toContain('<body>home</body>');
+
     expect(bundleCard.querySelector('.site-bundle-notice')?.textContent).toContain('7 file');
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
@@ -4324,7 +4395,11 @@ describe('ModelProfileControl', () => {
             title: 'Tony\'s Tavern',
             slug: 'tonys-tavern',
             entry: 'index.html',
-            site_bundle: { files: [] },
+            site_bundle: {
+              files: [
+                { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+              ],
+            },
           },
           metadata: {},
           messages: [
@@ -4417,14 +4492,41 @@ describe('ModelProfileControl', () => {
     const bundleCards = [...document.querySelectorAll('.site-bundle-card')];
     expect(bundleCards.length).toBeGreaterThan(0);
     const bundleCard = bundleCards[0];
+    expect(bundleCard.querySelector('.site-bundle-files-disclosure')?.hasAttribute('open')).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-workspace')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-list-panel')).toBeNull();
+    expect(bundleCard.querySelector('.site-bundle-mode-button.is-active')?.textContent).toBe('Code');
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(true);
 
     // The site bundle card file list must include products.html and faq.html.
+    const filesDisclosure = bundleCard.querySelector('.site-bundle-files-disclosure');
+    filesDisclosure.open = true;
+    await flushAsync();
+
     const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
     const filePaths = fileItems.map((li) => li.textContent.trim().split(' ')[0]);
     expect(filePaths).toContain('products.html');
     expect(filePaths).toContain('faq.html');
     expect(filePaths).not.toContain('services.html');
     expect(filePaths).not.toContain('gallery.html');
+
+    const productsButton = [...bundleCard.querySelectorAll('.site-bundle-file-button')].find((button) =>
+      (button.textContent || '').includes('Products'),
+    );
+    expect(productsButton).toBeTruthy();
+    productsButton?.click();
+    await flushAsync();
+    expect(bundleCard.querySelector('.site-bundle-active-label')?.textContent).toContain('products.html');
+
+    const previewButton = [...bundleCard.querySelectorAll('.site-bundle-mode-button')].find((button) =>
+      (button.textContent || '').includes('Preview'),
+    );
+    expect(previewButton?.disabled).toBe(false);
+    previewButton?.click();
+    await flushAsync();
+
+    expect(bundleCard.querySelector('.site-bundle-preview-panel')?.hidden).toBe(false);
+    expect(bundleCard.querySelector('.site-bundle-preview-panel iframe')?.getAttribute('srcdoc')).toContain('<body>products</body>');
   });
 
   it('renders revised artifact content for premium + Specials follow-up prompts', async () => {

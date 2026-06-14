@@ -57,12 +57,37 @@ a {
   align-items: center;
   gap: 0.55rem;
   min-height: 2.5rem;
-  margin-bottom: 0.65rem;
   padding: 0.55rem 0.8rem;
   border: 1px solid rgba(0, 163, 255, 0.18);
   border-radius: 0.85rem;
   background: rgba(8, 17, 31, 0.78);
   box-shadow: inset 0 0 0 1px rgba(77, 184, 255, 0.04);
+}
+
+.pending-assistant {
+  border-style: dashed;
+}
+
+.assistant-runtime-status {
+  margin-top: 0.5rem;
+}
+
+.assistant-runtime-status .runtime-status-hint {
+  white-space: normal;
+}
+
+.pending-assistant.is-busy {
+  border-color: rgba(0, 163, 255, 0.44);
+  box-shadow: inset 0 0 0 1px rgba(77, 184, 255, 0.08), 0 0 20px rgba(0, 163, 255, 0.1);
+}
+
+.pending-assistant.is-failed {
+  border-color: rgba(255, 107, 107, 0.45);
+}
+
+.pending-assistant.is-blocked,
+.pending-assistant.needs-approval {
+  border-color: rgba(244, 184, 96, 0.45);
 }
 
 .runtime-status-dot {
@@ -582,11 +607,86 @@ details[open] > .diag-section-title::before {
     width: 100%;
   }
 
+  .site-bundle-controls {
+    display: grid;
+    gap: 0.6rem;
+    border: 1px solid rgba(0, 163, 255, 0.14);
+    border-radius: 0.75rem;
+    background: rgba(4, 12, 28, 0.72);
+    padding: 0.65rem;
+  }
+
+  .site-bundle-mode-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .site-bundle-file-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .site-bundle-file-button {
+    border: 1px solid rgba(0, 163, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(8, 17, 31, 0.86);
+    color: var(--color-text-muted);
+    padding: 0.3rem 0.7rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+  }
+
+  .site-bundle-file-button.is-active {
+    border-color: rgba(96, 192, 255, 0.82);
+    color: var(--color-text-accent);
+    background: rgba(3, 26, 51, 0.92);
+  }
+
+  .site-bundle-viewer {
+    border: 1px solid rgba(0, 163, 255, 0.14);
+    border-radius: 0.75rem;
+    background: rgba(4, 12, 28, 0.72);
+    padding: 0.7rem;
+  }
+
+  .site-bundle-files-disclosure {
+    border: 1px solid rgba(0, 163, 255, 0.14);
+    border-radius: 0.75rem;
+    background: rgba(4, 12, 28, 0.72);
+    overflow: hidden;
+  }
+
+  .site-bundle-files-summary {
+    cursor: pointer;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.7rem;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.04em;
+    color: var(--color-text-accent);
+  }
+
+  .site-bundle-files-body {
+    border-top: 1px solid rgba(0, 163, 255, 0.14);
+    padding: 0.65rem 0.7rem;
+  }
+
+  .site-bundle-active-label {
+    margin: 0 0 0.55rem;
+    font-size: 0.7rem;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.04em;
+    color: var(--color-text-accent);
+  }
+
   .site-bundle-file-list {
     margin: 0;
     padding-left: 1.1rem;
     display: grid;
     gap: 0.2rem;
+    max-height: 16rem;
+    overflow: auto;
   }
 
   .site-bundle-file-item {
@@ -594,6 +694,14 @@ details[open] > .diag-section-title::before {
     font-size: 0.73rem;
     color: var(--color-text);
     opacity: 0.85;
+  }
+
+  .site-bundle-pane {
+    min-height: 480px;
+  }
+
+  .site-bundle-preview-panel {
+    min-height: 480px;
   }
 
   .site-bundle-notice {
@@ -1182,11 +1290,29 @@ details[open] > .diag-section-title::before {
 }
 
 .operator-result-card {
-  margin-top: 0.55rem;
   border: 1px solid var(--color-border);
   border-radius: 0.55rem;
   background: rgba(5, 8, 18, 0.78);
   padding: 0.5rem 0.6rem;
+}
+
+.operator-result-disclosure {
+  margin-top: 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: rgba(5, 8, 18, 0.72);
+}
+
+.operator-result-summary {
+  cursor: pointer;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.74rem;
+  color: var(--color-text-accent);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.operator-result-disclosure[open] .operator-result-summary {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .operator-result-header {
@@ -1217,7 +1343,6 @@ details[open] > .diag-section-title::before {
   display: grid;
   gap: 0.28rem;
 }
-
 .why-answer-drawer {
   margin-top: 0.55rem;
   border: 1px solid var(--color-border);
