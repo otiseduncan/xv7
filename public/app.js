@@ -1479,6 +1479,7 @@ class Xv7UI {
     if (role === 'assistant') {
       try {
         copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
+        this.appendOperatorResultCard(article, messageMetadata);
         // Site bundle payloads use appendSiteBundleCard (called by the caller after this
         // returns) — skip per-file card rendering to prevent duplicate individual cards.
         const isSiteBundleMessage = (() => {
@@ -2353,6 +2354,99 @@ class Xv7UI {
     }
 
     return compactReceipts;
+  }
+
+  resolveOperatorResult(meta) {
+    if (!meta || typeof meta !== 'object') return null;
+    if (meta.operator_result && typeof meta.operator_result === 'object') {
+      return meta.operator_result;
+    }
+    const receipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts : [];
+    for (const receipt of receipts) {
+      if (receipt && typeof receipt === 'object' && receipt.operator_result && typeof receipt.operator_result === 'object') {
+        return receipt.operator_result;
+      }
+    }
+    return null;
+  }
+
+  summarizeOperatorList(value, max = 3) {
+    const items = Array.isArray(value)
+      ? value.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (!items.length) return 'none';
+    if (items.length <= max) return items.join(', ');
+    return `${items.slice(0, max).join(', ')} (+${items.length - max} more)`;
+  }
+
+  appendOperatorResultCard(article, messageMetadata) {
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const result = this.resolveOperatorResult(meta);
+    if (!result || typeof result !== 'object') return;
+
+    const actionName = String(result.action_name || '').trim() || 'operator_action';
+    const status = String(result.status || '').trim() || 'unknown';
+    const changedFiles = Array.isArray(result.changed_files) ? result.changed_files : [];
+    const validationCommands = Array.isArray(result.validation_commands_run) ? result.validation_commands_run : [];
+    const firstFailure = String(result.first_failure || '').trim();
+    const safetyNotes = Array.isArray(result.safety_notes) ? result.safety_notes : [];
+    const localOnlyWarning = Array.isArray(result.local_only_files_warning) ? result.local_only_files_warning : [];
+    const commitPushState = result.commit_push_state && typeof result.commit_push_state === 'object'
+      ? result.commit_push_state
+      : {};
+
+    const commitCreated = commitPushState.commit_created === true;
+    const pushPerformed = commitPushState.push_performed === true;
+    const separateApproval = commitPushState.requires_separate_approval === true;
+
+    const card = document.createElement('section');
+    card.className = 'operator-result-card';
+
+    const header = document.createElement('div');
+    header.className = 'operator-result-header';
+
+    const title = document.createElement('p');
+    title.className = 'operator-result-title';
+    title.textContent = 'Operator result';
+
+    const identity = document.createElement('p');
+    identity.className = 'operator-result-identity';
+    identity.textContent = `${actionName} • ${status}`;
+
+    header.append(title, identity);
+    card.append(header);
+
+    const body = document.createElement('div');
+    body.className = 'operator-result-grid';
+
+    this.appendReceiptField(body, 'changed_files', this.summarizeOperatorList(changedFiles, 4));
+    this.appendReceiptField(body, 'validation_commands', this.summarizeOperatorList(validationCommands, 2));
+
+    if (firstFailure) {
+      this.appendReceiptField(body, 'first_failure', firstFailure);
+    }
+
+    if (status === 'needs_approval') {
+      this.appendReceiptField(body, 'approval', 'required');
+    } else if (status === 'needs_patch') {
+      this.appendReceiptField(body, 'patch', 'required');
+    } else if (status === 'blocked') {
+      this.appendReceiptField(body, 'blocked', 'true');
+    }
+
+    if (safetyNotes.length) {
+      this.appendReceiptField(body, 'safety', this.summarizeOperatorList(safetyNotes, 2));
+    }
+
+    if (localOnlyWarning.length) {
+      this.appendReceiptField(body, 'local_only', this.summarizeOperatorList(localOnlyWarning, 2));
+    }
+
+    const commitState = `commit_created=${commitCreated ? 'true' : 'false'}; push_performed=${pushPerformed ? 'true' : 'false'}${separateApproval ? '; separate_approval=true' : ''}`;
+    this.appendReceiptField(body, 'commit_push', commitState);
+
+    card.append(body);
+    article.append(card);
   }
 
   appendWhyThisAnswerDrawer(article, messageMetadata) {

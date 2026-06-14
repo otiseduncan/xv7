@@ -912,6 +912,69 @@ function createRuntimeFetchMock(options = {}) {
         ];
         actionHistory = operatorReceipts;
         answer = 'The repo is on main. The working tree is not clean.';
+      } else if (prompt.includes('run validation')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-VAL-1',
+            action_name: 'operator_validation_report',
+            status: 'success',
+            mode: 'read_only',
+            target: '/workspace',
+            receipt_label: 'operator_validation_report OP-VAL-1',
+            read_only: true,
+            started_at: '2026-06-11T00:01:00Z',
+            completed_at: '2026-06-11T00:01:02Z',
+            exit_code: 0,
+            safety: { allowed: true, read_only: true },
+            summary: 'validation passed',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'Validation passed.';
+      } else if (prompt === 'fix it') {
+        operatorReceipts = [
+          {
+            action_id: 'OP-REP-1',
+            action_name: 'operator_repair_report',
+            status: 'failed',
+            mode: 'operator',
+            target: '/workspace',
+            receipt_label: 'operator_repair_report OP-REP-1',
+            read_only: false,
+            started_at: '2026-06-11T00:02:00Z',
+            completed_at: '2026-06-11T00:02:03Z',
+            exit_code: 1,
+            safety: { allowed: true, read_only: false },
+            summary: 'patch required',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'A concrete approved patch is required.';
+      } else if (prompt.includes('apply this patch')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-PATCH-1',
+            action_name: 'operator_patch_report',
+            status: 'denied',
+            mode: 'operator',
+            target: '/workspace',
+            receipt_label: 'operator_patch_report OP-PATCH-1',
+            read_only: false,
+            started_at: '2026-06-11T00:03:00Z',
+            completed_at: '2026-06-11T00:03:01Z',
+            exit_code: 1,
+            safety: { allowed: false, read_only: false },
+            summary: 'approval required',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'Patch apply denied: repo mutation approval is required.';
       } else if (prompt.includes('containers')) {
         operatorReceipts = [
           {
@@ -1069,6 +1132,76 @@ function createRuntimeFetchMock(options = {}) {
               visible_text: answer,
               context_receipt: contextReceipt,
               operator_receipts: operatorReceipts,
+              operator_result: (() => {
+                if (prompt.includes('check the repo')) {
+                  return {
+                    action_name: 'operator_status_report',
+                    status: 'passed',
+                    changed_files: ['core/main.py', 'public/app.js'],
+                    validation_commands_run: [],
+                    first_failure: '',
+                    safety_notes: ['No git commit or push was performed.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: ['docker-compose.yml', 'docker-compose.local.diff'],
+                  };
+                }
+                if (prompt.includes('run validation')) {
+                  return {
+                    action_name: 'operator_validation_report',
+                    status: 'passed',
+                    changed_files: [],
+                    validation_commands_run: [
+                      'python -m ruff format --check core tests scripts',
+                      'python -m ruff check core tests scripts',
+                    ],
+                    first_failure: '',
+                    safety_notes: ['No git commit or push was performed.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: [],
+                  };
+                }
+                if (prompt === 'fix it') {
+                  return {
+                    action_name: 'operator_repair_report',
+                    status: 'needs_patch',
+                    changed_files: [],
+                    validation_commands_run: ['python -m pytest'],
+                    first_failure: 'python -m pytest',
+                    safety_notes: ['A concrete approved patch is required.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: [],
+                  };
+                }
+                if (prompt.includes('apply this patch')) {
+                  return {
+                    action_name: 'operator_patch_report',
+                    status: 'needs_approval',
+                    changed_files: [],
+                    validation_commands_run: [],
+                    first_failure: '',
+                    safety_notes: ['Repo mutation requires explicit approval.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: [],
+                  };
+                }
+                return {};
+              })(),
               memory_receipts: memoryReceipts,
               model_use_receipt: {
                 model_tag: profiles[state.activeProfile].chat,
@@ -1841,6 +1974,79 @@ describe('ModelProfileControl', () => {
       (node.textContent || '').includes('repo_status OP-1'),
     );
     expect(details).toBeTruthy();
+  });
+
+  it('renders compact operator result card for check the repo', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const card = document.querySelector('.operator-result-card');
+    expect(card).toBeTruthy();
+    const text = (card?.textContent || '').toLowerCase();
+    expect(text).toContain('operator result');
+    expect(text).toContain('operator_status_report');
+    expect(text).toContain('passed');
+    expect(text).toContain('changed_files');
+    expect(text).toContain('local_only');
+    expect(text).toContain('commit_push');
+    expect(text).toContain('commit_created=false');
+    expect(text).toContain('push_performed=false');
+  });
+
+  it('run validation shows validation commands summary in operator result card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'run validation';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    expect(cardText).toContain('operator_validation_report');
+    expect(cardText).toContain('validation_commands');
+    expect(cardText).toContain('python -m ruff format --check core tests scripts');
+  });
+
+  it('fix it shows needs_patch and first failure in operator result card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'fix it';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    expect(cardText).toContain('operator_repair_report');
+    expect(cardText).toContain('needs_patch');
+    expect(cardText).toContain('patch');
+    expect(cardText).toContain('first_failure');
+    expect(cardText).toContain('python -m pytest');
+  });
+
+  it('apply this patch without approval shows needs_approval in operator result card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'apply this patch';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    expect(cardText).toContain('operator_patch_report');
+    expect(cardText).toContain('needs_approval');
+    expect(cardText).toContain('approval');
   });
 
   it('renders failed and denied receipt status styles', async () => {
@@ -3835,6 +4041,7 @@ describe('ModelProfileControl', () => {
 
     const bundleCard = document.querySelector('.site-bundle-card');
     expect(bundleCard).toBeTruthy();
+    expect(document.querySelector('.operator-result-card')).toBe(null);
     expect(bundleCard.querySelector('.site-bundle-label')?.textContent).toContain('Site bundle artifact');
     expect(bundleCard.querySelector('.site-bundle-title')?.textContent).toContain("Tony's Tavern");
     const meta = bundleCard.querySelector('.site-bundle-meta')?.textContent || '';
