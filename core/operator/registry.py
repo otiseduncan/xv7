@@ -31,6 +31,7 @@ from core.operator.actions.runtime import (
 from core.operator.actions.status_report import operator_status_report
 from core.operator.actions.patch_plan import patch_plan
 from core.operator.actions.patch_report import operator_patch_report
+from core.operator.actions.repair_report import operator_repair_report
 from core.operator.actions.test_runner import test_runner
 from core.operator.actions.validation_report import operator_validation_report
 from core.operator.actions.workspace import workspace_map
@@ -62,6 +63,9 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         "patch_plan": OperatorActionSpec("patch_plan", "read_only", patch_plan),
         "operator_patch_report": OperatorActionSpec(
             "operator_patch_report", "operator", operator_patch_report
+        ),
+        "operator_repair_report": OperatorActionSpec(
+            "operator_repair_report", "operator", operator_repair_report
         ),
         "apply_approved_patch": OperatorActionSpec(
             "apply_approved_patch", "operator", apply_approved_patch
@@ -161,6 +165,9 @@ def run_action(
         payload = _target_json(target, action_name)
         return spec.handler(action_id=action_id, repo_root=repo_root, patch=payload)
     if action_name == "operator_patch_report":
+        payload = _target_json(target, action_name)
+        return spec.handler(action_id=action_id, repo_root=repo_root, request=payload)
+    if action_name == "operator_repair_report":
         payload = _target_json(target, action_name)
         return spec.handler(action_id=action_id, repo_root=repo_root, request=payload)
     if action_name == "test_runner":

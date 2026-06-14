@@ -15,6 +15,7 @@ EXPECTED_ACTIONS = {
     "operator_status_report",
     "operator_validation_report",
     "operator_patch_report",
+    "operator_repair_report",
     "workspace_map",
     "patch_plan",
     "apply_approved_patch",
@@ -52,7 +53,11 @@ def test_operator_registry_contains_expected_actions() -> None:
 
     assert set(registry.keys()) == EXPECTED_ACTIONS
     assert registry["apply_approved_patch"].mode == "operator"
-    operator_actions = {"apply_approved_patch", "operator_patch_report"}
+    operator_actions = {
+        "apply_approved_patch",
+        "operator_patch_report",
+        "operator_repair_report",
+    }
     assert all(
         spec.mode == "read_only"
         for name, spec in registry.items()
