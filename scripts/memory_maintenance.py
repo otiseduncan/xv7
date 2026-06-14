@@ -9,8 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from core.memory.maintenance import MemoryMaintenanceService
-from core.memory.store import MemoryStore
+from core.memory.maintenance import MemoryMaintenanceService  # noqa: E402
+from core.memory.store import MemoryStore  # noqa: E402
 
 
 DELETE_CONFIRM = "SOFT DELETE"

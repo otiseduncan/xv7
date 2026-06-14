@@ -303,12 +303,6 @@ def test_build_task_accepts_natural_language_and_returns_structured_plan_only(
     client = _setup_client(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
-    files_before = {
-        path.relative_to(tmp_path).as_posix()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    }
-
     payload = _stage(
         client,
         session_id,
