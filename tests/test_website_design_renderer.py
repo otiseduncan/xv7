@@ -98,3 +98,30 @@ def test_site_bundle_validation_requires_requested_colors_in_css() -> None:
     )
 
     assert passed, failures
+
+
+def test_site_bundle_quality_gate_rejects_generic_duplicate_templates() -> None:
+    generic_html = (
+        "<!doctype html><html><body><header>Harry's Hot Dog Cart</header>"
+        "<main>Harry's Hot Dog Cart is your premier destination for an "
+        "unforgettable experience.</main></body></html>"
+    )
+    files = [
+        {"path": "index.html", "language": "html", "content": generic_html},
+        {"path": "menu.html", "language": "html", "content": generic_html},
+        {"path": "assets/site.css", "language": "css", "content": "body{color:black;}"},
+    ]
+
+    passed, failures = sb.validate_bundle(
+        bundle_files=files,
+        entry="index.html",
+        business_name="Harry's Hot Dog Cart",
+        style_hints={"colors": ["gold"], "styles": []},
+    )
+
+    assert not passed
+    joined = " | ".join(failures)
+    assert "generic template copy" in joined
+    assert "html pages must not be duplicate template copies" in joined
+    assert "css quality marker missing" in joined
+    assert "requested color missing from css" in joined
