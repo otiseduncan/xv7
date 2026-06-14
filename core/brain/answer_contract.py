@@ -14,6 +14,10 @@ from uuid import uuid4
 import httpx
 
 from core.brain import site_bundle as sb
+from core.brain.artifact_fidelity_manager import ArtifactFidelityManager
+from core.brain.code_artifact_builder import CodeArtifactBuilder
+from core.brain.intent_router import IntentRouter
+from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
@@ -269,6 +273,7 @@ class AnswerContract:
 
     @staticmethod
     def is_code_artifact_request(normalized_question: str) -> bool:
+        return IntentRouter.is_code_artifact_request(normalized_question)
         has_hint = bool(
             AnswerContract.CODE_ARTIFACT_HINT_PATTERN.search(normalized_question)
         )
@@ -279,6 +284,7 @@ class AnswerContract:
 
     @staticmethod
     def _code_artifact_language(normalized_question: str) -> str:
+        return CodeArtifactBuilder.code_artifact_language(normalized_question)
         if "typescript" in normalized_question or re.search(
             r"\bts\b", normalized_question
         ):
@@ -295,6 +301,7 @@ class AnswerContract:
 
     @staticmethod
     def _code_artifact_filename(language: str) -> str:
+        return CodeArtifactBuilder.code_artifact_filename(language)
         if language == "css":
             return "styles.css"
         if language == "javascript":
@@ -307,11 +314,13 @@ class AnswerContract:
 
     @staticmethod
     def _clean_artifact_label(text: str) -> str:
+        return CodeArtifactBuilder.clean_artifact_label(text)
         value = re.sub(r"\s+", " ", text.strip())
         return value.strip(" .,:;\"'“”‘’")
 
     @classmethod
     def _extract_artifact_name(cls, question: str) -> str | None:
+        return CodeArtifactBuilder.extract_artifact_name(question)
         quoted_patterns = [
             r"one-page\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]\s+website",
             r"website\s+for\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]",
@@ -398,6 +407,7 @@ class AnswerContract:
 
     @staticmethod
     def _artifact_business_category(question: str, name: str | None) -> str:
+        return CodeArtifactBuilder.artifact_business_category(question, name)
         text = f"{question} {name or ''}".lower()
         if any(
             token in text
@@ -487,6 +497,7 @@ class AnswerContract:
 
     @staticmethod
     def _artifact_style_profile(question: str, category: str) -> dict[str, str]:
+        return CodeArtifactBuilder.artifact_style_profile(question, category)
         text = question.lower()
         style = {
             "accent": "#fbbf24",
@@ -627,11 +638,13 @@ class AnswerContract:
 
     @staticmethod
     def _format_business_name(name: str | None, fallback: str) -> str:
+        return CodeArtifactBuilder.format_business_name(name, fallback)
         value = (name or "").strip()
         return value or fallback
 
     @classmethod
     def _build_business_site_template(cls, question: str) -> dict[str, Any]:
+        return CodeArtifactBuilder.build_business_site_template(question)
         business_name = cls._extract_artifact_name(question)
         category = cls._artifact_business_category(question, business_name)
         display_name = cls._format_business_name(
@@ -877,6 +890,11 @@ class AnswerContract:
     def _default_code_artifact_content(
         filename: str, language: str, question: str
     ) -> str:
+        return CodeArtifactBuilder.default_code_artifact_content(
+            filename,
+            language,
+            question,
+        )
         if language == "html":
             template = AnswerContract._build_business_site_template(question)
             display_name = html.escape(str(template["display_name"]), quote=False)
@@ -1102,6 +1120,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_requested_filename(question: str, language: str) -> str:
+        return CodeArtifactBuilder.extract_requested_filename(question, language)
         match = re.search(
             r"\bfilename\s*[=:]?\s*[\"'“”‘’]?([a-zA-Z0-9._-]{1,80})[\"'“”‘’]?",
             question,
@@ -1113,6 +1132,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_requested_previewable(question: str, language: str) -> bool:
+        return CodeArtifactBuilder.extract_requested_previewable(question, language)
         match = re.search(
             r"\bpreviewable\s*[=:]?\s*(true|false)\b", question, flags=re.IGNORECASE
         )
@@ -1122,6 +1142,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_apply_intent(question: str) -> bool:
+        return CodeArtifactBuilder.extract_apply_intent(question)
         lowered = question.lower()
         if "do not apply" in lowered or "don't apply" in lowered:
             return False
@@ -1131,6 +1152,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_style_hints(question: str) -> dict[str, list[str]]:
+        return CodeArtifactBuilder.extract_style_hints(question)
         lowered = question.lower()
         known_colors = (
             "black",
@@ -1183,6 +1205,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_layout_hints(question: str) -> list[str]:
+        return CodeArtifactBuilder.extract_layout_hints(question)
         candidates = re.findall(
             r"\b(include|with|featuring|highlight|show)\s+([^.;]{3,140})",
             question,
@@ -1197,6 +1220,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _artifact_intent_label(question: str) -> str:
+        return CodeArtifactBuilder.artifact_intent_label(question)
         lowered = question.lower()
         if "small html artifact" in lowered:
             return "small HTML artifact"
@@ -1208,6 +1232,7 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _extract_prompt_fidelity_contract(cls, question: str) -> dict[str, Any]:
+        return ArtifactFidelityManager.extract_prompt_fidelity_contract(question)
         requested_business_name = cls._clean_artifact_label(
             str(cls._extract_artifact_name(question) or "")
         )
@@ -1225,6 +1250,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _color_hex_map() -> dict[str, list[str]]:
+        return ArtifactFidelityManager.color_hex_map()
         return {
             "black": ["#000", "#000000", "#070707", "#111"],
             "white": ["#fff", "#ffffff"],
@@ -1244,6 +1270,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _service_terms_for_business_type(business_type: str) -> tuple[str, ...]:
+        return ArtifactFidelityManager.service_terms_for_business_type(business_type)
         mapping = {
             "grooming": ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw"),
             "locksmith": ("locksmith", "security", "key", "lock", "lockout", "rekey"),
@@ -1268,6 +1295,10 @@ if __name__ == \"__main__\":
         contract: dict[str, Any],
         metadata: dict[str, Any] | None,
     ) -> list[str]:
+        return ArtifactFidelityManager.prompt_fidelity_forbidden_terms(
+            contract=contract,
+            metadata=metadata,
+        )
         requested_name = (
             str(contract.get("requested_business_name") or "").strip().lower()
         )
@@ -1314,6 +1345,11 @@ if __name__ == \"__main__\":
         artifact_content: str,
         metadata: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        return ArtifactFidelityManager.validate_artifact_prompt_fidelity(
+            prompt,
+            artifact_content,
+            metadata,
+        )
         contract = cls._extract_prompt_fidelity_contract(prompt)
         if isinstance(metadata, dict):
             override_name = str(
@@ -1417,6 +1453,11 @@ if __name__ == \"__main__\":
         artifact_content: str,
         fidelity_report: dict[str, Any],
     ) -> str:
+        return ArtifactFidelityManager.repair_artifact_prompt_fidelity(
+            prompt=prompt,
+            artifact_content=artifact_content,
+            fidelity_report=fidelity_report,
+        )
         repaired = cls._strip_markdown_fences(str(artifact_content or ""))
         requested_name = str(
             fidelity_report.get("requested_business_name") or ""
@@ -1555,6 +1596,18 @@ if __name__ == \"__main__\":
         strict_retry: bool,
         retry_requirements: list[str] | None = None,
     ) -> str:
+        return ArtifactFidelityManager.build_local_artifact_prompt(
+            question=question,
+            filename=filename,
+            language=language,
+            previewable=previewable,
+            apply_requested=apply_requested,
+            business_name=business_name,
+            style_hints=style_hints,
+            layout_hints=layout_hints,
+            strict_retry=strict_retry,
+            retry_requirements=retry_requirements,
+        )
         retry_requirements = retry_requirements or []
         retry_line = "Output only source code that satisfies all constraints below."
         if strict_retry:
@@ -1606,6 +1659,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _remediation_for_validation_reason(reason: str) -> str:
+        return ArtifactFidelityManager.remediation_for_validation_reason(reason)
         mapping = {
             "empty_content": "return non-empty source code",
             "markdown_fence_detected": "remove markdown code fences",
@@ -1634,6 +1688,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _looks_like_artifact_edit(normalized_question: str) -> bool:
+        return IntentRouter.looks_like_artifact_edit(normalized_question)
         if AnswerContract._artifact_refinement_mode(normalized_question) in {
             "undo",
             "explain",
@@ -1861,10 +1916,19 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _has_explicit_artifact_intent(cls, normalized_question: str) -> bool:
-        return bool(cls.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized_question))
+        return IntentRouter.has_explicit_artifact_intent(normalized_question)
+
+    @classmethod
+    def _is_preview_artifact_request(cls, normalized_question: str) -> bool:
+        return IntentRouter.is_preview_artifact_request(normalized_question)
+
+    @classmethod
+    def _is_sandbox_build_request(cls, normalized_question: str) -> bool:
+        return IntentRouter.is_sandbox_build_request(normalized_question)
 
     @classmethod
     def _is_repo_mutation_build_prompt(cls, normalized_question: str) -> bool:
+        return IntentRouter.is_repo_mutation_build_prompt(normalized_question)
         if not normalized_question:
             return False
 
@@ -1883,6 +1947,7 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
+        return IntentRouter.prioritize_artifact_over_build_guard(normalized_question)
         return (
             cls._has_explicit_artifact_intent(normalized_question)
             or sb.is_site_bundle_request(normalized_question)
@@ -1893,6 +1958,14 @@ if __name__ == \"__main__\":
         configured = str(os.getenv("XV7_ARTIFACT_PATCH_ROOT", "")).strip()
         root = Path(configured) if configured else Path.cwd()
         return root.resolve()
+
+    @staticmethod
+    def _sandbox_root() -> Path:
+        return SandboxWriteManager.sandbox_root()
+
+    @staticmethod
+    def _sandbox_display_root() -> str:
+        return SandboxWriteManager.sandbox_display_root()
 
     @classmethod
     def _safe_slug(cls, raw: str | None, fallback: str) -> str:
@@ -1906,6 +1979,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _sanitize_filename(filename: str, language: str) -> str:
+        return SandboxWriteManager.sanitize_filename(filename, language)
         language_defaults = {
             "html": "index.html",
             "css": "styles.css",
@@ -1923,6 +1997,58 @@ if __name__ == \"__main__\":
         if expected_ext and ext.lower() != expected_ext.lower():
             candidate = os.path.splitext(candidate)[0] + expected_ext
         return candidate
+
+    @classmethod
+    def _resolve_safe_sandbox_target(
+        cls,
+        *,
+        root: Path,
+        target_path: str,
+    ) -> tuple[Path | None, str | None]:
+        return SandboxWriteManager.resolve_safe_target(
+            root=root,
+            target_path=target_path,
+        )
+
+    @classmethod
+    def _sandbox_relative_file_path(
+        cls,
+        *,
+        project_slug: str,
+        filename: str,
+    ) -> str:
+        return SandboxWriteManager.relative_file_path(
+            project_slug=project_slug,
+            filename=filename,
+            language=cls._code_artifact_language(filename),
+        )
+
+    @classmethod
+    def _write_sandbox_file(
+        cls,
+        *,
+        project_slug: str,
+        filename: str,
+        content: str,
+    ) -> tuple[str, str]:
+        return SandboxWriteManager.write_file(
+            project_slug=project_slug,
+            filename=filename,
+            content=content,
+            language=cls._code_artifact_language(filename),
+        )
+
+    @classmethod
+    def _write_sandbox_bundle(
+        cls,
+        *,
+        project_slug: str,
+        bundle_files: list[dict[str, Any]],
+    ) -> tuple[list[str], list[str]]:
+        return SandboxWriteManager.write_bundle(
+            project_slug=project_slug,
+            bundle_files=bundle_files,
+        )
 
     @staticmethod
     def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -3040,6 +3166,7 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _artifact_refinement_mode(cls, normalized_question: str) -> str | None:
+        return IntentRouter.artifact_refinement_mode(normalized_question)
         typography_style = cls._typography_style_request(normalized_question)
         asks_for_color_change = bool(
             cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_question)
@@ -3109,6 +3236,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _extract_first_tag_text(content: str, tag: str) -> str | None:
+        return ArtifactFidelityManager.extract_first_tag_text(content, tag)
         match = re.search(
             rf"<{tag}[^>]*>(.*?)</{tag}>", content, flags=re.IGNORECASE | re.DOTALL
         )
@@ -3120,6 +3248,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _replace_first_tag_text(content: str, tag: str, replacement: str) -> str:
+        return ArtifactFidelityManager.replace_first_tag_text(content, tag, replacement)
         escaped = html.escape(replacement, quote=False)
         pattern = re.compile(
             rf"(<{tag}[^>]*>)(.*?)(</{tag}>)", flags=re.IGNORECASE | re.DOTALL
@@ -3535,6 +3664,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _strip_markdown_fences(content: str) -> str:
+        return ArtifactFidelityManager.strip_markdown_fences(content)
         stripped = content.strip()
         if not stripped.startswith("```"):
             return stripped
@@ -3547,6 +3677,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _insert_before_tag(content: str, closing_tag: str, snippet: str) -> str:
+        return ArtifactFidelityManager.insert_before_tag(content, closing_tag, snippet)
         pattern = re.compile(rf"</{re.escape(closing_tag)}>", flags=re.IGNORECASE)
         if pattern.search(content):
             return pattern.sub(f"{snippet}</{closing_tag}>", content, count=1)
