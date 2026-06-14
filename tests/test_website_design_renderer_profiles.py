@@ -47,7 +47,13 @@ def test_cybersecurity_site_uses_assessment_and_monitoring_profile() -> None:
     files = render_site_bundle_files(
         business_name="Syfernetics",
         slug="syfernetics",
-        pages=["index.html", "services.html", "portfolio.html", "contact.html", "assets/site.css"],
+        pages=[
+            "index.html",
+            "services.html",
+            "portfolio.html",
+            "contact.html",
+            "assets/site.css",
+        ],
         style_hints={"colors": ["black", "green", "white"], "styles": ["futuristic"]},
         question="Build a cybersecurity IT service website with assessments, monitoring, automation, and consulting.",
     )
@@ -64,7 +70,10 @@ def test_requested_colors_remain_visible_in_css_quality_markers() -> None:
         business_name="Harry's Hot Dog Cart",
         slug="harrys-hot-dog-cart",
         pages=["index.html", "menu.html", "specials.html", "assets/site.css"],
-        style_hints={"colors": ["black", "gold", "white", "red"], "styles": ["premium"]},
+        style_hints={
+            "colors": ["black", "gold", "white", "red"],
+            "styles": ["premium"],
+        },
         question="Make the site premium, less template-looking, and add a Friday Chili Dog Special.",
     )
 

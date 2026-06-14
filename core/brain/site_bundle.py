@@ -108,7 +108,13 @@ _BANNED_TEMPLATE_PHRASES = (
     "replace this text",
 )
 _REQUIRED_HTML_MARKERS = ("site-header", "page-content")
-_REQUIRED_CSS_MARKERS = ("--bg:", "--accent:", "--text:", "site-header", "button-primary")
+_REQUIRED_CSS_MARKERS = (
+    "--bg:",
+    "--accent:",
+    "--text:",
+    "site-header",
+    "button-primary",
+)
 
 
 def is_site_bundle_request(normalized_question: str) -> bool:
@@ -129,7 +135,10 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
 
     requested_pages = extract_requested_page_paths(question)
     if requested_pages:
-        pages = ["index.html", *[page for page in requested_pages if page != "index.html"]]
+        pages = [
+            "index.html",
+            *[page for page in requested_pages if page != "index.html"],
+        ]
         return [*pages, "assets/site.css", "assets/site.js"]
 
     prompt_context = f"{business_name} {question}"
@@ -281,13 +290,17 @@ def validate_bundle(
         failures.append(f"entry file {entry!r} missing from bundle")
 
     html_pages = [
-        file_item for file_item in bundle_files if str(file_item.get("path", "")).endswith(".html")
+        file_item
+        for file_item in bundle_files
+        if str(file_item.get("path", "")).endswith(".html")
     ]
     if len(html_pages) < 2:
         failures.append("bundle must have at least 2 HTML pages")
 
     css_files = [
-        file_item for file_item in bundle_files if str(file_item.get("path", "")).endswith(".css")
+        file_item
+        for file_item in bundle_files
+        if str(file_item.get("path", "")).endswith(".css")
     ]
     if not css_files:
         failures.append("bundle must include a CSS file")
@@ -305,13 +318,17 @@ def validate_bundle(
         if any(phrase in lowered for phrase in _BANNED_TEMPLATE_PHRASES):
             failures.append(f"generic template copy found in {path!r}")
         if path.endswith(".html"):
-            failures.extend(_validate_html_file(path, content, lowered, business_name, entry))
+            failures.extend(
+                _validate_html_file(path, content, lowered, business_name, entry)
+            )
             signatures.add(_normalize_quality_signature(content))
 
     if len(html_pages) > 1 and len(signatures) < len(html_pages):
         failures.append("html pages must not be duplicate template copies")
 
-    css_content = "\n".join(str(file_item.get("content", "")) for file_item in css_files).lower()
+    css_content = "\n".join(
+        str(file_item.get("content", "")) for file_item in css_files
+    ).lower()
     for marker in _REQUIRED_CSS_MARKERS:
         if marker not in css_content:
             failures.append(f"css quality marker missing: {marker!r}")
@@ -366,7 +383,9 @@ def build_patch_proposals(
         target_path = f"generated-sites/{slug}/{path}"
         resolved_target = (root / Path(target_path)).resolve()
         existing_content = (
-            resolved_target.read_text(encoding="utf-8") if resolved_target.exists() else None
+            resolved_target.read_text(encoding="utf-8")
+            if resolved_target.exists()
+            else None
         )
         operation = "update" if existing_content is not None else "create"
         validation_status, checks, validation_failures = validate_fn(
@@ -415,7 +434,9 @@ def apply_proposals(
     for proposal in proposals:
         validation = proposal.get("validation") or {}
         if str(validation.get("status") or "failed").lower() != "passed":
-            errors.append(f"skipped {proposal.get('target_path')}: validation not passed")
+            errors.append(
+                f"skipped {proposal.get('target_path')}: validation not passed"
+            )
             continue
         target_path = str(proposal.get("target_path") or "").replace("\\", "/")
         content = str(proposal.get("content") or "")
@@ -438,8 +459,10 @@ def latest_pending_bundle_proposals(
 ) -> list[dict[str, Any]] | None:
     for metadata in _assistant_metadata(session_messages, session_metadata):
         proposals = metadata.get("site_bundle_patch_proposals")
-        if isinstance(proposals, list) and proposals and not any(
-            proposal.get("applied") for proposal in proposals
+        if (
+            isinstance(proposals, list)
+            and proposals
+            and not any(proposal.get("applied") for proposal in proposals)
         ):
             return proposals
     return None
