@@ -1586,14 +1586,13 @@ class Xv7UI {
     if (role === 'assistant') {
       try {
         copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
-        this.appendOperatorResultCard(article, messageMetadata);
         // Site bundle payloads use appendSiteBundleCard (called by the caller after this
         // returns) — skip per-file card rendering to prevent duplicate individual cards.
         if (!siteBundlePayload) {
           this.appendCodeArtifacts(article, messageMetadata);
         }
         this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
-        this.appendWhyThisAnswerDrawer(article, messageMetadata);
+        this.appendResponseDetailsDisclosure(article, messageMetadata);
         if (messageMetadata && typeof messageMetadata === 'object') {
           this.latestAssistantMeta = messageMetadata;
           this.updateBrainRecordsCalmSummary();
@@ -2681,33 +2680,6 @@ class Xv7UI {
       article.append(chipRow);
     }
 
-    if (operatorReceipts.length > 0) {
-      operatorReceipts.forEach((receipt) => {
-        if (!receipt || typeof receipt !== 'object') return;
-        const details = document.createElement('details');
-        details.className = 'receipt-details';
-
-        const summary = document.createElement('summary');
-        const label = typeof receipt.receipt_label === 'string' ? receipt.receipt_label : 'operator receipt';
-        const status = typeof receipt.status === 'string' ? receipt.status : 'unknown';
-        summary.textContent = `${label} (${status})`;
-
-        const body = document.createElement('div');
-        body.className = 'receipt-detail-grid';
-        this.appendReceiptField(body, 'action_id', receipt.action_id);
-        this.appendReceiptField(body, 'action_name', receipt.action_name);
-        this.appendReceiptField(body, 'status', receipt.status);
-        this.appendReceiptField(body, 'read_only', receipt.read_only);
-        this.appendReceiptField(body, 'target', receipt.target);
-        this.appendReceiptField(body, 'summary', receipt.summary);
-        this.appendReceiptField(body, 'limitation', receipt.limitation);
-        this.appendReceiptField(body, 'timestamp', receipt.completed_at || receipt.started_at);
-
-        details.append(summary, body);
-        article.append(details);
-      });
-    }
-
     return compactReceipts;
   }
 
@@ -2777,9 +2749,133 @@ class Xv7UI {
     return `${items.slice(0, max).join(', ')} (+${items.length - max} more)`;
   }
 
-  appendOperatorResultCard(article, messageMetadata) {
+  appendResponseDetailsDisclosure(article, messageMetadata) {
+    const details = document.createElement('details');
+    details.className = 'response-details-disclosure';
+
+    const summary = document.createElement('summary');
+    summary.className = 'response-details-summary';
+    summary.textContent = 'Details';
+
+    const body = document.createElement('div');
+    body.className = 'response-details-body';
+
+    let hasAnySection = false;
+    hasAnySection = this.appendOperatorReceiptsSection(body, messageMetadata) || hasAnySection;
+    hasAnySection = this.appendOperatorResultSection(body, messageMetadata) || hasAnySection;
+    hasAnySection = this.appendWhyThisAnswerSection(body, messageMetadata) || hasAnySection;
+
+    if (!hasAnySection) return;
+
+    details.append(summary, body);
+    article.append(details);
+  }
+
+  createResponseDetailsSection(title) {
+    const section = document.createElement('section');
+    section.className = 'response-details-section';
+
+    const heading = document.createElement('p');
+    heading.className = 'response-details-section-title';
+    heading.textContent = title;
+
+    section.append(heading);
+    return section;
+  }
+
+  hasMeaningfulValue(value, options = {}) {
+    const { allowFalse = false } = options;
+
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'boolean') return value === true || allowFalse;
+    if (typeof value === 'number') return Number.isFinite(value);
+
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (!text) return false;
+      const lowered = text.toLowerCase();
+      if (lowered === '-' || lowered === 'none' || lowered === 'n/a' || lowered === 'null' || lowered === 'undefined') {
+        return false;
+      }
+      return true;
+    }
+
+    if (Array.isArray(value)) {
+      return value.some((item) => this.hasMeaningfulValue(item, options));
+    }
+
+    if (typeof value === 'object') {
+      return Object.values(value).some((item) => this.hasMeaningfulValue(item, options));
+    }
+
+    return false;
+  }
+
+  formatMeaningfulValue(value, options = {}) {
+    const { allowFalse = false } = options;
+    if (!this.hasMeaningfulValue(value, { allowFalse })) return null;
+
+    if (Array.isArray(value)) {
+      const items = value
+        .map((item) => this.formatMeaningfulValue(item, { allowFalse }))
+        .filter((item) => typeof item === 'string' && item.trim());
+      return items.length ? items.join(', ') : null;
+    }
+
+    if (typeof value === 'object') {
+      const pairs = Object.entries(value)
+        .map(([key, nested]) => {
+          const rendered = this.formatMeaningfulValue(nested, { allowFalse });
+          return rendered ? `${key}=${rendered}` : '';
+        })
+        .filter(Boolean);
+      return pairs.length ? pairs.join('; ') : null;
+    }
+
+    return String(value).trim();
+  }
+
+  appendMeaningfulReceiptField(container, label, value, options = {}) {
+    const rendered = this.formatMeaningfulValue(value, options);
+    if (!rendered) return false;
+    this.appendReceiptField(container, label, rendered);
+    return true;
+  }
+
+  appendOperatorReceiptsSection(container, messageMetadata) {
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const receipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts : [];
+    const validReceipts = receipts.filter((receipt) => receipt && typeof receipt === 'object');
+    if (!validReceipts.length) return false;
+
+    const section = this.createResponseDetailsSection('Operator status');
+
+    validReceipts.forEach((receipt, index) => {
+      const grid = document.createElement('div');
+      grid.className = 'receipt-detail-grid response-details-grid';
+      let hasRows = false;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'receipt', receipt.receipt_label || `operator receipt ${index + 1}`) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'action_id', receipt.action_id) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'action_name', receipt.action_name) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'status', receipt.status) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'read_only', receipt.read_only, { allowFalse: true }) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'target', receipt.target) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'summary', receipt.summary) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'limitation', receipt.limitation) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'timestamp', receipt.completed_at || receipt.started_at) || hasRows;
+      if (hasRows) {
+        section.append(grid);
+      }
+    });
+
+    if (!section.querySelector('.response-details-grid')) return false;
+    container.append(section);
+    return true;
+  }
+
+  appendOperatorResultSection(container, messageMetadata) {
     const result = this.getMessageOperatorResult(messageMetadata);
-    if (!result) return;
+    if (!result) return false;
 
     const actionName = String(result.action_name || '').trim();
     const status = String(result.status || '').trim();
@@ -2796,68 +2892,49 @@ class Xv7UI {
     const pushPerformed = commitPushState.push_performed === true;
     const separateApproval = commitPushState.requires_separate_approval === true;
 
-    const disclosure = document.createElement('details');
-    disclosure.className = 'operator-result-disclosure';
-
-    const summary = document.createElement('summary');
-    summary.className = 'operator-result-summary';
-    const summaryParts = ['Operator details'];
-    if (actionName) summaryParts.push(actionName);
-    if (status) summaryParts.push(status);
-    summary.textContent = summaryParts.join(' · ');
-
-    const card = document.createElement('section');
-    card.className = 'operator-result-card';
-
-    const header = document.createElement('div');
-    header.className = 'operator-result-header';
-
-    const title = document.createElement('p');
-    title.className = 'operator-result-title';
-    title.textContent = 'Operator result';
-
-    const identity = document.createElement('p');
-    identity.className = 'operator-result-identity';
-    identity.textContent = [actionName, status].filter(Boolean).join(' • ') || 'Action metadata available';
-
-    header.append(title, identity);
-    card.append(header);
+    const sectionTitle = [actionName, status].filter(Boolean).join(' • ');
+    const section = this.createResponseDetailsSection(
+      sectionTitle ? `Operator result (${sectionTitle})` : 'Operator result',
+    );
 
     const body = document.createElement('div');
-    body.className = 'operator-result-grid';
+    body.className = 'receipt-detail-grid response-details-grid';
+    let hasRows = false;
 
-    this.appendReceiptField(body, 'changed_files', this.summarizeOperatorList(changedFiles, 4));
-    this.appendReceiptField(body, 'validation_commands', this.summarizeOperatorList(validationCommands, 2));
+    hasRows = this.appendMeaningfulReceiptField(body, 'changed_files', changedFiles) || hasRows;
+    hasRows = this.appendMeaningfulReceiptField(body, 'validation_commands', validationCommands) || hasRows;
 
     if (firstFailure) {
-      this.appendReceiptField(body, 'first_failure', firstFailure);
+      hasRows = this.appendMeaningfulReceiptField(body, 'first_failure', firstFailure) || hasRows;
     }
 
     if (status === 'needs_approval') {
-      this.appendReceiptField(body, 'approval', 'required');
+      hasRows = this.appendMeaningfulReceiptField(body, 'approval', 'required') || hasRows;
     } else if (status === 'needs_patch') {
-      this.appendReceiptField(body, 'patch', 'required');
+      hasRows = this.appendMeaningfulReceiptField(body, 'patch', 'required') || hasRows;
     } else if (status === 'blocked') {
-      this.appendReceiptField(body, 'blocked', 'true');
+      hasRows = this.appendMeaningfulReceiptField(body, 'blocked', 'true') || hasRows;
     }
 
     if (safetyNotes.length) {
-      this.appendReceiptField(body, 'safety', this.summarizeOperatorList(safetyNotes, 2));
+      hasRows = this.appendMeaningfulReceiptField(body, 'safety', safetyNotes) || hasRows;
     }
 
     if (localOnlyWarning.length) {
-      this.appendReceiptField(body, 'local_only', this.summarizeOperatorList(localOnlyWarning, 2));
+      hasRows = this.appendMeaningfulReceiptField(body, 'local_only', localOnlyWarning) || hasRows;
     }
 
     const commitState = `commit_created=${commitCreated ? 'true' : 'false'}; push_performed=${pushPerformed ? 'true' : 'false'}${separateApproval ? '; separate_approval=true' : ''}`;
-    this.appendReceiptField(body, 'commit_push', commitState);
+    hasRows = this.appendMeaningfulReceiptField(body, 'commit_push', commitState) || hasRows;
 
-    card.append(body);
-    disclosure.append(summary, card);
-    article.append(disclosure);
+    if (!hasRows) return false;
+
+    section.append(body);
+    container.append(section);
+    return true;
   }
 
-  appendWhyThisAnswerDrawer(article, messageMetadata) {
+  appendWhyThisAnswerSection(container, messageMetadata) {
     const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
     const policy = meta.policy_provenance && typeof meta.policy_provenance === 'object' ? meta.policy_provenance : {};
     const contextReceipt = meta.context_receipt && typeof meta.context_receipt === 'object' ? meta.context_receipt : {};
@@ -2882,7 +2959,7 @@ class Xv7UI {
     const resolvedModelUsed = policy.model_used
       || modelUseReceipt.model_tag
       || meta.model_used
-      || 'policy_only';
+      || '';
     const resolvedFallbackReason = policy.fallback_reason
       || meta.fallback_reason
       || policy.brain_answer_source
@@ -2929,7 +3006,7 @@ class Xv7UI {
       ['patch_applied', this.boolText(patchProposal?.applied ?? policy.applied)],
       ['model_used', resolvedModelUsed],
       ['artifact_validation', policy.artifact_validation || '-'],
-      ['fallback_used', this.boolText(meta.fallback_used ?? artifactIsFallback)],
+      ['fallback_used', (meta.fallback_used === true || artifactIsFallback) ? 'true' : ''],
       ['fallback_reason', resolvedFallbackReason],
       ['learned_record_id', meta.learned_record_id || '-'],
       ['learning_layer', meta.learning_layer || '-'],
@@ -2940,23 +3017,23 @@ class Xv7UI {
       ['source_record_ids', sourceRecordIds.length ? sourceRecordIds.join(', ') : '-'],
       ['active_focus_id', policy.active_focus_id || meta.active_focus_id || '-'],
       ['focus_applied', this.boolText(policy.focus_applied ?? meta.focus_applied)],
-      ['context_includes_focus', this.boolText(meta.context_includes_focus ?? selectedLayers.includes('Focus'))],
+      ['context_includes_focus', (meta.context_includes_focus === true || selectedLayers.includes('Focus')) ? 'true' : ''],
     ];
 
-    const details = document.createElement('details');
-    details.className = 'why-answer-drawer';
-
-    const summary = document.createElement('summary');
-    summary.textContent = 'Why this answer?';
+    const section = this.createResponseDetailsSection('Why this answer');
 
     const body = document.createElement('div');
-    body.className = 'receipt-detail-grid';
+    body.className = 'receipt-detail-grid response-details-grid';
+    let hasRows = false;
     fields.forEach(([label, value]) => {
-      this.appendReceiptField(body, String(label), value);
+      hasRows = this.appendMeaningfulReceiptField(body, String(label), value) || hasRows;
     });
 
-    details.append(summary, body);
-    article.append(details);
+    if (!hasRows) return false;
+
+    section.append(body);
+    container.append(section);
+    return true;
   }
 
   boolText(value) {

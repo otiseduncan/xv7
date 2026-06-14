@@ -1289,21 +1289,14 @@ details[open] > .diag-section-title::before {
   background: rgba(5, 8, 18, 0.78);
 }
 
-.operator-result-card {
-  border: 1px solid var(--color-border);
-  border-radius: 0.55rem;
-  background: rgba(5, 8, 18, 0.78);
-  padding: 0.5rem 0.6rem;
-}
-
-.operator-result-disclosure {
+.response-details-disclosure {
   margin-top: 0.55rem;
   border: 1px solid var(--color-border);
   border-radius: 0.55rem;
   background: rgba(5, 8, 18, 0.72);
 }
 
-.operator-result-summary {
+.response-details-summary {
   cursor: pointer;
   padding: 0.45rem 0.6rem;
   font-size: 0.74rem;
@@ -1311,51 +1304,36 @@ details[open] > .diag-section-title::before {
   font-family: 'IBM Plex Mono', monospace;
 }
 
-.operator-result-disclosure[open] .operator-result-summary {
+.response-details-disclosure[open] .response-details-summary {
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.operator-result-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.6rem;
-  align-items: baseline;
-  margin-bottom: 0.4rem;
+.response-details-body {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem 0.6rem;
 }
 
-.operator-result-title {
+.response-details-section {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  background: rgba(4, 9, 20, 0.78);
+  padding: 0.45rem 0.55rem;
+}
+
+.response-details-section-title {
   margin: 0;
-  font-size: 0.74rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
   color: var(--color-text-accent);
   font-family: 'IBM Plex Mono', monospace;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.operator-result-identity {
-  margin: 0;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-  font-family: 'IBM Plex Mono', monospace;
-}
-
-.operator-result-grid {
+.response-details-grid {
   display: grid;
   gap: 0.28rem;
-}
-.why-answer-drawer {
-  margin-top: 0.55rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.55rem;
-  background: rgba(5, 8, 18, 0.72);
-}
-
-.why-answer-drawer summary {
-  cursor: pointer;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.75rem;
-  color: var(--color-text-accent);
-  font-family: 'IBM Plex Mono', monospace;
 }
 
 .brain-record-tabs {

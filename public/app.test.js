@@ -2177,7 +2177,7 @@ describe('ModelProfileControl', () => {
     expect(cards[2].textContent || '').toContain('After artifact');
   });
 
-  it('renders operator receipt chip and expandable details', async () => {
+  it('renders one collapsed response details disclosure with operator info', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = fetchMock;
 
@@ -2194,32 +2194,24 @@ describe('ModelProfileControl', () => {
     );
     expect(chip).toBeTruthy();
 
-    const details = [...document.querySelectorAll('.receipt-details summary')].find((node) =>
-      (node.textContent || '').includes('repo_status OP-1'),
-    );
-    expect(details).toBeTruthy();
-  });
-
-  it('renders compact operator result card for check the repo', async () => {
-    global.fetch = createRuntimeFetchMock();
-
-    new Xv7UI();
-    await flushAsync();
-
-    document.getElementById('promptInput').value = 'Check the repo.';
-    document.getElementById('sendButton').click();
-    await flushAsync();
-
-    const card = document.querySelector('.operator-result-card');
-    expect(card).toBeTruthy();
-    const disclosure = document.querySelector('.operator-result-disclosure');
+    const disclosures = [...document.querySelectorAll('.chat-card-assistant .response-details-disclosure')];
+    expect(disclosures).toHaveLength(1);
+    const disclosure = disclosures[0];
     expect(disclosure).toBeTruthy();
     expect(disclosure?.hasAttribute('open')).toBe(false);
-    expect(disclosure?.querySelector('.operator-result-summary')?.textContent).toContain('Operator details');
+    expect(disclosure?.querySelector('.response-details-summary')?.textContent).toContain('Details');
+    expect(document.querySelector('.operator-result-disclosure')).toBeNull();
+    expect(document.querySelector('.why-answer-drawer')).toBeNull();
+    expect(document.querySelector('.receipt-details')).toBeNull();
+
+    disclosure.open = true;
+    await flushAsync();
+
     expect(document.querySelector('.site-bundle-card')).toBeNull();
     expect(document.querySelector('.site-bundle-mode-button')).toBeNull();
-    const text = (card?.textContent || '').toLowerCase();
-    expect(text).toContain('operator result');
+    const text = (disclosure?.textContent || '').toLowerCase();
+    expect(text).toContain('operator status');
+    expect(text).toContain('repo_status op-1');
     expect(text).toContain('operator_status_report');
     expect(text).toContain('passed');
     expect(text).toContain('changed_files');
@@ -2227,6 +2219,11 @@ describe('ModelProfileControl', () => {
     expect(text).toContain('commit_push');
     expect(text).toContain('commit_created=false');
     expect(text).toContain('push_performed=false');
+    expect(text).toContain('why this answer');
+    expect(text).toContain('model_used');
+    expect(text).not.toContain('intent_class');
+    expect(text).not.toContain('speech_act');
+    expect(text).not.toContain('validation_commands');
   });
 
   it('suppresses placeholder operator result cards without meaningful payload', async () => {
@@ -2253,12 +2250,12 @@ describe('ModelProfileControl', () => {
       new Date().toISOString(),
     );
 
-    expect(document.querySelector('.operator-result-card')).toBeFalsy();
+    expect(document.querySelector('.response-details-disclosure')).toBeFalsy();
     expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('operator_action');
     expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('unknown');
   });
 
-  it('run validation shows validation commands summary in operator result card', async () => {
+  it('run validation shows validation commands summary inside response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -2268,13 +2265,48 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    const cardText = (document.querySelector('.response-details-disclosure')?.textContent || '').toLowerCase();
     expect(cardText).toContain('operator_validation_report');
     expect(cardText).toContain('validation_commands');
     expect(cardText).toContain('python -m ruff format --check core tests scripts');
   });
 
-  it('fix it shows needs_patch and first failure in operator result card', async () => {
+  it('omits Why this answer section when there are no meaningful why fields', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Operator-only metadata response.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_status_report',
+          status: 'passed',
+          changed_files: ['public/app.js'],
+          validation_commands_run: [],
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {
+            commit_created: false,
+            push_performed: false,
+            requires_separate_approval: true,
+          },
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.chat-card-assistant:last-child .response-details-disclosure');
+    expect(drawer).toBeTruthy();
+    const detailText = (drawer?.textContent || '').toLowerCase();
+    expect(detailText).toContain('operator result');
+    expect(detailText).not.toContain('why this answer');
+  });
+
+  it('fix it shows needs_patch and first failure in response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -2284,7 +2316,7 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    const cardText = (document.querySelector('.response-details-disclosure')?.textContent || '').toLowerCase();
     expect(cardText).toContain('operator_repair_report');
     expect(cardText).toContain('needs_patch');
     expect(cardText).toContain('patch');
@@ -2292,7 +2324,7 @@ describe('ModelProfileControl', () => {
     expect(cardText).toContain('python -m pytest');
   });
 
-  it('apply this patch without approval shows needs_approval in operator result card', async () => {
+  it('apply this patch without approval shows needs_approval in response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -2302,7 +2334,7 @@ describe('ModelProfileControl', () => {
     document.getElementById('sendButton').click();
     await flushAsync();
 
-    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    const cardText = (document.querySelector('.response-details-disclosure')?.textContent || '').toLowerCase();
     expect(cardText).toContain('operator_patch_report');
     expect(cardText).toContain('needs_approval');
     expect(cardText).toContain('approval');
@@ -3572,7 +3604,7 @@ describe('ModelProfileControl', () => {
     expect(modelChip).toBeTruthy();
   });
 
-  it('renders per-message Why this answer drawer with focus metadata', async () => {
+  it('renders why-this-answer metadata inside response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
     const ui = new Xv7UI();
     await flushAsync();
@@ -3604,15 +3636,17 @@ describe('ModelProfileControl', () => {
       '2026-06-11T00:00:00Z',
     );
 
-    const drawer = document.querySelector('.why-answer-drawer');
+    const drawer = document.querySelector('.response-details-disclosure');
     expect(drawer).toBeTruthy();
+    expect(drawer?.hasAttribute('open')).toBe(false);
+    expect((drawer?.textContent || '').toLowerCase()).toContain('details');
     expect((drawer?.textContent || '').toLowerCase()).toContain('why this answer');
     expect(drawer?.textContent || '').toContain('active_focus_follow_up');
     expect(drawer?.textContent || '').toContain('XV7-FOCUS-0005');
     expect(drawer?.textContent || '').toContain('Focus');
   });
 
-  it('renders prompt fidelity metadata in Why this answer drawer', async () => {
+  it('renders prompt fidelity metadata inside response details disclosure', async () => {
     global.fetch = createRuntimeFetchMock();
     const ui = new Xv7UI();
     await flushAsync();
@@ -3652,13 +3686,44 @@ describe('ModelProfileControl', () => {
       '2026-06-11T00:00:00Z',
     );
 
-    const drawer = document.querySelector('.why-answer-drawer');
+    const drawer = document.querySelector('.response-details-disclosure');
     expect(drawer).toBeTruthy();
     const text = drawer?.textContent || '';
     expect(text).toContain('prompt_fidelity_status');
     expect(text).toContain('repaired');
     expect(text).toContain('Tony Tavern');
     expect(text).toContain('black, yellow, green');
+  });
+
+  it('renders fallback_reason and source_record_ids when they are provided', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Metadata-rich response',
+      null,
+      {
+        source_record_ids: ['XV7-FOCUS-0004'],
+        fallback_reason: 'operator_action',
+        model_use_receipt: { model_tag: 'policy_only' },
+        context_receipt: {
+          context_receipts: [
+            { layer: 'active_focus', record_id: 'XV7-FOCUS-0004' },
+          ],
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.chat-card-assistant:last-child .response-details-disclosure');
+    expect(drawer).toBeTruthy();
+    const detailText = (drawer?.textContent || '').toLowerCase();
+    expect(detailText).toContain('fallback_reason');
+    expect(detailText).toContain('operator_action');
+    expect(detailText).toContain('source_record_ids');
+    expect(detailText).toContain('xv7-focus-0004');
   });
 
   it('renders artifact patch proposal with diff and draft/apply controls', async () => {
@@ -4300,7 +4365,7 @@ describe('ModelProfileControl', () => {
 
     const bundleCard = document.querySelector('.site-bundle-card');
     expect(bundleCard).toBeTruthy();
-    expect(document.querySelector('.operator-result-card')).toBe(null);
+    expect(document.querySelector('.response-details-disclosure')).toBe(null);
     expect(bundleCard.querySelector('.site-bundle-label')?.textContent).toContain('Site bundle artifact');
     expect(bundleCard.querySelector('.site-bundle-title')?.textContent).toContain("Tony's Tavern");
     const meta = bundleCard.querySelector('.site-bundle-meta')?.textContent || '';
