@@ -12,6 +12,11 @@ from core.operator.registry import build_operator_registry, run_action
 EXPECTED_ACTIONS = {
     "repo_status",
     "repo_recent_commits",
+    "operator_status_report",
+    "operator_validation_report",
+    "operator_patch_report",
+    "operator_commit_report",
+    "operator_repair_report",
     "workspace_map",
     "patch_plan",
     "apply_approved_patch",
@@ -49,10 +54,16 @@ def test_operator_registry_contains_expected_actions() -> None:
 
     assert set(registry.keys()) == EXPECTED_ACTIONS
     assert registry["apply_approved_patch"].mode == "operator"
+    operator_actions = {
+        "apply_approved_patch",
+        "operator_patch_report",
+        "operator_commit_report",
+        "operator_repair_report",
+    }
     assert all(
         spec.mode == "read_only"
         for name, spec in registry.items()
-        if name != "apply_approved_patch"
+        if name not in operator_actions
     )
 
 

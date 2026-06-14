@@ -135,8 +135,12 @@ def test_repo_check_claim_requires_live_proof_and_flips_after_success(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "repo_status"
-        return _result(action_name="repo_status", status="success", action_id=action_id)
+        assert action_name == "operator_status_report"
+        return _result(
+            action_name="operator_status_report",
+            status="success",
+            action_id=action_id,
+        )
 
     monkeypatch.setattr("core.operator.manager.run_action", _run_action_success)
 
@@ -190,9 +194,9 @@ def test_failed_operator_action_is_honest_and_includes_receipt(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "repo_status"
+        assert action_name == "operator_status_report"
         return _result(
-            action_name="repo_status",
+            action_name="operator_status_report",
             status="failed",
             action_id=action_id,
             stderr_summary="git not available",
@@ -236,9 +240,9 @@ def test_timed_out_repo_check_returns_honest_failure_receipt_without_hanging(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "repo_status"
+        assert action_name == "operator_status_report"
         return _result(
-            action_name="repo_status",
+            action_name="operator_status_report",
             status="failed",
             action_id=action_id,
             stderr_summary="limitation: repo status check timed out after 8s",
@@ -263,7 +267,7 @@ def test_timed_out_repo_check_returns_honest_failure_receipt_without_hanging(
         .get("operator_receipts", [])
     )
     assert operator_receipts
-    assert operator_receipts[0].get("action_name") == "repo_status"
+    assert operator_receipts[0].get("action_name") == "operator_status_report"
     assert (
         "timed out"
         in str(
@@ -911,11 +915,11 @@ def test_working_tree_clean_prompt_routes_to_repo_status_not_mutation_deny(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "repo_status"
+        assert action_name == "operator_status_report"
         now = datetime.now(UTC)
         return OperatorActionResult(
             action_id=action_id,
-            action_name="repo_status",
+            action_name="operator_status_report",
             status="success",
             started_at=now,
             completed_at=now,
@@ -931,7 +935,7 @@ def test_working_tree_clean_prompt_routes_to_repo_status_not_mutation_deny(
                 "upstream": "origin/main",
             },
             safety=OperatorSafety(allowed=True),
-            receipt_label=f"repo_status {action_id}",
+            receipt_label=f"operator_status_report {action_id}",
         )
 
     monkeypatch.setattr("core.operator.manager.run_action", _run_action_repo_status)
@@ -972,7 +976,7 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    assert "build task" in answer
+    assert "protected location" in answer
     assert "operator mode" in answer
     assert "no files were changed" in answer
     assert "no tests were run" in answer
@@ -1126,7 +1130,7 @@ def test_failed_apply_patch_follow_up_typos_and_shortcuts_still_block_fake_compl
     # message, but no commit or push occurs either way.
     safe_refusals = (
         "not verified as successful",
-        "build task",
+        "protected location",
         "implementation/repo mutation task",
         "do not have a pending commit proposal",
     )
