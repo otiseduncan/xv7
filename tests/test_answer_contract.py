@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 from core.brain import site_bundle as sb
@@ -2896,6 +2897,125 @@ def test_site_bundle_generation_preserves_requested_products_and_faq_pages(
     assert "index.html" in artifact_files
     assert "products.html" in artifact_files
     assert "faq.html" in artifact_files
+
+
+def _site_bundle_files_by_path(site_bundle_data: dict[str, Any]) -> dict[str, str]:
+    files = site_bundle_data.get("files")
+    assert isinstance(files, list) and files, "expected site bundle files"
+    return {
+        str(item.get("path") or ""): str(item.get("content") or "")
+        for item in files
+        if isinstance(item, dict)
+    }
+
+
+def _site_bundle_follow_up(
+    contract: AnswerContract, active_bundle: dict[str, Any], prompt: str
+) -> dict[str, Any]:
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            prompt,
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "Active site bundle preview.",
+                    "metadata": {"site_bundle": active_bundle},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+    assert response is not None
+    site_bundle_data = response.get("site_bundle")
+    assert isinstance(site_bundle_data, dict), "expected refined site bundle"
+    assert site_bundle_data.get("artifact_type") == "site_bundle"
+    return site_bundle_data
+
+
+def test_site_bundle_follow_up_refines_active_bundle_without_regenerating_weak_template(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    contract = AnswerContract()
+    initial = asyncio.run(
+        contract.build_code_artifact_response(
+            (
+                "Build a multi-page website for Harry's Hot Dog Cart with menu, "
+                "specials, catering, hours, about, and contact pages. "
+                "Use black, gold, and white."
+            ),
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert initial is not None
+    initial_bundle = initial.get("site_bundle")
+    assert isinstance(initial_bundle, dict)
+    initial_files = _site_bundle_files_by_path(initial_bundle)
+    initial_paths = set(initial_files)
+    assert {
+        "index.html",
+        "menu.html",
+        "specials.html",
+        "catering.html",
+        "contact.html",
+    }.issubset(initial_paths)
+
+    premium_bundle = _site_bundle_follow_up(
+        contract,
+        initial_bundle,
+        "make this site premium and make the buttons pop",
+    )
+    premium_files = _site_bundle_files_by_path(premium_bundle)
+    assert set(premium_files) == initial_paths
+    assert "Harry's Hot Dog Cart" in premium_files["index.html"]
+    assert "Classic Street Dog" in premium_files["menu.html"]
+    assert "Catering packages" in premium_files["catering.html"]
+    assert "Call or message" in premium_files["contact.html"]
+    assert "is-premium" in premium_files["index.html"]
+    assert "is-bold" in premium_files["index.html"]
+    assert "--button-scale: 1.08;" in premium_files["assets/site.css"]
+    assert ".is-bold h1" in premium_files["assets/site.css"]
+
+    special_bundle = _site_bundle_follow_up(
+        contract,
+        premium_bundle,
+        "add a Friday chili dog special",
+    )
+    special_files = _site_bundle_files_by_path(special_bundle)
+    assert set(special_files) == initial_paths
+    assert "Friday Chili Dog Special" in special_files["index.html"]
+    assert "Friday Chili Dog Special" in special_files["menu.html"]
+    assert "Friday Chili Dog Special" in special_files["specials.html"]
+    assert "Classic Street Dog" in special_files["menu.html"]
+    assert "Catering packages" in special_files["catering.html"]
+    assert "Call or message" in special_files["contact.html"]
+
+    color_bundle = _site_bundle_follow_up(
+        contract,
+        special_bundle,
+        "change colors to black gold white and red",
+    )
+    color_files = _site_bundle_files_by_path(color_bundle)
+    css = color_files["assets/site.css"].lower()
+    assert set(color_files) == initial_paths
+    assert "--bg: #050505;" in css
+    assert "--accent: #f59e0b;" in css
+    assert "--text: #ffffff;" in css
+    assert "--accent-2: #ef4444;" in css
+    assert "requested-colors: black gold white red" in css
+    assert "Friday Chili Dog Special" in color_files["specials.html"]
+
+    html_pages = [
+        content for path, content in color_files.items() if path.endswith(".html")
+    ]
+    joined_html = "\n".join(html_pages).lower()
+    assert "premier destination for an unforgettable experience" not in joined_html
+    normalized_bodies = {
+        " ".join(re.sub(r"<[^>]+>", " ", content).split()) for content in html_pages
+    }
+    assert len(normalized_bodies) == len(html_pages)
 
 
 def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:
