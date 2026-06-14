@@ -912,6 +912,69 @@ function createRuntimeFetchMock(options = {}) {
         ];
         actionHistory = operatorReceipts;
         answer = 'The repo is on main. The working tree is not clean.';
+      } else if (prompt.includes('run validation')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-VAL-1',
+            action_name: 'operator_validation_report',
+            status: 'success',
+            mode: 'read_only',
+            target: '/workspace',
+            receipt_label: 'operator_validation_report OP-VAL-1',
+            read_only: true,
+            started_at: '2026-06-11T00:01:00Z',
+            completed_at: '2026-06-11T00:01:02Z',
+            exit_code: 0,
+            safety: { allowed: true, read_only: true },
+            summary: 'validation passed',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'Validation passed.';
+      } else if (prompt === 'fix it') {
+        operatorReceipts = [
+          {
+            action_id: 'OP-REP-1',
+            action_name: 'operator_repair_report',
+            status: 'failed',
+            mode: 'operator',
+            target: '/workspace',
+            receipt_label: 'operator_repair_report OP-REP-1',
+            read_only: false,
+            started_at: '2026-06-11T00:02:00Z',
+            completed_at: '2026-06-11T00:02:03Z',
+            exit_code: 1,
+            safety: { allowed: true, read_only: false },
+            summary: 'patch required',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'A concrete approved patch is required.';
+      } else if (prompt.includes('apply this patch')) {
+        operatorReceipts = [
+          {
+            action_id: 'OP-PATCH-1',
+            action_name: 'operator_patch_report',
+            status: 'denied',
+            mode: 'operator',
+            target: '/workspace',
+            receipt_label: 'operator_patch_report OP-PATCH-1',
+            read_only: false,
+            started_at: '2026-06-11T00:03:00Z',
+            completed_at: '2026-06-11T00:03:01Z',
+            exit_code: 1,
+            safety: { allowed: false, read_only: false },
+            summary: 'approval required',
+            limitation: '',
+            data_preview: {},
+          },
+        ];
+        actionHistory = operatorReceipts;
+        answer = 'Patch apply denied: repo mutation approval is required.';
       } else if (prompt.includes('containers')) {
         operatorReceipts = [
           {
@@ -1069,6 +1132,76 @@ function createRuntimeFetchMock(options = {}) {
               visible_text: answer,
               context_receipt: contextReceipt,
               operator_receipts: operatorReceipts,
+              operator_result: (() => {
+                if (prompt.includes('check the repo')) {
+                  return {
+                    action_name: 'operator_status_report',
+                    status: 'passed',
+                    changed_files: ['core/main.py', 'public/app.js'],
+                    validation_commands_run: [],
+                    first_failure: '',
+                    safety_notes: ['No git commit or push was performed.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: ['docker-compose.yml', 'docker-compose.local.diff'],
+                  };
+                }
+                if (prompt.includes('run validation')) {
+                  return {
+                    action_name: 'operator_validation_report',
+                    status: 'passed',
+                    changed_files: [],
+                    validation_commands_run: [
+                      'python -m ruff format --check core tests scripts',
+                      'python -m ruff check core tests scripts',
+                    ],
+                    first_failure: '',
+                    safety_notes: ['No git commit or push was performed.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: [],
+                  };
+                }
+                if (prompt === 'fix it') {
+                  return {
+                    action_name: 'operator_repair_report',
+                    status: 'needs_patch',
+                    changed_files: [],
+                    validation_commands_run: ['python -m pytest'],
+                    first_failure: 'python -m pytest',
+                    safety_notes: ['A concrete approved patch is required.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: [],
+                  };
+                }
+                if (prompt.includes('apply this patch')) {
+                  return {
+                    action_name: 'operator_patch_report',
+                    status: 'needs_approval',
+                    changed_files: [],
+                    validation_commands_run: [],
+                    first_failure: '',
+                    safety_notes: ['Repo mutation requires explicit approval.'],
+                    commit_push_state: {
+                      commit_created: false,
+                      push_performed: false,
+                      requires_separate_approval: true,
+                    },
+                    local_only_files_warning: [],
+                  };
+                }
+                return {};
+              })(),
               memory_receipts: memoryReceipts,
               model_use_receipt: {
                 model_tag: profiles[state.activeProfile].chat,
@@ -1841,6 +1974,79 @@ describe('ModelProfileControl', () => {
       (node.textContent || '').includes('repo_status OP-1'),
     );
     expect(details).toBeTruthy();
+  });
+
+  it('renders compact operator result card for check the repo', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Check the repo.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const card = document.querySelector('.operator-result-card');
+    expect(card).toBeTruthy();
+    const text = (card?.textContent || '').toLowerCase();
+    expect(text).toContain('operator result');
+    expect(text).toContain('operator_status_report');
+    expect(text).toContain('passed');
+    expect(text).toContain('changed_files');
+    expect(text).toContain('local_only');
+    expect(text).toContain('commit_push');
+    expect(text).toContain('commit_created=false');
+    expect(text).toContain('push_performed=false');
+  });
+
+  it('run validation shows validation commands summary in operator result card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'run validation';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    expect(cardText).toContain('operator_validation_report');
+    expect(cardText).toContain('validation_commands');
+    expect(cardText).toContain('python -m ruff format --check core tests scripts');
+  });
+
+  it('fix it shows needs_patch and first failure in operator result card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'fix it';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    expect(cardText).toContain('operator_repair_report');
+    expect(cardText).toContain('needs_patch');
+    expect(cardText).toContain('patch');
+    expect(cardText).toContain('first_failure');
+    expect(cardText).toContain('python -m pytest');
+  });
+
+  it('apply this patch without approval shows needs_approval in operator result card', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'apply this patch';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const cardText = (document.querySelector('.operator-result-card')?.textContent || '').toLowerCase();
+    expect(cardText).toContain('operator_patch_report');
+    expect(cardText).toContain('needs_approval');
+    expect(cardText).toContain('approval');
   });
 
   it('renders failed and denied receipt status styles', async () => {
@@ -3835,6 +4041,7 @@ describe('ModelProfileControl', () => {
 
     const bundleCard = document.querySelector('.site-bundle-card');
     expect(bundleCard).toBeTruthy();
+    expect(document.querySelector('.operator-result-card')).toBe(null);
     expect(bundleCard.querySelector('.site-bundle-label')?.textContent).toContain('Site bundle artifact');
     expect(bundleCard.querySelector('.site-bundle-title')?.textContent).toContain("Tony's Tavern");
     const meta = bundleCard.querySelector('.site-bundle-meta')?.textContent || '';
@@ -3929,6 +4136,186 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(document.querySelector('.chat-render-error')).toBeTruthy();
+  });
+
+  it('renders editor and preview panels for explicit products/faq site bundle prompts', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          visible_text: 'Here is a 5-page website artifact for Smoky Joe\'s Vape and CBD.',
+          site_bundle: {
+            artifact_type: 'site_bundle',
+            artifact_id: 'smoky-joes-vape-and-cbd-bundle',
+            title: "Smoky Joe's Vape and CBD",
+            slug: 'smoky-joes-vape-and-cbd',
+            entry: 'index.html',
+            active_file: 'index.html',
+            preview_entrypoint: 'index.html',
+            render_mode: 'code_editor_preview',
+            files: [
+              { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+              { path: 'products.html', language: 'html', content: '<!doctype html><html><body>products</body></html>' },
+              { path: 'about.html', language: 'html', content: '<!doctype html><html><body>about</body></html>' },
+              { path: 'faq.html', language: 'html', content: '<!doctype html><html><body>faq</body></html>' },
+              { path: 'contact.html', language: 'html', content: '<!doctype html><html><body>contact</body></html>' },
+              { path: 'assets/site.css', language: 'css', content: 'body { background: #050805; color: #d9ffe0; }' },
+              { path: 'assets/site.js', language: 'javascript', content: 'console.log("ready");' },
+            ],
+            route_manifest: [
+              { path: 'index.html', label: 'Home', route: '/', is_entry: true },
+              { path: 'products.html', label: 'Products', route: '/products.html', is_entry: false },
+              { path: 'about.html', label: 'About', route: '/about.html', is_entry: false },
+              { path: 'faq.html', label: 'FAQ', route: '/faq.html', is_entry: false },
+              { path: 'contact.html', label: 'Contact', route: '/contact.html', is_entry: false },
+            ],
+          },
+          metadata: {},
+          messages: [
+            {
+              role: 'user',
+              content: 'Build a multi-page website for Smoky Joe\'s Vape and CBD. Include Home, Products, About, FAQ, and Contact pages.',
+              metadata: {},
+            },
+            { role: 'assistant', content: 'Site artifact ready.', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value =
+      'Build a multi-page website for Smoky Joe\'s Vape and CBD. Include Home, Products, About, FAQ, and Contact pages.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const artifacts = [...document.querySelectorAll('.code-artifact-card')];
+    // Site bundle messages must NOT produce individual per-file code artifact cards.
+    expect(artifacts.length).toBe(0);
+
+    // Instead, one unified site-bundle-card should be rendered.
+    const bundleCards = [...document.querySelectorAll('.site-bundle-card')];
+    expect(bundleCards.length).toBeGreaterThan(0);
+    const bundleCard = bundleCards[0];
+
+    // The site bundle card file list must include products.html and faq.html.
+    const fileItems = [...bundleCard.querySelectorAll('.site-bundle-file-item')];
+    const filePaths = fileItems.map((li) => li.textContent.trim().split(' ')[0]);
+    expect(filePaths).toContain('products.html');
+    expect(filePaths).toContain('faq.html');
+    expect(filePaths).not.toContain('services.html');
+    expect(filePaths).not.toContain('gallery.html');
+  });
+
+  it('renders revised artifact content for premium + Specials follow-up prompts', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let messagePostCount = 0;
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        messagePostCount += 1;
+        if (messagePostCount === 1) {
+          return okJson({
+            session_id: 'session-1',
+            current_persona: 'default',
+            metadata: {},
+            messages: [
+              { role: 'user', content: "Build a one-page website for Harry's Hot Dogs.", metadata: {} },
+              {
+                role: 'assistant',
+                content: 'Here is a draft HTML artifact for index.html.',
+                metadata: {
+                  code_artifact: {
+                    type: 'code_artifact',
+                    filename: 'index.html',
+                    language: 'html',
+                    previewable: true,
+                    applied: false,
+                    content:
+                      "<!doctype html><html><body><main><h1>Harry's Hot Dogs</h1><p>Classic street-style hot dogs served fast.</p></main></body></html>",
+                  },
+                },
+              },
+            ],
+          });
+        }
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {},
+          messages: [
+            { role: 'user', content: "Build a one-page website for Harry's Hot Dogs.", metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Here is a draft HTML artifact for index.html.',
+              metadata: {
+                code_artifact: {
+                  type: 'code_artifact',
+                  filename: 'index.html',
+                  language: 'html',
+                  previewable: true,
+                  applied: false,
+                  content:
+                    "<!doctype html><html><body><main><h1>Harry's Hot Dogs</h1><p>Classic street-style hot dogs served fast.</p></main></body></html>",
+                },
+              },
+            },
+            { role: 'user', content: 'Make this site look more premium and add a Specials section.', metadata: {} },
+            {
+              role: 'assistant',
+              content: 'Updated the draft artifact with premium styling and a Specials section.',
+              metadata: {
+                code_artifact: {
+                  type: 'code_artifact',
+                  filename: 'index.html',
+                  language: 'html',
+                  previewable: true,
+                  applied: false,
+                  content:
+                    "<!doctype html><html><body><main><h1 class='premium'>Harry's Hot Dogs</h1><p>Premium presentation.</p><section class='specials'><h2>Specials</h2><ul><li>Classic Dog Combo</li></ul></section></main></body></html>",
+                },
+              },
+            },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = "Build a one-page website for Harry's Hot Dogs.";
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Make this site look more premium and add a Specials section.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const artifacts = [...document.querySelectorAll('.code-artifact-card')];
+    expect(artifacts.length).toBeGreaterThan(1);
+
+    const latest = artifacts[artifacts.length - 1];
+    expect(latest.getAttribute('data-filename')).toBe('index.html');
+    expect((latest.textContent || '').toLowerCase()).toContain('specials');
+    expect((latest.textContent || '').toLowerCase()).toContain('premium');
+
+    const previewButton = [...latest.querySelectorAll('.code-artifact-button')].find((node) =>
+      (node.textContent || '').includes('Preview'),
+    );
+    previewButton?.click();
+    await flushAsync();
+
+    const iframe = latest.querySelector('iframe');
+    expect(iframe?.getAttribute('srcdoc') || '').toContain('Specials');
+    expect(iframe?.getAttribute('srcdoc') || '').toContain('premium');
   });
 
 });
