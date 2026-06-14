@@ -34,6 +34,10 @@ _EXPLICIT_SINGLE_PATTERN = re.compile(
 )
 
 _FOOD_TERMS = (
+    "hot dog",
+    "hotdog",
+    "food cart",
+    "food truck",
     "tavern",
     "bar",
     "pub",
@@ -138,9 +142,11 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
     if business_type.kind in _FOOD_BUSINESS_TYPES or has_legacy_food_term:
         return [
             "index.html",
-            "about.html",
             "menu.html",
-            "events.html",
+            "specials.html",
+            "catering.html",
+            "hours.html",
+            "about.html",
             "contact.html",
             "assets/site.css",
             "assets/site.js",
