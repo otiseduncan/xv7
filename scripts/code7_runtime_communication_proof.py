@@ -174,7 +174,9 @@ def run_proof(base_url: str, api_key: str | None, timeout: float) -> list[ProofS
         raise AssertionError(
             f"focus id {focus_id} missing from context receipt: {_metadata(ask_focus).get('context_receipt')!r}"
         )
-    steps.append(ProofStep("same_session_recall", True, "focus recalled without model fallback"))
+    steps.append(
+        ProofStep("same_session_recall", True, "focus recalled without model fallback")
+    )
 
     new_session = _request_json(
         method="POST",
@@ -201,7 +203,9 @@ def run_proof(base_url: str, api_key: str | None, timeout: float) -> list[ProofS
         raise AssertionError(
             f"persisted focus id {focus_id} missing in fresh session receipt: {_metadata(fresh_recall).get('context_receipt')!r}"
         )
-    steps.append(ProofStep("fresh_session_recall", True, "persisted focus loaded in new session"))
+    steps.append(
+        ProofStep("fresh_session_recall", True, "persisted focus loaded in new session")
+    )
 
     guided = _request_json(
         method="POST",
@@ -227,10 +231,18 @@ def run_proof(base_url: str, api_key: str | None, timeout: float) -> list[ProofS
     if guided_metadata.get("model_used") != "policy_only":
         raise AssertionError(f"guided response was not policy_only: {guided_metadata}")
     if guided_metadata.get("fallback_used") is not False:
-        raise AssertionError(f"guided response fallback flag is wrong: {guided_metadata}")
-    if focus_id not in [str(item) for item in guided_metadata.get("source_record_ids", [])]:
-        raise AssertionError(f"focus id missing from source_record_ids: {guided_metadata}")
-    steps.append(ProofStep("guided_follow_up", True, "active-focus-guided response used"))
+        raise AssertionError(
+            f"guided response fallback flag is wrong: {guided_metadata}"
+        )
+    if focus_id not in [
+        str(item) for item in guided_metadata.get("source_record_ids", [])
+    ]:
+        raise AssertionError(
+            f"focus id missing from source_record_ids: {guided_metadata}"
+        )
+    steps.append(
+        ProofStep("guided_follow_up", True, "active-focus-guided response used")
+    )
 
     query = urlencode({"layer": "active_focus", "include_archived": "false"})
     records = _request_json(
@@ -242,9 +254,18 @@ def run_proof(base_url: str, api_key: str | None, timeout: float) -> list[ProofS
     active_records = records.get("records")
     if not isinstance(active_records, list):
         raise AssertionError(f"runtime brain records response invalid: {records}")
-    if not any(isinstance(item, dict) and item.get("record_id") == focus_id for item in active_records):
-        raise AssertionError(f"focus id {focus_id} missing from active runtime records: {records}")
-    steps.append(ProofStep("runtime_records", True, "active focus visible through runtime brain API"))
+    if not any(
+        isinstance(item, dict) and item.get("record_id") == focus_id
+        for item in active_records
+    ):
+        raise AssertionError(
+            f"focus id {focus_id} missing from active runtime records: {records}"
+        )
+    steps.append(
+        ProofStep(
+            "runtime_records", True, "active focus visible through runtime brain API"
+        )
+    )
 
     return steps
 

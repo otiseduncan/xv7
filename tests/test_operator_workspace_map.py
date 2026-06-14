@@ -42,7 +42,7 @@ def _make_workspace(root: Path) -> None:
     (root / "docs" / "CODE_LANE_INDEX.md").write_text("# CODE\n", encoding="utf-8")
     (root / "README.md").write_text("# XV7\n", encoding="utf-8")
     (root / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
-    (root / "package.json").write_text("{\"scripts\": {}}\n", encoding="utf-8")
+    (root / "package.json").write_text('{"scripts": {}}\n', encoding="utf-8")
 
 
 def test_workspace_map_returns_repo_shape(
@@ -77,9 +77,10 @@ def test_workspace_map_returns_repo_shape(
     assert result.data["detected_stack"]["fastapi"] is True
     assert result.data["detected_stack"]["frontend_static"] is True
     assert result.data["detected_stack"]["docker"] is True
-    assert "python -m pytest tests/ -v --tb=short --asyncio-mode=auto" in result.data[
-        "test_commands"
-    ]
+    assert (
+        "python -m pytest tests/ -v --tb=short --asyncio-mode=auto"
+        in result.data["test_commands"]
+    )
     assert "docs/CODE_LANE_INDEX.md" in result.data["present_key_files"]
 
 

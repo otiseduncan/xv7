@@ -47,18 +47,21 @@ def _print_duplicates(duplicates) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="XV7 memory maintenance operations")
-    parser.add_argument("command", choices=[
-        "list",
-        "list-active",
-        "list-deleted",
-        "find-duplicates",
-        "soft-delete",
-        "restore",
-        "audit",
-        "export-audit",
-        "soft-delete-range",
-        "soft-delete-duplicates",
-    ])
+    parser.add_argument(
+        "command",
+        choices=[
+            "list",
+            "list-active",
+            "list-deleted",
+            "find-duplicates",
+            "soft-delete",
+            "restore",
+            "audit",
+            "export-audit",
+            "soft-delete-range",
+            "soft-delete-duplicates",
+        ],
+    )
     parser.add_argument("--id", dest="memory_id")
     parser.add_argument("--from", dest="range_start")
     parser.add_argument("--to", dest="range_end")
@@ -105,9 +108,7 @@ def main() -> int:
             print(f"Target id: {target.id}")
             print(f"Current status: {target.status}")
             if args.confirm != DELETE_CONFIRM:
-                raise ValueError(
-                    f"soft-delete requires --confirm \"{DELETE_CONFIRM}\""
-                )
+                raise ValueError(f'soft-delete requires --confirm "{DELETE_CONFIRM}"')
             updated = service.soft_delete_by_id(args.memory_id)
             print(f"Soft-deleted: {updated.id} (status={updated.status})")
             return 0
@@ -136,7 +137,7 @@ def main() -> int:
             print("\n".join(targets) if targets else "<none>")
             if args.confirm != DELETE_RANGE_CONFIRM:
                 raise ValueError(
-                    f"soft-delete-range requires --confirm \"{DELETE_RANGE_CONFIRM}\""
+                    f'soft-delete-range requires --confirm "{DELETE_RANGE_CONFIRM}"'
                 )
             updated = service.soft_delete_range(args.range_start, args.range_end)
             print("Soft-deleted ids:")
@@ -150,7 +151,8 @@ def main() -> int:
                 target_ids = [
                     memory_id
                     for memory_id in target_ids
-                    if memory_id not in {
+                    if memory_id
+                    not in {
                         "XV7-MEMORY-0001",
                         "XV7-MEMORY-0002",
                         "XV7-MEMORY-0003",
@@ -162,7 +164,7 @@ def main() -> int:
             if args.confirm != DELETE_DUPLICATES_CONFIRM:
                 raise ValueError(
                     "soft-delete-duplicates requires --confirm "
-                    f"\"{DELETE_DUPLICATES_CONFIRM}\""
+                    f'"{DELETE_DUPLICATES_CONFIRM}"'
                 )
             updated = service.soft_delete_duplicates(include_seeds=args.include_seeds)
             print("Soft-deleted ids:")

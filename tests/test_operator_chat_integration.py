@@ -979,9 +979,9 @@ def test_code_builder_prompt_routes_to_operator_and_does_not_save_learning_recor
     assert "no commit or push occurred" in answer
 
     assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
-    assert assistant_payload.get("policy_provenance", {}).get("brain_answer_source") == (
-        "implementation_task_guard"
-    )
+    assert assistant_payload.get("policy_provenance", {}).get(
+        "brain_answer_source"
+    ) == ("implementation_task_guard")
     assert assistant_payload.get("operator_receipts", []) == []
     assert not assistant_payload.get("memory_receipts")
     assert "learned_record_id" not in assistant_payload
@@ -1022,7 +1022,10 @@ def test_build_task_stage_returns_plan_and_does_not_save_learning_records(
     answer = str(payload.get("answer", "")).lower()
     assert "build plan" in answer
     assert "task summary:" in answer
-    assert "no files were changed. no tests were run. no commit or push occurred." in answer
+    assert (
+        "no files were changed. no tests were run. no commit or push occurred."
+        in answer
+    )
     assert "next valid operator step:" in answer
 
     knowledge_after = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
@@ -1066,12 +1069,12 @@ def test_failed_apply_patch_follow_up_cannot_claim_fake_completion(
     assert "no tests were run" in answer
     assert "no commit or push occurred" in answer
 
-    assistant_payload = (
-        follow_payload.get("metadata", {}).get("last_assistant_payload", {})
+    assistant_payload = follow_payload.get("metadata", {}).get(
+        "last_assistant_payload", {}
     )
-    assert assistant_payload.get("policy_provenance", {}).get("brain_answer_source") == (
-        "operator_follow_up_guard"
-    )
+    assert assistant_payload.get("policy_provenance", {}).get(
+        "brain_answer_source"
+    ) == ("operator_follow_up_guard")
     assert assistant_payload.get("memory_receipts", []) == []
 
 
@@ -1127,7 +1130,9 @@ def test_failed_apply_patch_follow_up_typos_and_shortcuts_still_block_fake_compl
         "implementation/repo mutation task",
         "do not have a pending commit proposal",
     )
-    assert any(phrase in answer for phrase in safe_refusals), f"unexpected answer: {answer!r}"
+    assert any(phrase in answer for phrase in safe_refusals), (
+        f"unexpected answer: {answer!r}"
+    )
     if follow_up_prompt != "commit it":
         assert "no files were changed" in answer
         assert "no tests were run" in answer

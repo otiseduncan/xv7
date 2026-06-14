@@ -21,7 +21,9 @@ class _FailingAgent:
     async def generate_response(
         self, _session_state: SessionState
     ) -> tuple[str, dict[str, str]]:
-        raise AssertionError("Code 7 communication proof should not hit model inference")
+        raise AssertionError(
+            "Code 7 communication proof should not hit model inference"
+        )
 
     async def aclose(self) -> None:
         return None
