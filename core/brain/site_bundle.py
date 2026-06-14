@@ -8,6 +8,10 @@ from typing import Any
 from uuid import uuid4
 
 from core.brain.website_business_type_manager import WebsiteBusinessTypeManager
+from core.brain.website_design_renderer import (
+    page_label as render_page_label,
+    render_site_bundle_files,
+)
 from core.brain.website_page_plan_manager import WebsitePagePlanManager
 
 # ─── Intent detection ──────────────────────────────────────────────────────────
@@ -33,6 +37,7 @@ _EXPLICIT_SINGLE_PATTERN = re.compile(
 
 def is_site_bundle_request(normalized_question: str) -> bool:
     """Return True when the prompt clearly requests a multi-page website bundle."""
+
     if _EXPLICIT_SINGLE_PATTERN.search(normalized_question):
         return False
     if _WEBSITE_ARTIFACT_PATTERN.search(normalized_question):
@@ -66,17 +71,14 @@ _FOOD_BUSINESS_TYPES = {"food_cart", "restaurant"}
 
 def default_pages_for_business(business_name: str, question: str) -> list[str]:
     """Return the default file list for the detected business category."""
+
     requested_pages = extract_requested_page_paths(question)
     if requested_pages:
         pages = [
             "index.html",
             *[page for page in requested_pages if page != "index.html"],
         ]
-        return [
-            *pages,
-            "assets/site.css",
-            "assets/site.js",
-        ]
+        return [*pages, "assets/site.css", "assets/site.js"]
 
     prompt_context = f"{business_name} {question}"
     business_type = WebsiteBusinessTypeManager.infer_business_type(prompt_context)
@@ -106,38 +108,14 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
 
 # ─── Path helpers ─────────────────────────────────────────────────────────────
 
-_NAV_LABELS: dict[str, str] = {
-    "index": "Home",
-    "home": "Home",
-    "about": "About",
-    "products": "Products",
-    "faq": "FAQ",
-    "menu": "Menu",
-    "events": "Events",
-    "contact": "Contact",
-    "services": "Services",
-    "gallery": "Gallery",
-    "specials": "Specials",
-    "catering": "Catering",
-    "locations": "Locations",
-    "pricing": "Pricing",
-    "reviews": "Reviews",
-    "portfolio": "Portfolio",
-    "booking": "Booking",
-    "aftercare": "Aftercare",
-    "rentals": "Rentals",
-    "safety": "Safety",
-    "guided-tours": "Guided Tours",
-}
-
 
 def page_label(path: str) -> str:
-    name = path.split("/")[-1].replace(".html", "").replace("-", " ").replace("_", " ")
-    return _NAV_LABELS.get(name.lower(), name.title())
+    return render_page_label(path)
 
 
 def is_safe_bundle_path(path: str) -> bool:
     """True when path is safe: relative, no traversal, no shell metacharacters."""
+
     if not isinstance(path, str) or not path.strip():
         return False
     p = path.strip().replace("\\", "/")
@@ -152,6 +130,7 @@ def is_safe_bundle_path(path: str) -> bool:
 
 def normalize_page_path(label: str) -> str:
     """Convert 'Our Services' -> 'services.html'."""
+
     _ov: dict[str, str] = {
         "home": "index.html",
         "homepage": "index.html",
@@ -227,6 +206,7 @@ def _page_aliases() -> list[tuple[str, str]]:
 
 def extract_requested_page_paths(question: str) -> list[str]:
     """Extract explicitly requested page names in prompt order."""
+
     if not isinstance(question, str) or not question.strip():
         return []
 
@@ -276,104 +256,15 @@ def build_bundle_files(
     style_hints: dict[str, list[str]],
     question: str,
 ) -> list[dict[str, str]]:
-    """Build deterministic file contents for the entire site bundle."""
-    colors = style_hints.get("colors", [])
-    styles = [str(item).lower() for item in style_hints.get("styles", [])]
-    bg = colors[0] if len(colors) > 0 else "#0a0a0a"
-    accent = colors[1] if len(colors) > 1 else "#f97316"
-    text_c = colors[2] if len(colors) > 2 else "#f5f5f5"
-    body_font = "'Trebuchet MS', Arial, sans-serif"
-    heading_font = body_font
-    if any("blackletter" in item or "gothic" in item for item in styles):
-        body_font = '"Old English Text MT", "UnifrakturMaguntia", Georgia, serif'
-        heading_font = body_font
-    elif any("script" in item or "cursive" in item for item in styles):
-        heading_font = '"Brush Script MT", "Segoe Script", cursive'
-    nav_html = build_nav_html(pages)
-    css_path = next((p for p in pages if p.endswith(".css")), None)
-    js_path = next((p for p in pages if p.endswith(".js")), None)
-    link_tag = f'<link rel="stylesheet" href="{css_path}">' if css_path else ""
-    script_tag = f'<script src="{js_path}" defer></script>' if js_path else ""
+    """Build deterministic, polished file contents for the entire site bundle."""
 
-    def _page(path: str) -> str:
-        lbl = page_label(path)
-        is_home = path in {"index.html", "home.html"}
-        hero = f"<h1>{business_name}</h1>" if is_home else f"<h1>{lbl}</h1>"
-        copy_text = (
-            f"<p>Welcome to {business_name}. Your premier destination for an unforgettable experience.</p>"
-            if is_home
-            else f"<p>{business_name} — {lbl} page.</p>"
-        )
-        return "\n".join(
-            [
-                "<!doctype html>",
-                '<html lang="en">',
-                "<head>",
-                '<meta charset="utf-8" />',
-                '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-                f"<title>{business_name} — {lbl}</title>",
-                link_tag,
-                "</head>",
-                "<body>",
-                nav_html,
-                '<main class="page-content">',
-                hero,
-                copy_text,
-                "</main>",
-                script_tag,
-                "</body>",
-                "</html>",
-            ]
-        )
-
-    css_content = "\n".join(
-        [
-            f"/* {business_name} — shared styles */",
-            ":root {",
-            f"  --bg: {bg};",
-            f"  --accent: {accent};",
-            f"  --text: {text_c};",
-            f"  --body-font: {body_font};",
-            f"  --heading-font: {heading_font};",
-            "}",
-            "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }",
-            "body { background: var(--bg); color: var(--text); font-family: var(--body-font); }",
-            ".site-nav { display: flex; gap: 1.2rem; padding: 1rem 2rem; background: rgba(0,0,0,0.6); flex-wrap: wrap; }",
-            ".site-nav a { color: var(--accent); text-decoration: none; font-weight: 600; "
-            "letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.85rem; }",
-            ".site-nav a:hover { text-decoration: underline; }",
-            ".page-content { max-width: 960px; margin: 3rem auto; padding: 0 1.5rem; }",
-            "h1 { font-size: clamp(2rem, 6vw, 4rem); color: var(--accent); margin-bottom: 1rem; font-family: var(--heading-font); }",
-            "p { line-height: 1.7; opacity: 0.88; }",
-        ]
+    return render_site_bundle_files(
+        business_name=business_name,
+        slug=slug,
+        pages=pages,
+        style_hints=style_hints,
+        question=question,
     )
-
-    js_content = "\n".join(
-        [
-            f"/* {business_name} — site interactivity */",
-            "document.addEventListener('DOMContentLoaded', function () {",
-            "  var cur = window.location.pathname.split('/').pop() || 'index.html';",
-            "  document.querySelectorAll('.site-nav a').forEach(function (a) {",
-            "    if (a.getAttribute('href') === cur || a.getAttribute('href') === '/' + cur) {",
-            "      a.style.textDecoration = 'underline';",
-            "      a.setAttribute('aria-current', 'page');",
-            "    }",
-            "  });",
-            "});",
-        ]
-    )
-
-    files: list[dict[str, str]] = []
-    for path in pages:
-        if path.endswith(".html"):
-            files.append({"path": path, "language": "html", "content": _page(path)})
-        elif path.endswith(".css"):
-            files.append({"path": path, "language": "css", "content": css_content})
-        elif path.endswith(".js"):
-            files.append(
-                {"path": path, "language": "javascript", "content": js_content}
-            )
-    return files
 
 
 # ─── Validation ────────────────────────────────────────────────────────────────
@@ -401,6 +292,16 @@ def validate_bundle(
         if path.endswith(".html") and business_name:
             if business_name.lower() not in content.lower():
                 failures.append(f"business name missing from {path!r}")
+
+    requested_colors = [str(color).strip() for color in style_hints.get("colors", [])]
+    css_content = "\n".join(
+        str(f.get("content", ""))
+        for f in bundle_files
+        if str(f.get("path", "")).endswith(".css")
+    ).lower()
+    for color in requested_colors:
+        if color and color.lower() not in css_content:
+            failures.append(f"requested color missing from css: {color!r}")
     return (len(failures) == 0, failures)
 
 
@@ -416,6 +317,7 @@ def build_patch_proposals(
     diff_fn: Any,
 ) -> list[dict[str, Any]]:
     """Return one patch proposal dict per file in the bundle."""
+
     proposals: list[dict[str, Any]] = []
     for f in bundle_files:
         path = str(f.get("path", ""))
@@ -475,6 +377,7 @@ def apply_proposals(
     resolve_fn: Any,
 ) -> tuple[list[str], list[str]]:
     """Apply each proposal to disk. Returns (written_paths, errors)."""
+
     written: list[str] = []
     errors: list[str] = []
     for proposal in proposals:
