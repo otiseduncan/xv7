@@ -273,7 +273,9 @@ def test_build_task_is_listed_and_requires_operator_mode(
     )
     assert commands.status_code == 200
     listed = commands.json().get("commands", [])
-    build_task = next((item for item in listed if item.get("slash") == "/build-task"), None)
+    build_task = next(
+        (item for item in listed if item.get("slash") == "/build-task"), None
+    )
     assert build_task is not None
     assert build_task.get("mode") == "operator"
     assert build_task.get("enabled") is True
@@ -301,12 +303,6 @@ def test_build_task_accepts_natural_language_and_returns_structured_plan_only(
     client = _setup_client(monkeypatch, tmp_path)
     session_id = _new_session(client)
 
-    files_before = {
-        path.relative_to(tmp_path).as_posix()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    }
-
     payload = _stage(
         client,
         session_id,
@@ -328,7 +324,10 @@ def test_build_task_accepts_natural_language_and_returns_structured_plan_only(
     assert "tests to add/update:" in answer
     assert "validation commands:" in answer
     assert "risk notes:" in answer
-    assert "no files were changed. no tests were run. no commit or push occurred." in answer
+    assert (
+        "no files were changed. no tests were run. no commit or push occurred."
+        in answer
+    )
     assert "next valid operator step:" in answer
     assert (
         "prepare a patch payload" in answer
@@ -447,7 +446,9 @@ def test_build_task_docs_prompt_stays_in_docs_scope(
 
     data_preview = payload["receipt"]["data_preview"]
     assert data_preview.get("planning_scope") == "docs"
-    assert any(path.startswith("docs/") for path in data_preview.get("likely_files", []))
+    assert any(
+        path.startswith("docs/") for path in data_preview.get("likely_files", [])
+    )
     assert "core/operator/actions/test_runner.py" not in data_preview.get(
         "likely_files", []
     )
