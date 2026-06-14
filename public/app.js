@@ -1102,12 +1102,31 @@ class Xv7UI {
         : (responseMetadata.site_bundle && typeof responseMetadata.site_bundle === 'object' ? responseMetadata.site_bundle : null);
       if (siteBundlePayload && siteBundlePayload.artifact_type === 'site_bundle') {
         const bundleText = typeof response.visible_text === 'string' ? response.visible_text : 'Site bundle generated.';
-        const bundleArticle = this.appendMessageCard('assistant', bundleText, null, {}, this.nowIso());
+        const bundleFiles = this.collectSiteBundleFiles(siteBundlePayload);
+        const bundleCodeArtifacts = bundleFiles
+          .filter((file) => file && typeof file === 'object')
+          .map((file) => {
+            const path = String(file.path || '');
+            const language = String(file.language || this.inferLanguageFromFilename(path));
+            return {
+              filename: path,
+              language,
+              content: String(file.content || ''),
+              previewable: path.endsWith('.html'),
+              applied: false,
+            };
+          })
+          .filter((artifact) => artifact.filename && artifact.content);
+        const bundleMeta = {
+          site_bundle: siteBundlePayload,
+          code_artifacts: bundleCodeArtifacts,
+        };
+        const bundleArticle = this.appendMessageCard('assistant', bundleText, null, bundleMeta, this.nowIso());
         if (bundleArticle) {
           try {
             this.appendSiteBundleCard(bundleArticle, siteBundlePayload);
             if (typeof siteBundlePayload === 'object') {
-              this.latestAssistantMeta = { site_bundle: siteBundlePayload };
+              this.latestAssistantMeta = bundleMeta;
             }
           } catch (bundleError) {
             this.appendRenderErrorNotice(
@@ -1460,7 +1479,17 @@ class Xv7UI {
     if (role === 'assistant') {
       try {
         copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
-        this.appendCodeArtifacts(article, messageMetadata);
+        this.appendOperatorResultCard(article, messageMetadata);
+        // Site bundle payloads use appendSiteBundleCard (called by the caller after this
+        // returns) — skip per-file card rendering to prevent duplicate individual cards.
+        const isSiteBundleMessage = (() => {
+          const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+          const sb = meta.site_bundle;
+          return sb && typeof sb === 'object' && sb.artifact_type === 'site_bundle';
+        })();
+        if (!isSiteBundleMessage) {
+          this.appendCodeArtifacts(article, messageMetadata);
+        }
         this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
         this.appendWhyThisAnswerDrawer(article, messageMetadata);
         if (messageMetadata && typeof messageMetadata === 'object') {
@@ -1530,61 +1559,66 @@ class Xv7UI {
     article.append(notice);
   }
 
-    appendSiteBundleCard(article, bundlePayload) {
-      const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
-      const title = String(bundle.title || 'Site Bundle');
-      const slug = String(bundle.slug || '');
-      const entry = String(bundle.entry || 'index.html');
-      const filesRaw = (bundle.site_bundle && Array.isArray(bundle.site_bundle.files))
-        ? bundle.site_bundle.files
-        : [];
-      const htmlPages = filesRaw.filter((f) => f && String(f.path || '').endsWith('.html'));
-      const allFiles = filesRaw;
+  collectSiteBundleFiles(bundlePayload) {
+    const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
+    if (Array.isArray(bundle.files)) return bundle.files;
+    if (bundle.site_bundle && Array.isArray(bundle.site_bundle.files)) return bundle.site_bundle.files;
+    return [];
+  }
 
-      const card = document.createElement('section');
-      card.className = 'site-bundle-card';
-      card.dataset.slug = slug;
+  appendSiteBundleCard(article, bundlePayload) {
+    const bundle = bundlePayload && typeof bundlePayload === 'object' ? bundlePayload : {};
+    const title = String(bundle.title || 'Site Bundle');
+    const slug = String(bundle.slug || '');
+    const entry = String(bundle.entry || 'index.html');
+    const activeFile = String(bundle.active_file || entry || 'index.html');
+    const previewEntrypoint = String(bundle.preview_entrypoint || entry || 'index.html');
+    const allFiles = this.collectSiteBundleFiles(bundle);
 
-      const header = document.createElement('div');
-      header.className = 'site-bundle-header';
+    const card = document.createElement('section');
+    card.className = 'site-bundle-card';
+    card.dataset.slug = slug;
 
-      const titleEl = document.createElement('p');
-      titleEl.className = 'site-bundle-title';
-      titleEl.textContent = title;
+    const header = document.createElement('div');
+    header.className = 'site-bundle-header';
 
-      const label = document.createElement('span');
-      label.className = 'site-bundle-label';
-      label.textContent = 'Site bundle artifact';
+    const titleEl = document.createElement('p');
+    titleEl.className = 'site-bundle-title';
+    titleEl.textContent = title;
 
-      const meta = document.createElement('p');
-      meta.className = 'site-bundle-meta';
-      meta.textContent = `${allFiles.length} file${allFiles.length !== 1 ? 's' : ''} · entry: ${entry} · slug: ${slug || '(none)'}`;
+    const label = document.createElement('span');
+    label.className = 'site-bundle-label';
+    label.textContent = 'Site bundle artifact';
 
-      header.append(titleEl, label, meta);
+    const meta = document.createElement('p');
+    meta.className = 'site-bundle-meta';
+    meta.textContent = `${allFiles.length} file${allFiles.length !== 1 ? 's' : ''} · entry: ${entry} · active: ${activeFile} · preview: ${previewEntrypoint} · slug: ${slug || '(none)'}`;
 
-      const fileList = document.createElement('ul');
-      fileList.className = 'site-bundle-file-list';
-      allFiles.forEach((f) => {
-        if (!f || typeof f !== 'object') return;
-        const path = String(f.path || '');
-        const lang = String(f.language || '');
-        const item = document.createElement('li');
-        item.className = 'site-bundle-file-item';
-        item.textContent = path + (lang ? ` [${lang}]` : '');
-        fileList.append(item);
-      });
+    header.append(titleEl, label, meta);
 
-      const notice = document.createElement('p');
-      notice.className = 'site-bundle-notice';
-      notice.textContent = `This artifact contains ${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}. Use "generate a patch for this site" to prepare them for writing.`;
+    const fileList = document.createElement('ul');
+    fileList.className = 'site-bundle-file-list';
+    allFiles.forEach((f) => {
+      if (!f || typeof f !== 'object') return;
+      const path = String(f.path || '');
+      const lang = String(f.language || '');
+      const item = document.createElement('li');
+      item.className = 'site-bundle-file-item';
+      item.textContent = path + (lang ? ` [${lang}]` : '');
+      fileList.append(item);
+    });
 
-      card.append(header, fileList, notice);
-      article.append(card);
+    const notice = document.createElement('p');
+    notice.className = 'site-bundle-notice';
+    notice.textContent = `This artifact contains ${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}. Use "generate a patch for this site" to prepare them for writing.`;
 
-      if (typeof article.scrollIntoView === 'function') {
-        article.scrollIntoView({ block: 'start', inline: 'nearest' });
-      }
+    card.append(header, fileList, notice);
+    article.append(card);
+
+    if (typeof article.scrollIntoView === 'function') {
+      article.scrollIntoView({ block: 'start', inline: 'nearest' });
     }
+  }
 
   appendCodeArtifacts(article, messageMetadata) {
     const artifacts = this.collectCodeArtifacts(messageMetadata);
@@ -2320,6 +2354,99 @@ class Xv7UI {
     }
 
     return compactReceipts;
+  }
+
+  resolveOperatorResult(meta) {
+    if (!meta || typeof meta !== 'object') return null;
+    if (meta.operator_result && typeof meta.operator_result === 'object') {
+      return meta.operator_result;
+    }
+    const receipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts : [];
+    for (const receipt of receipts) {
+      if (receipt && typeof receipt === 'object' && receipt.operator_result && typeof receipt.operator_result === 'object') {
+        return receipt.operator_result;
+      }
+    }
+    return null;
+  }
+
+  summarizeOperatorList(value, max = 3) {
+    const items = Array.isArray(value)
+      ? value.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (!items.length) return 'none';
+    if (items.length <= max) return items.join(', ');
+    return `${items.slice(0, max).join(', ')} (+${items.length - max} more)`;
+  }
+
+  appendOperatorResultCard(article, messageMetadata) {
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const result = this.resolveOperatorResult(meta);
+    if (!result || typeof result !== 'object') return;
+
+    const actionName = String(result.action_name || '').trim() || 'operator_action';
+    const status = String(result.status || '').trim() || 'unknown';
+    const changedFiles = Array.isArray(result.changed_files) ? result.changed_files : [];
+    const validationCommands = Array.isArray(result.validation_commands_run) ? result.validation_commands_run : [];
+    const firstFailure = String(result.first_failure || '').trim();
+    const safetyNotes = Array.isArray(result.safety_notes) ? result.safety_notes : [];
+    const localOnlyWarning = Array.isArray(result.local_only_files_warning) ? result.local_only_files_warning : [];
+    const commitPushState = result.commit_push_state && typeof result.commit_push_state === 'object'
+      ? result.commit_push_state
+      : {};
+
+    const commitCreated = commitPushState.commit_created === true;
+    const pushPerformed = commitPushState.push_performed === true;
+    const separateApproval = commitPushState.requires_separate_approval === true;
+
+    const card = document.createElement('section');
+    card.className = 'operator-result-card';
+
+    const header = document.createElement('div');
+    header.className = 'operator-result-header';
+
+    const title = document.createElement('p');
+    title.className = 'operator-result-title';
+    title.textContent = 'Operator result';
+
+    const identity = document.createElement('p');
+    identity.className = 'operator-result-identity';
+    identity.textContent = `${actionName} • ${status}`;
+
+    header.append(title, identity);
+    card.append(header);
+
+    const body = document.createElement('div');
+    body.className = 'operator-result-grid';
+
+    this.appendReceiptField(body, 'changed_files', this.summarizeOperatorList(changedFiles, 4));
+    this.appendReceiptField(body, 'validation_commands', this.summarizeOperatorList(validationCommands, 2));
+
+    if (firstFailure) {
+      this.appendReceiptField(body, 'first_failure', firstFailure);
+    }
+
+    if (status === 'needs_approval') {
+      this.appendReceiptField(body, 'approval', 'required');
+    } else if (status === 'needs_patch') {
+      this.appendReceiptField(body, 'patch', 'required');
+    } else if (status === 'blocked') {
+      this.appendReceiptField(body, 'blocked', 'true');
+    }
+
+    if (safetyNotes.length) {
+      this.appendReceiptField(body, 'safety', this.summarizeOperatorList(safetyNotes, 2));
+    }
+
+    if (localOnlyWarning.length) {
+      this.appendReceiptField(body, 'local_only', this.summarizeOperatorList(localOnlyWarning, 2));
+    }
+
+    const commitState = `commit_created=${commitCreated ? 'true' : 'false'}; push_performed=${pushPerformed ? 'true' : 'false'}${separateApproval ? '; separate_approval=true' : ''}`;
+    this.appendReceiptField(body, 'commit_push', commitState);
+
+    card.append(body);
+    article.append(card);
   }
 
   appendWhyThisAnswerDrawer(article, messageMetadata) {

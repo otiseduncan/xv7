@@ -1086,6 +1086,43 @@ details[open] > .diag-section-title::before {
   background: rgba(5, 8, 18, 0.78);
 }
 
+.operator-result-card {
+  margin-top: 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: rgba(5, 8, 18, 0.78);
+  padding: 0.5rem 0.6rem;
+}
+
+.operator-result-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin-bottom: 0.4rem;
+}
+
+.operator-result-title {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--color-text-accent);
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.operator-result-identity {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.operator-result-grid {
+  display: grid;
+  gap: 0.28rem;
+}
+
 .why-answer-drawer {
   margin-top: 0.55rem;
   border: 1px solid var(--color-border);
