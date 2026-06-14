@@ -15,6 +15,7 @@ EXPECTED_ACTIONS = {
     "operator_status_report",
     "operator_validation_report",
     "operator_patch_report",
+    "operator_commit_report",
     "operator_repair_report",
     "workspace_map",
     "patch_plan",
@@ -56,6 +57,7 @@ def test_operator_registry_contains_expected_actions() -> None:
     operator_actions = {
         "apply_approved_patch",
         "operator_patch_report",
+        "operator_commit_report",
         "operator_repair_report",
     }
     assert all(

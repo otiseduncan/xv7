@@ -15,7 +15,11 @@ from core.operator.actions.host_scan import (
     scan_vscode,
 )
 from core.operator.actions.memory import memory_audit
-from core.operator.actions.repo import repo_recent_commits, repo_status
+from core.operator.actions.repo import (
+    operator_commit_report,
+    repo_recent_commits,
+    repo_status,
+)
 from core.operator.actions.runtime import (
     docker_compose_ps,
     logs_summary,
@@ -31,6 +35,7 @@ __all__ = [
     "apply_approved_patch",
     "diff_report",
     "operator_patch_report",
+    "operator_commit_report",
     "operator_repair_report",
     "patch_plan",
     "test_runner",

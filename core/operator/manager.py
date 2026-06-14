@@ -1430,7 +1430,7 @@ class OperatorManager:
         return any(token in normalized for token in NON_MUTATION_WRITING_PATTERNS)
 
     @staticmethod
-    def _is_commit_proposal_or_approval_request(normalized: str) -> bool:
+    def _is_commit_proposal_request(normalized: str) -> bool:
         return any(
             token in normalized
             for token in (
@@ -1445,15 +1445,81 @@ class OperatorManager:
                 "what would the commit be",
                 "what should i commit",
                 "commit it",
+            )
+        )
+
+    @staticmethod
+    def _is_commit_push_operator_request(normalized: str) -> bool:
+        return any(
+            token in normalized
+            for token in (
+                "commit the approved changes",
+                "commit these changes",
                 "commit the proposal",
                 "approve commit",
                 "confirm commit",
                 "make the commit",
                 "create the commit",
                 "go ahead and commit",
-                "commit these changes",
+                "push the branch",
+                "push branch",
+                "git push",
+                "commit and push",
             )
         )
+
+    def _natural_commit_payload(self, normalized: str) -> str:
+        commit_requested = any(
+            token in normalized
+            for token in (
+                "commit",
+                "commit it",
+                "commit these changes",
+                "commit the approved changes",
+                "approve commit",
+                "confirm commit",
+                "make the commit",
+                "create the commit",
+                "go ahead and commit",
+            )
+        )
+        push_requested = any(
+            token in normalized
+            for token in (
+                "push",
+                "push the branch",
+                "git push",
+                "commit and push",
+            )
+        )
+        explicit_commit_approval = any(
+            token in normalized
+            for token in (
+                "approved",
+                "approve commit",
+                "confirm commit",
+                "commit these changes",
+                "go ahead and commit",
+            )
+        )
+        explicit_push_approval = any(
+            token in normalized
+            for token in (
+                "approved to push",
+                "approve push",
+                "confirm push",
+                "go ahead and push",
+            )
+        )
+
+        mode = "apply" if (commit_requested or push_requested) else "preview"
+        payload: dict[str, Any] = {
+            "mode": mode,
+            "push": push_requested,
+            "approval": {"approved": explicit_commit_approval},
+            "push_approval": {"approved": explicit_push_approval},
+        }
+        return json.dumps(payload)
 
     def _match_action(
         self, question: str, normalized: str
@@ -1471,6 +1537,8 @@ class OperatorManager:
             )
         if self._is_natural_validation_request(normalized):
             return "operator_validation_report", json.dumps({"profile": "python-core"})
+        if self._is_commit_push_operator_request(normalized):
+            return "operator_commit_report", self._natural_commit_payload(normalized)
         if normalized in {
             "check the repo.",
             "check the repo",
@@ -1865,6 +1933,40 @@ class OperatorManager:
                 f"Patch apply completed for {changed_count} changed file(s). "
                 "No commit or push occurred."
             )
+        if action_name == "operator_commit_report":
+            candidate_files = result.data.get("candidate_files", [])
+            committed_files = result.data.get("committed_files", [])
+            skipped_files = result.data.get("skipped_files", [])
+            commit_message = str(result.data.get("commit_message") or "").strip()
+            commit_sha = str(result.data.get("commit_sha") or "").strip()
+            pushed = bool(result.data.get("pushed", False))
+            mode = str(result.data.get("mode") or "preview")
+            if result.status == "denied" and result.safety.requires_approval:
+                return (
+                    "Commit/push request requires explicit approval before mutation. "
+                    "No merge was performed."
+                )
+            if result.status == "denied":
+                return (
+                    "Commit/push request was blocked by safety policy. "
+                    f"Safe detail: {result.stderr_summary or 'no detail available.'}"
+                )
+            if mode == "preview" and result.status == "success":
+                return (
+                    f"Commit/push preview prepared with {len(candidate_files)} candidate file(s), "
+                    f"{len(skipped_files)} skipped file(s), and commit message '{commit_message}'. "
+                    "Approval is required before commit or push."
+                )
+            if result.status == "success":
+                return (
+                    f"Commit workflow completed for {len(committed_files)} file(s); "
+                    f"commit_sha={commit_sha or 'n/a'}; pushed={str(pushed).lower()}. "
+                    "No merge was performed."
+                )
+            return (
+                "Commit/push workflow failed. "
+                f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
+            )
         if action_name == "operator_repair_report":
             if result.status == "denied":
                 return (
@@ -2056,8 +2158,22 @@ class OperatorManager:
         if any(
             token in normalized for token in MUTATION_PATTERNS
         ) and not self._is_non_mutation_writing_request(normalized):
-            if self._is_commit_proposal_or_approval_request(normalized):
+            if self._is_commit_proposal_request(normalized):
                 return None
+            if self._is_commit_push_operator_request(normalized):
+                action_name = "operator_commit_report"
+                commit_target = self._natural_commit_payload(normalized)
+                result = run_action(
+                    action_name,
+                    action_id=self._next_action_id(),
+                    repo_root=self.repo_root,
+                    target=commit_target,
+                )
+                return OperatorExecution(
+                    result=result,
+                    answer=self._build_answer(action_name, result),
+                    record_history=True,
+                )
             denied = self._denied_result(
                 question,
                 "Mutation requires Operator Mode plus a staged slash command confirmation flow.",

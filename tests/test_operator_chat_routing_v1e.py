@@ -307,3 +307,92 @@ def test_website_prompt_does_not_route_to_operator_lane(tmp_path: Path) -> None:
     )
 
     assert handled is None
+
+
+def test_commit_phrases_route_to_operator_commit_report(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="denied",
+            data={
+                "mode": "apply",
+                "candidate_files": ["core/main.py"],
+                "committed_files": [],
+                "skipped_files": ["docker-compose.yml"],
+                "commit_sha": "",
+                "pushed": False,
+            },
+            stderr="Commit approval is required before mutation.",
+            mutates_files=True,
+            requires_approval=True,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "commit these changes"
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_commit_report"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["mode"] == "apply"
+    assert payload["approval"]["approved"] is True
+
+
+def test_push_phrase_routes_to_operator_commit_report_with_separate_push_approval(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="denied",
+            data={
+                "mode": "apply",
+                "candidate_files": ["core/main.py"],
+                "committed_files": [],
+                "skipped_files": [],
+                "commit_sha": "",
+                "pushed": False,
+            },
+            stderr="Push approval is required before push.",
+            mutates_files=True,
+            requires_approval=True,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat("push the branch")
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_commit_report"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["mode"] == "apply"
+    assert payload["push"] is True
+    assert payload["push_approval"]["approved"] is False

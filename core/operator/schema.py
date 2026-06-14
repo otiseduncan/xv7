@@ -61,12 +61,22 @@ class OperatorActionResult(BaseModel):
         validation_commands = self._validation_commands(data)
         first_failure = self._first_failure(data)
         local_only_files = self._local_only_files(data)
+        candidate_files = self._string_list(data.get("candidate_files"))
+        committed_files = self._string_list(data.get("committed_files"))
+        skipped_files = self._string_list(data.get("skipped_files"))
+        commit_sha = str(data.get("commit_sha") or "")
+        pushed = bool(data.get("pushed", False))
         safety_notes = self._safety_notes(data, local_only_files)
         return {
             "action_name": self.action_name,
             "status": status,
             "raw_status": self.status,
             "changed_files": changed_files,
+            "candidate_files": candidate_files,
+            "committed_files": committed_files,
+            "skipped_files": skipped_files,
+            "commit_sha": commit_sha,
+            "pushed": pushed,
             "validation_commands_run": validation_commands,
             "first_failure": first_failure,
             "safety_notes": safety_notes,

@@ -338,3 +338,56 @@ def test_website_prompt_api_stays_out_of_operator_lane(
     assert assistant_payload.get("operator_result") == {}
     site_bundle = assistant_payload.get("site_bundle", {})
     assert site_bundle.get("artifact_type") == "site_bundle"
+
+
+def test_commit_request_api_returns_operator_commit_result_shape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "operator_commit_report"
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="denied",
+            stderr="Commit approval is required before mutation.",
+            data={
+                "mode": "apply",
+                "candidate_files": ["core/main.py"],
+                "committed_files": [],
+                "skipped_files": ["docker-compose.yml", ".env"],
+                "commit_sha": "",
+                "pushed": False,
+                "local_only_files": ["docker-compose.yml", "docker-compose.local.diff"],
+            },
+            read_only=False,
+            requires_approval=True,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "commit these changes"},
+    )
+
+    assert response.status_code == 200
+    result = _operator_result(response.json())
+    assert result["action_name"] == "operator_commit_report"
+    assert result["status"] == "needs_approval"
+    assert result["candidate_files"] == ["core/main.py"]
+    assert result["committed_files"] == []
+    assert "docker-compose.yml" in result["skipped_files"]
+    assert result["commit_sha"] == ""
+    assert result["pushed"] is False
+    assert "docker-compose.yml" in result["local_only_files_warning"]
