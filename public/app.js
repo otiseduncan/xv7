@@ -1615,22 +1615,6 @@ class Xv7UI {
       }
     }
 
-    if (reasoning && reasoning.trim()) {
-      const details = document.createElement('details');
-      details.className = 'mt-3 overflow-hidden rounded-lg border border-slate-700 bg-slate-950/80';
-
-      const summary = document.createElement('summary');
-      summary.className = 'cursor-pointer px-3 py-2 text-xs font-semibold tracking-wide text-slate-200';
-      summary.textContent = '🧠 Cognitive Reasoning History';
-
-      const reasoningBody = document.createElement('pre');
-      reasoningBody.className = 'max-h-72 overflow-auto border-t border-slate-700 px-3 py-3 font-mono text-xs leading-5 text-slate-300';
-      reasoningBody.textContent = reasoning.trim();
-
-      details.append(summary, reasoningBody);
-      article.append(details);
-    }
-
     if (replaceArticle && replaceArticle.parentElement === this.els.chatTimeline) {
       replaceArticle.replaceWith(article);
       if (this.pendingAssistantArticle === replaceArticle) {
@@ -3067,6 +3051,7 @@ class Xv7UI {
     body.className = 'response-details-body';
 
     let hasAnySection = false;
+    hasAnySection = this.appendSafeTraceSummarySection(body, messageMetadata) || hasAnySection;
     hasAnySection = this.appendOperatorReceiptsSection(body, messageMetadata) || hasAnySection;
     hasAnySection = this.appendOperatorResultSection(body, messageMetadata) || hasAnySection;
     hasAnySection = this.appendWhyThisAnswerSection(body, messageMetadata) || hasAnySection;
@@ -3076,6 +3061,167 @@ class Xv7UI {
     details.append(summary, body);
     this.prepareResponseRevealSection(details, 'details');
     article.append(details);
+  }
+
+  appendSafeTraceSummarySection(container, messageMetadata) {
+    const trace = this.getSafeTraceSummary(messageMetadata);
+    if (!trace.length) return false;
+
+    const section = this.createResponseDetailsSection('Trace summary');
+    const body = document.createElement('div');
+    body.className = 'receipt-detail-grid response-details-grid safe-trace-grid';
+
+    trace.forEach(([label, value]) => {
+      this.appendReceiptField(body, label, value);
+    });
+
+    section.append(body);
+    container.append(section);
+    return true;
+  }
+
+  getSafeTraceSummary(messageMetadata) {
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const result = this.getMessageOperatorResult(meta);
+    const receipts = Array.isArray(meta.operator_receipts)
+      ? meta.operator_receipts.filter((receipt) => receipt && typeof receipt === 'object')
+      : [];
+    const latestReceipt = receipts.length ? receipts[receipts.length - 1] : {};
+    const policy = meta.policy_provenance && typeof meta.policy_provenance === 'object' ? meta.policy_provenance : {};
+    const contextReceipt = meta.context_receipt && typeof meta.context_receipt === 'object' ? meta.context_receipt : {};
+
+    const actionName = this.safeOperatorActionName(
+      result?.action_name || latestReceipt.action_name || meta.operator_action || '',
+    );
+    const status = this.safeTraceText(
+      result?.status || latestReceipt.status || meta.status || policy.status || '',
+    );
+    const sourceLayers = this.safeTraceSourceLayers(meta, contextReceipt);
+    const artifactType = this.safeTraceArtifactType(meta, policy);
+    const safetyState = this.safeTraceSafetyState(result, latestReceipt, meta);
+    const validationSummary = this.safeTraceValidationSummary(result, meta, policy);
+    const responseType = this.safeTraceResponseType(meta, policy, {
+      actionName,
+      artifactType,
+      validationSummary,
+    });
+
+    const rows = [
+      ['response type', responseType],
+      ['action taken', actionName ? this.operatorActionDisplayLabel(actionName) : ''],
+      ['status', status],
+      ['source layers', sourceLayers],
+      ['artifact type', artifactType],
+      ['safety/approval', safetyState],
+      ['validation summary', validationSummary],
+    ];
+
+    const meaningfulTraceSignals = [actionName, status, sourceLayers, safetyState, validationSummary]
+      .some((value) => this.safeTraceText(value));
+    if (!meaningfulTraceSignals) return [];
+
+    return rows
+      .map(([label, value]) => [label, this.safeTraceText(value)])
+      .filter(([, value]) => value);
+  }
+
+  safeTraceResponseType(meta, policy, hints = {}) {
+    const explicit = this.safeTraceText(policy.response_type || meta.response_type || policy.response_mode || meta.response_mode || '');
+    if (explicit) return explicit;
+    if (hints.actionName) return 'operator';
+    if (hints.artifactType) return 'artifact';
+    if (hints.validationSummary) return 'validation';
+    return '';
+  }
+
+  safeTraceSourceLayers(meta, contextReceipt) {
+    const contextEntries = Array.isArray(contextReceipt.context_receipts) ? contextReceipt.context_receipts : [];
+    const layers = contextEntries
+      .map((entry) => this.contextLayerChipLabel(entry?.layer || entry?.receipt_label || ''))
+      .filter((label) => label && label !== 'Context');
+
+    if (meta.context_includes_focus === true && !layers.includes('Focus')) layers.push('Focus');
+    return [...new Set(layers)].join(', ');
+  }
+
+  safeTraceArtifactType(meta, policy) {
+    const siteBundle = this.getMessageSiteBundle(meta);
+    if (siteBundle) return 'site bundle';
+    const patchProposal = this.collectArtifactPatchProposal(meta);
+    if (patchProposal) return 'artifact patch';
+    const artifacts = this.collectCodeArtifacts(meta);
+    if (artifacts.length) {
+      const first = artifacts[0] || {};
+      return this.safeTraceText(first.type || first.artifact_type || first.language || 'code artifact');
+    }
+    return this.safeTraceText(policy.artifact_generation || meta.artifact_type || '');
+  }
+
+  safeTraceSafetyState(result, receipt, meta) {
+    const commitPushState = result?.commit_push_state && typeof result.commit_push_state === 'object'
+      ? result.commit_push_state
+      : {};
+    const safety = receipt?.safety && typeof receipt.safety === 'object' ? receipt.safety : {};
+
+    if (commitPushState.requires_separate_approval === true || result?.status === 'needs_approval' || meta.requires_confirmation === true) {
+      return 'approval required';
+    }
+    if (safety.allowed === false) return 'blocked';
+    if (safety.read_only === true || result?.read_only === true || receipt?.read_only === true) return 'read-only';
+    if (safety.allowed === true) return 'approved';
+    return '';
+  }
+
+  safeTraceValidationSummary(result, meta, policy) {
+    const validationSummary = result?.validation_summary && typeof result.validation_summary === 'object'
+      ? result.validation_summary
+      : {};
+    const patchProposal = this.collectArtifactPatchProposal(meta);
+    const validationStatus = this.safeTraceText(
+      validationSummary.status
+        || validationSummary.result
+        || patchProposal?.validation?.status
+        || policy.validation
+        || policy.artifact_validation
+        || '',
+    );
+    const passed = validationSummary.passed ?? validationSummary.pass_count ?? validationSummary.passed_count;
+    const failed = validationSummary.failed ?? validationSummary.fail_count ?? validationSummary.failed_count;
+    if (validationStatus && (passed !== undefined || failed !== undefined)) {
+      return `${validationStatus}; pass=${passed ?? 0}; fail=${failed ?? 0}`;
+    }
+    if (validationStatus) return validationStatus;
+    const commands = Array.isArray(result?.validation_commands_run) ? result.validation_commands_run.filter(Boolean) : [];
+    if (commands.length) return `${commands.length} validation command${commands.length === 1 ? '' : 's'} reported`;
+    return '';
+  }
+
+  safeOperatorActionName(value) {
+    const text = String(value || '').trim();
+    const lowered = text.toLowerCase();
+    if (!text || lowered === 'unknown' || lowered === 'operator_action' || lowered === 'operator_action unknown') return '';
+    return text;
+  }
+
+  operatorActionDisplayLabel(actionName) {
+    const labels = {
+      repo_status: 'Repo status',
+      operator_status_report: 'Check the repo',
+      operator_validation_report: 'Run validation',
+      operator_commit_report: 'Commit and push',
+      operator_repair_report: 'Repair check',
+      operator_patch_report: 'Patch approval check',
+    };
+    return labels[actionName] || actionName.replace(/_/g, ' ');
+  }
+
+  safeTraceText(value) {
+    if (!this.hasMeaningfulValue(value, { allowFalse: true })) return '';
+    const text = this.formatMeaningfulValue(value, { allowFalse: true });
+    if (!text) return '';
+    const lowered = text.trim().toLowerCase();
+    if (lowered === 'unknown' || lowered === 'operator_action unknown' || lowered === 'operator_action') return '';
+    return text.trim();
   }
 
   createResponseDetailsSection(title) {
@@ -3163,8 +3309,8 @@ class Xv7UI {
       let hasRows = false;
       hasRows = this.appendMeaningfulReceiptField(grid, 'receipt', receipt.receipt_label || `operator receipt ${index + 1}`) || hasRows;
       hasRows = this.appendMeaningfulReceiptField(grid, 'action_id', receipt.action_id) || hasRows;
-      hasRows = this.appendMeaningfulReceiptField(grid, 'action_name', receipt.action_name) || hasRows;
-      hasRows = this.appendMeaningfulReceiptField(grid, 'status', receipt.status) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'action_name', this.safeOperatorActionName(receipt.action_name)) || hasRows;
+      hasRows = this.appendMeaningfulReceiptField(grid, 'status', this.safeTraceText(receipt.status)) || hasRows;
       hasRows = this.appendMeaningfulReceiptField(grid, 'read_only', receipt.read_only, { allowFalse: true }) || hasRows;
       hasRows = this.appendMeaningfulReceiptField(grid, 'target', receipt.target) || hasRows;
       hasRows = this.appendMeaningfulReceiptField(grid, 'summary', receipt.summary) || hasRows;
