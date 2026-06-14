@@ -13,6 +13,7 @@ EXPECTED_ACTIONS = {
     "repo_status",
     "repo_recent_commits",
     "operator_status_report",
+    "operator_validation_report",
     "workspace_map",
     "patch_plan",
     "apply_approved_patch",

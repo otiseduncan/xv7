@@ -31,6 +31,7 @@ from core.operator.actions.runtime import (
 from core.operator.actions.status_report import operator_status_report
 from core.operator.actions.patch_plan import patch_plan
 from core.operator.actions.test_runner import test_runner
+from core.operator.actions.validation_report import operator_validation_report
 from core.operator.actions.workspace import workspace_map
 from core.operator.schema import OperatorActionResult
 
@@ -50,6 +51,9 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         ),
         "operator_status_report": OperatorActionSpec(
             "operator_status_report", "read_only", operator_status_report
+        ),
+        "operator_validation_report": OperatorActionSpec(
+            "operator_validation_report", "read_only", operator_validation_report
         ),
         "workspace_map": OperatorActionSpec(
             "workspace_map", "read_only", workspace_map
@@ -118,6 +122,18 @@ def _test_runner_payload(target: str | None) -> dict:
     return payload
 
 
+def _validation_report_payload(target: str | None) -> dict:
+    if not target:
+        return {"profile": "python-core"}
+    try:
+        payload = json.loads(target)
+    except json.JSONDecodeError:
+        return {"profile": target}
+    if not isinstance(payload, dict):
+        raise ValueError("operator_validation_report target JSON must be an object")
+    return payload
+
+
 def run_action(
     action_name: str,
     *,
@@ -148,5 +164,22 @@ def run_action(
             preset=str(payload.get("preset", "ci_core")),
             test_target=payload.get("test_target"),
             timeout_seconds=int(payload.get("timeout_seconds", 120)),
+        )
+    if action_name == "operator_validation_report":
+        payload = _validation_report_payload(target)
+        commands = payload.get("commands")
+        if commands is not None and not isinstance(commands, list):
+            raise ValueError("operator_validation_report commands must be a list")
+        return spec.handler(
+            action_id=action_id,
+            repo_root=repo_root,
+            profile=str(payload.get("profile", "python-core")),
+            commands=[str(command) for command in commands]
+            if commands is not None
+            else None,
+            include_docker_if_modified=bool(
+                payload.get("include_docker_if_modified", True)
+            ),
+            timeout_seconds=int(payload.get("timeout_seconds", 300)),
         )
     return spec.handler(action_id=action_id, repo_root=repo_root)
