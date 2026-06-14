@@ -43,15 +43,15 @@ describe('runtime status UI helpers', () => {
   it('classifies known prompts without exposing hidden reasoning', () => {
     expect(classifyPromptRuntime('check the repo')).toEqual({
       phase: 'running',
-      label: 'Checking repo',
+      label: 'Checking repository...',
     });
     expect(classifyPromptRuntime('run validation')).toEqual({
       phase: 'running',
-      label: 'Running validation',
+      label: 'Running validation...',
     });
     expect(classifyPromptRuntime('commit and push')).toEqual({
       phase: 'needs_approval',
-      label: 'Preparing commit/push',
+      label: 'Checking commit/push approval...',
     });
     expect(classifyPromptRuntime('Build me a website for a diner.')).toEqual({
       phase: 'running',
@@ -63,7 +63,7 @@ describe('runtime status UI helpers', () => {
     const model = createRuntimeStatusModel({ phase: 'running', actionName: 'operator_validation_report', startedAt: 10 });
     expect(model).toMatchObject({
       phase: 'running',
-      label: 'Running validation',
+      label: 'Running validation...',
       hint: 'Running an allowed operation.',
       actionName: 'operator_validation_report',
       startedAt: 10,

@@ -1479,7 +1479,7 @@ describe('ModelProfileControl', () => {
 
     const pendingCard = document.querySelector('.pending-assistant');
     expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
-    expect(pendingCard?.textContent).toContain('Checking repo');
+    expect(pendingCard?.textContent).toContain('Checking repository...');
 
     resolveMessage();
     await flushAsync();
@@ -1511,7 +1511,35 @@ describe('ModelProfileControl', () => {
 
     const pendingCard = document.querySelector('.pending-assistant');
     expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('running');
-    expect(pendingCard?.textContent).toContain('Running validation');
+    expect(pendingCard?.textContent).toContain('Running validation...');
+
+    resolveMessage();
+    await flushAsync();
+  });
+
+  it('shows commit/push approval check label for commit prompts in a pending assistant card while active', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(fetchMock(input, init));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'commit and push';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const pendingCard = document.querySelector('.pending-assistant');
+    expect(pendingCard?.textContent).toContain('Checking commit/push approval...');
 
     resolveMessage();
     await flushAsync();
@@ -2269,6 +2297,132 @@ describe('ModelProfileControl', () => {
     expect(cardText).toContain('operator_validation_report');
     expect(cardText).toContain('validation_commands');
     expect(cardText).toContain('python -m ruff format --check core tests scripts');
+  });
+
+  it('renders compact operator runtime cards for repo, validation, and commit/push flows', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Repo check complete.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_status_report',
+          status: 'passed',
+          changed_files: ['public/app.js', 'public/styles.css'],
+          validation_commands_run: [],
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          repo_state: {
+            branch: 'ui/p1-operator-runtime-cards',
+            clean: true,
+            sync: 'synced',
+          },
+          commit_push_state: {},
+        },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    ui.appendMessageCard(
+      'assistant',
+      'Validation complete.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_validation_report',
+          status: 'passed',
+          changed_files: [],
+          validation_commands_run: ['python -m ruff check core tests scripts'],
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          validation_summary: {
+            status: 'passed',
+            passed: 1,
+            failed: 0,
+          },
+          commit_push_state: {},
+        },
+      },
+      '2026-06-11T00:00:01Z',
+    );
+
+    ui.appendMessageCard(
+      'assistant',
+      'Commit and push request staged.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_commit_report',
+          status: 'needs_approval',
+          changed_files: [],
+          validation_commands_run: [],
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {
+            commit_created: false,
+            push_performed: false,
+            requires_separate_approval: true,
+          },
+        },
+      },
+      '2026-06-11T00:00:02Z',
+    );
+
+    const cards = [...document.querySelectorAll('.chat-card-assistant .operator-runtime-card')];
+    expect(cards).toHaveLength(3);
+    expect(cards[0]?.textContent || '').toContain('Check the repo');
+    expect(cards[1]?.textContent || '').toContain('Run validation');
+    expect(cards[2]?.textContent || '').toContain('Commit and push');
+    expect(cards[2]?.textContent || '').toContain('Approval required');
+    expect(cards[0]?.textContent || '').toContain('Branch');
+    expect(cards[0]?.textContent || '').toContain('ui/p1-operator-runtime-cards');
+    expect(cards[0]?.textContent || '').toContain('Working tree');
+    expect(cards[0]?.textContent || '').toContain('Clean');
+    expect(cards[0]?.textContent || '').toContain('Remote');
+    expect(cards[0]?.textContent || '').toContain('Synced');
+    expect(cards[1]?.textContent || '').toContain('Validation');
+    expect(cards[1]?.textContent || '').toContain('passed');
+    expect(cards[1]?.textContent || '').toContain('pass=1; fail=0');
+    expect(cards[2]?.textContent || '').toContain('Approval');
+    expect(cards[2]?.textContent || '').toContain('Required');
+    expect(cards[2]?.textContent || '').toContain('commit=not created; push=not performed');
+    expect((document.body.textContent || '').toLowerCase()).not.toContain('operator_action unknown');
+  });
+
+  it('suppresses stale site bundle payloads on non-site operator responses', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const staleBundle = {
+      artifact_type: 'site_bundle',
+      files: [
+        {
+          path: 'index.html',
+          language: 'html',
+          content: '<!doctype html><html><body>stale</body></html>',
+        },
+      ],
+      entry: 'index.html',
+      active_file: 'index.html',
+    };
+
+    const resolved = ui.getMessageSiteBundle({
+      operator_result: {
+        action_name: 'operator_status_report',
+        status: 'passed',
+      },
+      site_bundle: staleBundle,
+    });
+
+    expect(resolved).toBeNull();
   });
 
   it('omits Why this answer section when there are no meaningful why fields', async () => {
