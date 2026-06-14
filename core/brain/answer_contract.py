@@ -3696,6 +3696,11 @@ class AnswerContract:
             )
 
             _style = self._extract_style_hints(question)
+            ordered_website_colors = WebsiteStylePlanManager.extract_requested_colors(
+                question
+            )
+            if ordered_website_colors:
+                _style["colors"] = ordered_website_colors
             if not _style.get("colors"):
                 css_text = ""
                 for item in latest_files:
@@ -3715,12 +3720,14 @@ class AnswerContract:
             if typo_style and typo_style not in _style.get("styles", []):
                 _style.setdefault("styles", []).append(typo_style)
 
-            _files = sb.build_bundle_files(
+            _files = sb.refine_bundle_files(
+                existing_files=latest_files,
                 business_name=_biz,
                 slug=_slug,
                 pages=_pages,
                 style_hints=_style,
-                question=question,
+                follow_up=question,
+                source_prompt=source_prompt,
             )
             _passed, _failures = sb.validate_bundle(
                 bundle_files=_files,

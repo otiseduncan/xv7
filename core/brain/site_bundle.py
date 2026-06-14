@@ -279,6 +279,313 @@ def build_bundle_files(
     )
 
 
+def refine_bundle_files(
+    *,
+    existing_files: list[dict[str, Any]],
+    business_name: str,
+    slug: str,
+    pages: list[str],
+    style_hints: dict[str, list[str]],
+    follow_up: str,
+    source_prompt: str,
+) -> list[dict[str, str]]:
+    """Mutate an active site bundle without replacing its existing page bodies."""
+
+    safe_existing = [
+        {
+            "path": str(item.get("path") or ""),
+            "language": str(
+                item.get("language") or _language_for_path(str(item.get("path") or ""))
+            ),
+            "content": str(item.get("content") or ""),
+        }
+        for item in existing_files
+        if isinstance(item, dict) and is_safe_bundle_path(str(item.get("path") or ""))
+    ]
+    if not safe_existing:
+        return build_bundle_files(
+            business_name=business_name,
+            slug=slug,
+            pages=pages,
+            style_hints=style_hints,
+            question=f"{source_prompt}\n{follow_up}".strip(),
+        )
+
+    signals = _refinement_signals(follow_up, style_hints.get("styles", []))
+    colors = [
+        str(color).strip()
+        for color in style_hints.get("colors", [])
+        if str(color).strip()
+    ]
+    named_special = _extract_named_special(follow_up)
+    refined: list[dict[str, str]] = []
+    seen_paths: set[str] = set()
+
+    for item in safe_existing:
+        path = item["path"]
+        seen_paths.add(path)
+        content = item["content"]
+        language = item["language"] or _language_for_path(path)
+        if path.endswith(".css"):
+            content = _refine_css(content, colors=colors, signals=signals)
+        elif path.endswith(".html"):
+            content = _refine_html(
+                content,
+                path=path,
+                business_name=business_name,
+                named_special=named_special,
+                signals=signals,
+            )
+        refined.append({"path": path, "language": language, "content": content})
+
+    for page in pages:
+        if page in seen_paths:
+            continue
+        rendered = build_bundle_files(
+            business_name=business_name,
+            slug=slug,
+            pages=[page],
+            style_hints=style_hints,
+            question=f"{source_prompt}\n{follow_up}".strip(),
+        )
+        refined.extend(item for item in rendered if item.get("path") == page)
+    return refined
+
+
+def _language_for_path(path: str) -> str:
+    if path.endswith(".css"):
+        return "css"
+    if path.endswith(".js"):
+        return "javascript"
+    return "html"
+
+
+def _refinement_signals(follow_up: str, styles: list[str]) -> dict[str, bool]:
+    lowered = f"{follow_up or ''} {' '.join(styles)}".lower()
+    return {
+        "premium": any(
+            term in lowered
+            for term in ("premium", "luxury", "high end", "high-end", "polished")
+        ),
+        "bold": any(
+            term in lowered
+            for term in (
+                "bold",
+                "pop",
+                "buttons pop",
+                "make the buttons",
+                "bigger buttons",
+            )
+        ),
+        "less_template": any(
+            term in lowered
+            for term in (
+                "less template",
+                "template-looking",
+                "not template",
+                "less basic",
+                "more custom",
+            )
+        ),
+        "specials": any(
+            term in lowered for term in ("special", "specials", "deal", "offer")
+        ),
+    }
+
+
+def _extract_named_special(follow_up: str) -> str:
+    text = " ".join((follow_up or "").split())
+    patterns = (
+        r"add (?:a |an |the )?(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
+        r"include (?:a |an |the )?(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
+        r"(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group("name").strip(" .,!?").title()
+    return ""
+
+
+def _refine_html(
+    content: str,
+    *,
+    path: str,
+    business_name: str,
+    named_special: str,
+    signals: dict[str, bool],
+) -> str:
+    updated = content
+    classes = []
+    if signals["premium"]:
+        classes.append("is-premium")
+    if signals["bold"]:
+        classes.append("is-bold")
+    if signals["less_template"]:
+        classes.append("is-customized")
+    updated = _add_body_classes(updated, classes)
+
+    if path == "index.html" and signals["premium"]:
+        updated = _insert_before_main_close(
+            updated,
+            "premium-band",
+            "\n".join(
+                [
+                    '  <section class="premium-band">',
+                    '    <p class="eyebrow">Premium revision applied</p>',
+                    f"    <h2>{html.escape(business_name, quote=False)} now has stronger visual hierarchy.</h2>",
+                    "    <p>Sharper contrast, richer spacing, and bolder calls to action make this version feel more finished.</p>",
+                    "  </section>",
+                ]
+            ),
+        )
+    if path == "index.html" and signals["less_template"]:
+        updated = _insert_before_main_close(
+            updated,
+            "custom-band",
+            "\n".join(
+                [
+                    '  <section class="custom-band">',
+                    '    <p class="eyebrow">Less template-looking</p>',
+                    f"    <h2>Specific sections still support {html.escape(business_name, quote=False)}.</h2>",
+                    "    <p>The existing pages stay intact while the active revision gains more custom structure.</p>",
+                    "  </section>",
+                ]
+            ),
+        )
+    if named_special and (path in {"index.html", "menu.html", "specials.html"}):
+        updated = _insert_before_main_close(
+            updated, _slug_token(named_special), _special_card(named_special)
+        )
+    return updated
+
+
+def _add_body_classes(content: str, classes: list[str]) -> str:
+    if not classes:
+        return content
+
+    def replace(match: re.Match[str]) -> str:
+        prefix = match.group("prefix")
+        existing = match.group("classes")
+        suffix = match.group("suffix")
+        tokens = existing.split()
+        for class_name in classes:
+            if class_name not in tokens:
+                tokens.append(class_name)
+        return f"{prefix}{' '.join(tokens)}{suffix}"
+
+    if re.search(r"<body[^>]*class=", content, re.IGNORECASE):
+        return re.sub(
+            r"(?P<prefix><body[^>]*class=[\"'])(?P<classes>[^\"']*)(?P<suffix>[\"'][^>]*>)",
+            replace,
+            content,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return re.sub(
+        r"<body\b([^>]*)>",
+        lambda match: f'<body class="{" ".join(classes)}"{match.group(1)}>',
+        content,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+def _insert_before_main_close(content: str, marker: str, block: str) -> str:
+    if marker.lower() in content.lower():
+        return content
+    match = re.search(r"</main>", content, re.IGNORECASE)
+    if match:
+        return f"{content[: match.start()]}{block}\n{content[match.start() :]}"
+    return f"{content.rstrip()}\n{block}\n"
+
+
+def _special_card(named_special: str) -> str:
+    return "\n".join(
+        [
+            '  <section class="spotlight-section xv7-specials">',
+            '    <p class="eyebrow">Specials spotlight</p>',
+            '    <div class="card-grid compact-grid">',
+            '      <article class="info-card deal-card">',
+            "        <span>Special</span>",
+            f"        <h2>{html.escape(named_special, quote=False)}</h2>",
+            "        <p>Added from the latest refinement request while preserving the existing menu, pages, and calls to action.</p>",
+            "      </article>",
+            "    </div>",
+            "  </section>",
+        ]
+    )
+
+
+def _slug_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+def _refine_css(content: str, *, colors: list[str], signals: dict[str, bool]) -> str:
+    updated = content
+    if colors:
+        resolved = [_color_value(color) for color in colors]
+        bg = resolved[0] if len(resolved) > 0 else "#050505"
+        accent = resolved[1] if len(resolved) > 1 else bg
+        text = resolved[2] if len(resolved) > 2 else "#ffffff"
+        accent_2 = resolved[3] if len(resolved) > 3 else text
+        for name, value in (
+            ("bg", bg),
+            ("accent", accent),
+            ("text", text),
+            ("accent-2", accent_2),
+            ("requested-1", colors[0] if len(colors) > 0 else "default"),
+            ("requested-2", colors[1] if len(colors) > 1 else "default"),
+            ("requested-3", colors[2] if len(colors) > 2 else "default"),
+            ("requested-4", colors[3] if len(colors) > 3 else "default"),
+        ):
+            updated = _set_css_var(updated, name, value)
+        updated = _replace_or_add_comment(updated, "requested-colors", " ".join(colors))
+    if signals["bold"]:
+        updated = _set_css_var(updated, "button-scale", "1.08")
+        if ".is-bold h1" not in updated:
+            updated = f"{updated.rstrip()}\n.is-bold h1 {{ text-shadow: 0 16px 50px color-mix(in srgb, var(--accent) 22%, transparent); }}\n"
+    if signals["premium"] and ".is-premium .hero-card" not in updated:
+        updated = f"{updated.rstrip()}\n.is-premium .hero-card, .is-premium .info-card {{ border-color: color-mix(in srgb, var(--accent) 48%, transparent); }}\n"
+    return updated
+
+
+def _replace_or_add_comment(content: str, key: str, value: str) -> str:
+    pattern = re.compile(rf"/\*\s*{re.escape(key)}:\s*.*?\*/", re.IGNORECASE)
+    replacement = f"/* {key}: {value} */"
+    if pattern.search(content):
+        return pattern.sub(replacement, content, count=1)
+    return f"{replacement}\n{content}"
+
+
+def _set_css_var(content: str, name: str, value: str) -> str:
+    pattern = re.compile(rf"(--{re.escape(name)}\s*:\s*)[^;]+;", re.IGNORECASE)
+    if pattern.search(content):
+        return pattern.sub(rf"\g<1>{value};", content, count=1)
+    root_match = re.search(r":root\s*\{", content, re.IGNORECASE)
+    if root_match:
+        insert_at = root_match.end()
+        return f"{content[:insert_at]}\n  --{name}: {value};{content[insert_at:]}"
+    return f":root {{\n  --{name}: {value};\n}}\n{content}"
+
+
+def _color_value(color: str) -> str:
+    token = color.strip().lower()
+    if re.fullmatch(r"#[0-9a-f]{3}(?:[0-9a-f]{3})?", token):
+        return token
+    return {
+        "black": "#050505",
+        "white": "#ffffff",
+        "gold": "#f59e0b",
+        "yellow": "#facc15",
+        "red": "#ef4444",
+        "green": "#22c55e",
+        "blue": "#3b82f6",
+        "orange": "#f97316",
+        "purple": "#8b5cf6",
+    }.get(token, color)
+
+
 def validate_bundle(
     *,
     bundle_files: list[dict[str, str]],
