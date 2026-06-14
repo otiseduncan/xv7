@@ -3262,7 +3262,8 @@ async def add_session_message(
         updated_state.metadata["operator_action_history"] = current_history
         updated_state.metadata["last_assistant_payload"] = assistant_payload
         if (
-            operator_action.result.action_name == "repo_status"
+            operator_action.result.action_name
+            in {"repo_status", "operator_status_report"}
             and operator_action.result.status == "success"
         ):
             updated_state.metadata["live_repo_check"] = True

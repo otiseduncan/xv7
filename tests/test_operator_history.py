@@ -93,13 +93,13 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "repo_status"
+        assert action_name == "operator_status_report"
         from datetime import UTC, datetime
 
         now = datetime.now(UTC)
         return OperatorActionResult(
             action_id=action_id,
-            action_name="repo_status",
+            action_name="operator_status_report",
             status="failed",
             started_at=now,
             completed_at=now,
@@ -110,7 +110,7 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
             exit_code=1,
             data={},
             safety=OperatorSafety(allowed=True),
-            receipt_label=f"repo_status {action_id}",
+            receipt_label=f"operator_status_report {action_id}",
         )
 
     monkeypatch.setattr("core.operator.manager.run_action", _run_action_failed)
@@ -140,13 +140,13 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        assert action_name == "repo_status"
+        assert action_name == "operator_status_report"
         from datetime import UTC, datetime
 
         now = datetime.now(UTC)
         return OperatorActionResult(
             action_id=action_id,
-            action_name="repo_status",
+            action_name="operator_status_report",
             status="success",
             started_at=now,
             completed_at=now,
@@ -157,7 +157,7 @@ def test_did_you_check_repo_distinguishes_success_failure_and_none(
             exit_code=0,
             data={"branch": "main", "clean": True, "sync": "in_sync"},
             safety=OperatorSafety(allowed=True),
-            receipt_label=f"repo_status {action_id}",
+            receipt_label=f"operator_status_report {action_id}",
         )
 
     monkeypatch.setattr("core.operator.manager.run_action", _run_action_success)
