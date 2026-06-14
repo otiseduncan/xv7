@@ -431,7 +431,7 @@ def _card(title: str, copy: str) -> str:
 
 
 def _deal(title: str, copy: str) -> str:
-    return "\n".join(['    <article class="info-card deal-card">', f"      <span>Special</span>", f"      <h2>{html.escape(title)}</h2>", f"      <p>{html.escape(copy)}</p>", "    </article>"])
+    return "\n".join(['    <article class="info-card deal-card">', "      <span>Special</span>", f"      <h2>{html.escape(title)}</h2>", f"      <p>{html.escape(copy)}</p>", "    </article>"])
 
 
 def _contact(title: str, copy: str) -> str:
