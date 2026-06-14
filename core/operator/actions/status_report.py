@@ -137,6 +137,16 @@ def _validation_commands(changed_files: list[dict[str, str]]) -> list[str]:
     return commands
 
 
+def _sanitize_git_failure(stderr_text: str, repo_root: Path) -> str:
+    message = str(stderr_text or "").strip()
+    if "not a git repository" in message.lower():
+        return (
+            "repo status unavailable: runtime repo root is not a usable git workspace "
+            f"({repo_root})."
+        )
+    return message or "git status unavailable"
+
+
 def operator_status_report(*, action_id: str, repo_root: Path) -> OperatorActionResult:
     started = datetime.now(UTC)
     repo_root = repo_root.resolve()
@@ -144,6 +154,7 @@ def operator_status_report(*, action_id: str, repo_root: Path) -> OperatorAction
     completed = datetime.now(UTC)
 
     if proc.returncode != 0:
+        safe_error = _sanitize_git_failure(proc.stderr, repo_root)
         return OperatorActionResult(
             action_id=action_id,
             action_name="operator_status_report",
@@ -153,9 +164,9 @@ def operator_status_report(*, action_id: str, repo_root: Path) -> OperatorAction
             command_or_operation="read-only git status --short --branch",
             target=str(repo_root),
             stdout_summary=proc.stdout[:500],
-            stderr_summary=proc.stderr[:500],
+            stderr_summary=safe_error[:500],
             exit_code=proc.returncode,
-            data={"repo_root": str(repo_root), "limitations": [proc.stderr.strip()]},
+            data={"repo_root": str(repo_root), "limitations": [safe_error]},
             safety=OperatorSafety(allowed=True),
             receipt_label=f"operator_status_report {action_id}",
         )

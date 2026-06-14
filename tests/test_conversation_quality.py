@@ -2573,6 +2573,32 @@ def test_site_bundle_refine_then_export_to_sandbox(monkeypatch, tmp_path: Path) 
     assert len(html_files) >= 2
 
 
+def test_site_bundle_export_phrase_with_slashes_is_handled(
+    monkeypatch, tmp_path: Path
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    build_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "build me a website for Tony's Tavern biker bar"},
+    )
+    assert build_response.status_code == 200
+
+    export_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "Write/export/save it to the sandbox."},
+    )
+    assert export_response.status_code == 200
+    export_message = export_response.json()["messages"][-1]
+    export_answer = str(export_message["content"]).lower()
+    assert "applied" in export_answer
+    assert "generated-sites/" in export_answer
+
+
 def test_build_guard_still_wins_when_commit_words_are_present(
     monkeypatch, tmp_path: Path
 ) -> None:

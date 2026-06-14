@@ -89,6 +89,7 @@ class AnswerContract:
     ARTIFACT_PATCH_APPLY_PATTERN = re.compile(
         r"\b(apply\s+this\s+patch|apply\s+the\s+patch|approve\s+patch|confirm\s+apply|write\s+the\s+proposed\s+patch|"
         r"save\s+the\s+patch\s+to\s+the\s+repo|apply\s+patch|"
+        r"write/export/save\s+it\s+to\s+the\s+sandbox|"
         r"write\s+this\s+to\s+the\s+sandbox|write\s+this\s+to\s+sandbox|"
         r"save\s+this\s+to\s+the\s+sandbox|save\s+this\s+to\s+sandbox|"
         r"export\s+this\s+to\s+the\s+sandbox|export\s+this\s+to\s+sandbox)\b"
