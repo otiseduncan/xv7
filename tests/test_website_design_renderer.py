@@ -86,7 +86,10 @@ def test_site_bundle_validation_requires_requested_colors_in_css() -> None:
         business_name="Smoky Joe's Vape and CBD",
         slug="smoky-joes-vape-and-cbd",
         pages=["index.html", "products.html", "faq.html", "assets/site.css"],
-        style_hints={"colors": ["black", "green", "white"], "styles": ["dark", "premium"]},
+        style_hints={
+            "colors": ["black", "green", "white"],
+            "styles": ["dark", "premium"],
+        },
         question="Build a multi-page website with products and FAQ pages.",
     )
 
@@ -94,7 +97,10 @@ def test_site_bundle_validation_requires_requested_colors_in_css() -> None:
         bundle_files=files,
         entry="index.html",
         business_name="Smoky Joe's Vape and CBD",
-        style_hints={"colors": ["black", "green", "white"], "styles": ["dark", "premium"]},
+        style_hints={
+            "colors": ["black", "green", "white"],
+            "styles": ["dark", "premium"],
+        },
     )
 
     assert passed, failures
