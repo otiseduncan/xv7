@@ -174,6 +174,7 @@ def normalize_page_path(label: str) -> str:
         "safety": "safety.html",
         "guided tours": "guided-tours.html",
         "tours": "guided-tours.html",
+        "hours": "hours.html",
     }
     low = label.strip().lower()
     if low in _ov:
@@ -199,6 +200,7 @@ def _page_aliases() -> list[tuple[str, str]]:
             ("deals", "specials"),
             ("offers", "specials"),
             ("testimonials", "reviews"),
+            ("hours", "hours"),
         ]
     )
     return aliases
@@ -269,6 +271,26 @@ def build_bundle_files(
 
 # ─── Validation ────────────────────────────────────────────────────────────────
 
+_BANNED_TEMPLATE_PHRASES = (
+    "premier destination for an unforgettable experience",
+    "lorem ipsum",
+    "your business name",
+    "replace this text",
+)
+
+_REQUIRED_HTML_MARKERS = (
+    "site-header",
+    "page-content",
+)
+
+_REQUIRED_CSS_MARKERS = (
+    "--bg:",
+    "--accent:",
+    "--text:",
+    "site-header",
+    "button-primary",
+)
+
 
 def validate_bundle(
     *,
@@ -278,31 +300,61 @@ def validate_bundle(
     style_hints: dict[str, list[str]],
 ) -> tuple[bool, list[str]]:
     failures: list[str] = []
-    paths = [f.get("path", "") for f in bundle_files]
+    paths = [str(f.get("path", "")) for f in bundle_files]
     if entry not in paths:
         failures.append(f"entry file {entry!r} missing from bundle")
+
     html_pages = [f for f in bundle_files if str(f.get("path", "")).endswith(".html")]
     if len(html_pages) < 2:
         failures.append("bundle must have at least 2 HTML pages")
+
+    css_files = [f for f in bundle_files if str(f.get("path", "")).endswith(".css")]
+    if not css_files:
+        failures.append("bundle must include a CSS file")
+
+    normalized_html_signatures: set[str] = set()
     for f in bundle_files:
         path = str(f.get("path", ""))
         if not is_safe_bundle_path(path):
             failures.append(f"unsafe bundle path: {path!r}")
         content = str(f.get("content", ""))
-        if path.endswith(".html") and business_name:
-            if business_name.lower() not in content.lower():
+        lowered = content.lower()
+        if not content.strip():
+            failures.append(f"empty bundle content: {path!r}")
+            continue
+        if any(phrase in lowered for phrase in _BANNED_TEMPLATE_PHRASES):
+            failures.append(f"generic template copy found in {path!r}")
+        if path.endswith(".html"):
+            if business_name and business_name.lower() not in lowered:
                 failures.append(f"business name missing from {path!r}")
+            for marker in _REQUIRED_HTML_MARKERS:
+                if marker not in content:
+                    failures.append(f"quality marker {marker!r} missing from {path!r}")
+            label = page_label(path).lower()
+            if path != entry and label not in lowered:
+                failures.append(f"page-specific label {label!r} missing from {path!r}")
+            normalized_html_signatures.add(_normalize_quality_signature(content))
+    if len(html_pages) > 1 and len(normalized_html_signatures) < len(html_pages):
+        failures.append("html pages must not be duplicate template copies")
+
+    css_content = "\n".join(
+        str(f.get("content", "")) for f in css_files
+    ).lower()
+    for marker in _REQUIRED_CSS_MARKERS:
+        if marker not in css_content:
+            failures.append(f"css quality marker missing: {marker!r}")
 
     requested_colors = [str(color).strip() for color in style_hints.get("colors", [])]
-    css_content = "\n".join(
-        str(f.get("content", ""))
-        for f in bundle_files
-        if str(f.get("path", "")).endswith(".css")
-    ).lower()
     for color in requested_colors:
         if color and color.lower() not in css_content:
             failures.append(f"requested color missing from css: {color!r}")
     return (len(failures) == 0, failures)
+
+
+def _normalize_quality_signature(content: str) -> str:
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", content.lower())).strip()
+    # Remove the business name-heavy title/header noise so duplicate body shells show up.
+    return text[:1200]
 
 
 # ─── Patch proposal construction ───────────────────────────────────────────────
