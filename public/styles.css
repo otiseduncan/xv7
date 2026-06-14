@@ -530,6 +530,44 @@ details[open] > .diag-section-title::before {
   line-height: 1.55;
 }
 
+.response-reveal {
+  opacity: 0;
+  transform: translateY(0.35rem);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.response-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.response-reveal-card {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.response-reveal--body {
+  transition-duration: 140ms;
+}
+
+.response-reveal--artifact {
+  transition-duration: 180ms;
+}
+
+.response-reveal--actions,
+.response-reveal--details {
+  transition-duration: 160ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .response-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
 .chat-render-error {
   margin-top: 0.75rem;
   border-left: 3px solid rgba(248, 113, 113, 0.85);

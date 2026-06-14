@@ -1193,6 +1193,7 @@ class Xv7UI {
         if (bundleArticle) {
           try {
             this.appendSiteBundleCard(bundleArticle, siteBundlePayload);
+            this.scheduleResponseReveal(bundleArticle);
             if (typeof siteBundlePayload === 'object') {
               this.latestAssistantMeta = bundleMeta;
             }
@@ -1302,6 +1303,7 @@ class Xv7UI {
     if (mergedSiteBundlePayload && assistantArticle) {
       try {
         this.appendSiteBundleCard(assistantArticle, mergedSiteBundlePayload);
+        this.scheduleResponseReveal(assistantArticle);
       } catch (bundleError) {
         this.appendRenderErrorNotice(
           assistantArticle,
@@ -1570,7 +1572,14 @@ class Xv7UI {
     text.textContent = content;
     text.dataset.visibleText = content;
 
-    article.append(roleLabel, actions, text);
+    if (role === 'assistant') {
+      article.classList.add('response-reveal-card');
+      this.prepareResponseRevealSection(text, 'body');
+      this.prepareResponseRevealSection(actions, 'actions');
+      article.append(roleLabel, text);
+    } else {
+      article.append(roleLabel, actions, text);
+    }
 
     const copyPayload = {
       role,
@@ -1585,7 +1594,6 @@ class Xv7UI {
 
     if (role === 'assistant') {
       try {
-        copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
         // Site bundle payloads use appendSiteBundleCard (called by the caller after this
         // returns) — skip per-file card rendering to prevent duplicate individual cards.
         if (!siteBundlePayload) {
@@ -1593,6 +1601,9 @@ class Xv7UI {
         }
         this.appendOperatorRuntimeCard(article, messageMetadata);
         this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
+        copyPayload.receiptSummary = this.appendReceiptChips(article, messageMetadata);
+        this.markResponseChildrenForReveal(article, '.receipt-chip-row', 'actions');
+        article.append(actions);
         this.appendResponseDetailsDisclosure(article, messageMetadata);
         if (messageMetadata && typeof messageMetadata === 'object') {
           this.latestAssistantMeta = messageMetadata;
@@ -1629,6 +1640,9 @@ class Xv7UI {
     } else {
       this.els.chatTimeline.append(article);
     }
+    if (role === 'assistant') {
+      this.scheduleResponseReveal(article);
+    }
     if (hasCodeArtifacts || patchProposal) {
       if (typeof article.scrollIntoView === 'function') {
         article.scrollIntoView({ block: 'start', inline: 'nearest' });
@@ -1639,6 +1653,73 @@ class Xv7UI {
     this.visibleConversation.push(copyPayload);
 
     return article;
+  }
+
+  responseRevealReducedMotion() {
+    return Boolean(
+      typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    );
+  }
+
+  prepareResponseRevealSection(element, kind = 'body') {
+    if (!element) return null;
+    element.classList.add('response-reveal', `response-reveal--${kind}`);
+    if (this.responseRevealReducedMotion()) {
+      this.markResponseSectionVisible(element);
+    }
+    return element;
+  }
+
+  markResponseSectionVisible(section) {
+    if (!section) return null;
+    section.classList.add('is-visible');
+    return section;
+  }
+
+  markResponseChildrenForReveal(article, selector, kind = 'body') {
+    if (!article || !selector) return [];
+    return [...article.querySelectorAll(selector)].map((element) =>
+      this.prepareResponseRevealSection(element, kind),
+    );
+  }
+
+  scheduleResponseReveal(card) {
+    if (!card || card.dataset.role !== 'assistant') return;
+
+    const orderedSections = [
+      ...card.querySelectorAll('.response-reveal--body'),
+      ...card.querySelectorAll('.response-reveal--artifact'),
+      ...card.querySelectorAll('.response-reveal--actions'),
+      ...card.querySelectorAll('.response-reveal--details'),
+    ].filter((section, index, sections) => section && sections.indexOf(section) === index);
+
+    if (this.responseRevealReducedMotion()) {
+      orderedSections.forEach((section) => this.markResponseSectionVisible(section));
+      return;
+    }
+
+    const delaysByKind = {
+      body: 0,
+      artifact: 80,
+      actions: 140,
+      details: 210,
+    };
+
+    orderedSections.forEach((section) => {
+      if (section.classList.contains('is-visible')) return;
+      const kind = section.classList.contains('response-reveal--details')
+        ? 'details'
+        : section.classList.contains('response-reveal--actions')
+          ? 'actions'
+          : section.classList.contains('response-reveal--artifact')
+            ? 'artifact'
+            : 'body';
+      window.setTimeout(() => {
+        this.markResponseSectionVisible(section);
+      }, delaysByKind[kind]);
+    });
   }
 
   appendRenderErrorNotice(article, error, titleText = 'Recovered from a render error.', extraLines = []) {
@@ -1988,6 +2069,7 @@ class Xv7UI {
     notice.textContent = `This artifact contains ${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}. Use "generate a patch for this site" to prepare them for writing.`;
 
     card.append(header, controls, filesDisclosure, viewerPanel, notice);
+    this.prepareResponseRevealSection(card, 'artifact');
     article.append(card);
 
     if (typeof article.scrollIntoView === 'function') {
@@ -2024,6 +2106,7 @@ class Xv7UI {
     });
 
     if (artifactTray.childElementCount > 0) {
+      this.prepareResponseRevealSection(artifactTray, 'artifact');
       article.append(artifactTray);
     }
 
@@ -2822,6 +2905,7 @@ class Xv7UI {
 
     const card = document.createElement('section');
     card.className = `operator-runtime-card status-${data.statusTone}`;
+    this.prepareResponseRevealSection(card, 'artifact');
 
     const header = document.createElement('div');
     header.className = 'operator-runtime-card-header';
@@ -2990,6 +3074,7 @@ class Xv7UI {
     if (!hasAnySection) return;
 
     details.append(summary, body);
+    this.prepareResponseRevealSection(details, 'details');
     article.append(details);
   }
 
@@ -4448,6 +4533,7 @@ class Xv7UI {
     const targetedStatus = String(proposal.targeted_validation?.status || '').toLowerCase();
     const panel = document.createElement('section');
     panel.className = 'artifact-patch-proposal';
+    this.prepareResponseRevealSection(panel, 'artifact');
 
     const header = document.createElement('div');
     header.className = 'artifact-patch-proposal-header';
