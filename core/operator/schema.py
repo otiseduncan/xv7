@@ -54,6 +54,117 @@ class OperatorActionResult(BaseModel):
             f"read_only=true; target={self.target}; exit_code={exit_code}."
         )
 
+    def result_summary(self) -> dict[str, Any]:
+        data = dict(self.data)
+        status = self._result_status(data)
+        changed_files = self._string_list(data.get("changed_files"))
+        validation_commands = self._validation_commands(data)
+        first_failure = self._first_failure(data)
+        local_only_files = self._local_only_files(data)
+        safety_notes = self._safety_notes(data, local_only_files)
+        return {
+            "action_name": self.action_name,
+            "status": status,
+            "raw_status": self.status,
+            "changed_files": changed_files,
+            "validation_commands_run": validation_commands,
+            "first_failure": first_failure,
+            "safety_notes": safety_notes,
+            "commit_push_state": {
+                "commit_created": bool(data.get("commit_created", False)),
+                "push_performed": bool(data.get("push_performed", False)),
+                "requires_separate_approval": True,
+            },
+            "local_only_files_warning": local_only_files,
+        }
+
+    def _result_status(self, data: dict[str, Any]) -> str:
+        if (
+            self.action_name == "operator_repair_report"
+            and self.status == "failed"
+            and bool(data.get("patch_required", False))
+        ):
+            return "needs_patch"
+        if self.status == "denied" and self.safety.requires_approval:
+            return "needs_approval"
+        if self.status == "denied":
+            return "blocked"
+        if self.status == "success":
+            return "passed"
+        if self.status == "failed":
+            return "failed"
+        return str(self.status)
+
+    @staticmethod
+    def _string_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value if str(item).strip()]
+
+    def _validation_commands(self, data: dict[str, Any]) -> list[str]:
+        for key in (
+            "selected_commands",
+            "validation_commands_run",
+            "validation_commands_rerun",
+        ):
+            commands = self._string_list(data.get(key))
+            if commands:
+                return commands
+        nested = data.get("validation_before")
+        if isinstance(nested, dict):
+            preview = nested.get("data_preview")
+            if isinstance(preview, dict):
+                commands = self._string_list(preview.get("selected_commands"))
+                if commands:
+                    return commands
+        return []
+
+    def _first_failure(self, data: dict[str, Any]) -> str:
+        direct = data.get("first_failure_command")
+        if direct:
+            return str(direct)
+        nested = data.get("validation_before")
+        if isinstance(nested, dict):
+            preview = nested.get("data_preview")
+            if isinstance(preview, dict) and preview.get("first_failure_command"):
+                return str(preview["first_failure_command"])
+        return ""
+
+    def _local_only_files(self, data: dict[str, Any]) -> list[str]:
+        local_only = self._string_list(data.get("local_only_files"))
+        if local_only:
+            return local_only
+        protected = self._string_list(data.get("protected_local_only_files"))
+        if protected:
+            return protected
+        nested = data.get("status_before")
+        if isinstance(nested, dict):
+            preview = nested.get("data_preview")
+            if isinstance(preview, dict):
+                return self._local_only_files(preview)
+        return []
+
+    def _safety_notes(
+        self, data: dict[str, Any], local_only_files: list[str]
+    ) -> list[str]:
+        notes = [
+            "No git commit or push was performed.",
+            "Commit/push requires separate approval.",
+        ]
+        if self.safety.requires_approval:
+            notes.append("Repo mutation requires explicit approval.")
+        if self.safety.denial_reason:
+            notes.append(str(self.safety.denial_reason))
+        blocked_targets = data.get("blocked_targets")
+        if isinstance(blocked_targets, list) and blocked_targets:
+            notes.append("One or more requested patch targets were blocked.")
+        if local_only_files:
+            notes.append(
+                "Local-only files are present and protected: "
+                + ", ".join(local_only_files)
+            )
+        return list(dict.fromkeys(note for note in notes if note))
+
     def structured_receipt(self) -> dict[str, Any]:
         limitation = ""
         if self.stderr_summary:
@@ -75,6 +186,7 @@ class OperatorActionResult(BaseModel):
             "action_id": self.action_id,
             "action_name": self.action_name,
             "status": self.status,
+            "result_status": self.result_summary()["status"],
             "mode": self.mode,
             "target": self.target,
             "receipt_label": self.receipt_label,
@@ -86,4 +198,5 @@ class OperatorActionResult(BaseModel):
             "summary": self.stdout_summary or self.stderr_summary,
             "limitation": limitation,
             "data_preview": data_preview,
+            "operator_result": self.result_summary(),
         }

@@ -22,7 +22,7 @@ from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.memory.manager import PersistentMemoryManager
 from core.operator.history import append_history, get_history
-from core.operator.manager import OperatorManager
+from core.operator.manager import OperatorExecution, OperatorManager
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
 from core.runtime.model_profile_selection import (
@@ -221,6 +221,7 @@ def build_assistant_payload(
     visible_text: str,
     context_receipt: dict[str, Any] | None = None,
     operator_receipts: list[dict[str, Any]] | None = None,
+    operator_result: dict[str, Any] | None = None,
     memory_receipts: list[str] | None = None,
     model_use_receipt: dict[str, Any] | None = None,
     policy_provenance: dict[str, Any] | None = None,
@@ -246,6 +247,7 @@ def build_assistant_payload(
         "visible_text": visible_text,
         "context_receipt": context_receipt or {},
         "operator_receipts": operator_receipts or [],
+        "operator_result": operator_result or {},
         "memory_receipts": deduped_memory_receipts,
         "model_use_receipt": model_use_receipt or {},
         "policy_provenance": policy_provenance or {},
@@ -2240,6 +2242,140 @@ async def add_session_message(
         if isinstance(item, dict) and str(item.get("action_id", ""))
     ]
 
+    async def _store_operator_response(
+        operator_action: OperatorExecution,
+    ) -> SessionState:
+        visible_text = sanitize_visible_answer_text(operator_action.answer.strip())
+        assistant_output = visible_text
+        structured_receipt = operator_action.result.structured_receipt()
+        operator_result = structured_receipt.get("operator_result", {})
+        if not isinstance(operator_result, dict):
+            operator_result = {}
+
+        stored_history = get_history(session_state.metadata)
+        if operator_action.record_history:
+            stored_history = append_history(session_state.metadata, structured_receipt)
+        stored_action_history_refs = [
+            str(item.get("action_id", ""))
+            for item in stored_history[-5:]
+            if isinstance(item, dict) and str(item.get("action_id", ""))
+        ]
+
+        warnings: list[str] = []
+        limitation = structured_receipt.get("limitation")
+        if isinstance(limitation, str) and limitation.strip():
+            warnings.append(limitation)
+
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "operator_manager",
+            "brain_answer_source": "operator_action",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+            operator_receipts=[structured_receipt],
+            operator_result=operator_result,
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=warnings,
+            action_history_refs=stored_action_history_refs,
+        )
+
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=assistant_output,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = policy_provenance
+        updated_state.metadata["operator_last_action"] = (
+            operator_action.result.model_dump(mode="json")
+        )
+        updated_state.metadata["operator_action_history"] = stored_history
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        if (
+            operator_action.result.action_name
+            in {"repo_status", "operator_status_report"}
+            and operator_action.result.status == "success"
+        ):
+            updated_state.metadata["live_repo_check"] = True
+            current_tool_results = updated_state.metadata.get("tool_results", [])
+            if not isinstance(current_tool_results, list):
+                current_tool_results = []
+            current_tool_results.append(
+                {
+                    "type": "repo_check",
+                    "action_id": operator_action.result.action_id,
+                    "status": operator_action.result.status,
+                }
+            )
+            updated_state.metadata["tool_results"] = current_tool_results
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    early_operator_text = _normalize_intent_text(payload.raw_text)
+    latest_applied_patch = (
+        brain_context_manager.answer_contract._latest_applied_patch_proposal(
+            session_state.messages,
+            session_state.metadata,
+        )
+    )
+    is_post_apply_targeted_validation_prompt = (
+        brain_context_manager.answer_contract._is_post_apply_targeted_validation_request(
+            early_operator_text
+        )
+        and latest_applied_patch is not None
+    )
+    is_v1e_operator_prompt = (
+        early_operator_text
+        in {
+            "check the repo",
+            "give me repo status",
+            "repo status",
+            "what is git status",
+            "what branch are we on",
+            "is the working tree clean",
+            "run validation",
+            "run the checks",
+            "run checks",
+            "what's failing",
+            "what is failing",
+            "fix the first failure",
+            "fix first failure",
+            "fix it",
+        }
+        or "preview this patch" in early_operator_text
+        or "preview the patch" in early_operator_text
+        or "apply this patch" in early_operator_text
+        or "apply the patch" in early_operator_text
+        or "apply this approved patch" in early_operator_text
+        or "apply approved patch" in early_operator_text
+    )
+    if is_v1e_operator_prompt and not is_post_apply_targeted_validation_prompt:
+        early_operator_action = operator_manager.try_handle_chat(
+            payload.raw_text,
+            session_metadata=session_state.metadata,
+        )
+        if early_operator_action is not None:
+            return await _store_operator_response(early_operator_action)
+
     if intent_class in {
         "user_correction",
         "communication_preference",
@@ -2501,12 +2637,6 @@ async def add_session_message(
         return updated_state
 
     normalized_question = _normalize_intent_text(payload.raw_text)
-    latest_applied_patch = (
-        brain_context_manager.answer_contract._latest_applied_patch_proposal(
-            session_state.messages,
-            session_state.metadata,
-        )
-    )
     is_post_apply_file_check_prompt = (
         brain_context_manager.answer_contract._is_post_apply_verify_request(
             normalized_question
@@ -3202,86 +3332,7 @@ async def add_session_message(
         session_metadata=session_state.metadata,
     )
     if operator_action is not None:
-        visible_text = sanitize_visible_answer_text(operator_action.answer.strip())
-        assistant_output = visible_text
-        structured_receipt = operator_action.result.structured_receipt()
-
-        current_history = get_history(session_state.metadata)
-        if operator_action.record_history:
-            current_history = append_history(session_state.metadata, structured_receipt)
-        action_history_refs = [
-            str(item.get("action_id", ""))
-            for item in current_history[-5:]
-            if isinstance(item, dict) and str(item.get("action_id", ""))
-        ]
-
-        warnings: list[str] = []
-        limitation = structured_receipt.get("limitation")
-        if isinstance(limitation, str) and limitation.strip():
-            warnings.append(limitation)
-
-        policy_provenance = {
-            "answer_source": "brain_policy",
-            "policy_source": "operator_manager",
-            "brain_answer_source": "operator_action",
-            "request_id": str(uuid4()),
-            "session_id": str(session_id),
-            "runtime_model_inference_proven": False,
-        }
-        assistant_payload = build_assistant_payload(
-            visible_text=visible_text,
-            context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
-            operator_receipts=[structured_receipt],
-            memory_receipts=[],
-            model_use_receipt={},
-            policy_provenance=policy_provenance,
-            warnings=warnings,
-            action_history_refs=action_history_refs,
-        )
-
-        updated_state = await memory_manager.add_message(
-            session_id=session_id,
-            role="assistant",
-            raw_text=assistant_output,
-            message_metadata=assistant_payload,
-        )
-        assistant_message = updated_state.messages[-1]
-
-        vector_memory_receipt = await persist_vector_memory_round_trip(
-            vector_store,
-            session_id=str(session_id),
-            user_role=user_role,
-            user_content=user_visible_content,
-            assistant_role=assistant_message.role,
-            assistant_content=assistant_message.content,
-        )
-        updated_state.metadata["answer_provenance"] = policy_provenance
-        updated_state.metadata["operator_last_action"] = (
-            operator_action.result.model_dump(mode="json")
-        )
-        updated_state.metadata["operator_action_history"] = current_history
-        updated_state.metadata["last_assistant_payload"] = assistant_payload
-        if (
-            operator_action.result.action_name
-            in {"repo_status", "operator_status_report"}
-            and operator_action.result.status == "success"
-        ):
-            updated_state.metadata["live_repo_check"] = True
-            current_tool_results = updated_state.metadata.get("tool_results", [])
-            if not isinstance(current_tool_results, list):
-                current_tool_results = []
-            current_tool_results.append(
-                {
-                    "type": "repo_check",
-                    "action_id": operator_action.result.action_id,
-                    "status": operator_action.result.status,
-                }
-            )
-            updated_state.metadata["tool_results"] = current_tool_results
-        updated_state.metadata["vector_memory"] = vector_memory_receipt
-        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
-        await memory_manager.update_session(updated_state)
-        return updated_state
+        return await _store_operator_response(operator_action)
 
     normalized_for_commit_check = _normalize_intent_text(payload.raw_text)
     is_explicit_commit_approval = (
