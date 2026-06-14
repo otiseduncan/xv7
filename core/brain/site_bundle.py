@@ -14,8 +14,6 @@ from core.brain.website_design_renderer import (
 )
 from core.brain.website_page_plan_manager import WebsitePagePlanManager
 
-# ─── Intent detection ──────────────────────────────────────────────────────────
-
 SITE_BUNDLE_ACTION_PATTERN = re.compile(r"\b(create|build|make|generate|draft)\b")
 SITE_BUNDLE_HINT_PATTERN = re.compile(r"\b(website|site)\b")
 SITE_BUNDLE_INTENT_PATTERN = re.compile(
@@ -26,29 +24,14 @@ SITE_BUNDLE_INTENT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _WEBSITE_ARTIFACT_PATTERN = re.compile(
-    r"\b(?:create|build|make|generate|draft)\s+a\s+(?:\d+[- ]page\s+)?(?:website|site)\s+artifact\b",
+    r"\b(?:create|build|make|generate|draft)\s+a\s+"
+    r"(?:\d+[- ]page\s+)?(?:website|site)\s+artifact\b",
     re.IGNORECASE,
 )
 _EXPLICIT_SINGLE_PATTERN = re.compile(
     r"\b(html artifact|code artifact|draft html|inline html|single-file html|single file html|"
     r"one-page html artifact|one page html artifact|generate html artifact|create html artifact)\b"
 )
-
-
-def is_site_bundle_request(normalized_question: str) -> bool:
-    """Return True when the prompt clearly requests a multi-page website bundle."""
-
-    if _EXPLICIT_SINGLE_PATTERN.search(normalized_question):
-        return False
-    if _WEBSITE_ARTIFACT_PATTERN.search(normalized_question):
-        return True
-    has_action = bool(SITE_BUNDLE_ACTION_PATTERN.search(normalized_question))
-    has_site_hint = bool(SITE_BUNDLE_HINT_PATTERN.search(normalized_question))
-    has_multi_hint = bool(SITE_BUNDLE_INTENT_PATTERN.search(normalized_question))
-    return has_action and has_site_hint and has_multi_hint
-
-
-# ─── Default page selection ────────────────────────────────────────────────────
 
 _FOOD_TERMS = (
     "tavern",
@@ -68,23 +51,90 @@ _FOOD_TERMS = (
 )
 _FOOD_BUSINESS_TYPES = {"food_cart", "restaurant"}
 
+_PAGE_OVERRIDES = {
+    "home": "index.html",
+    "homepage": "index.html",
+    "landing": "index.html",
+    "about us": "about.html",
+    "about me": "about.html",
+    "our story": "about.html",
+    "products": "products.html",
+    "our products": "products.html",
+    "product": "products.html",
+    "faq": "faq.html",
+    "faqs": "faq.html",
+    "frequently asked questions": "faq.html",
+    "menu": "menu.html",
+    "food menu": "menu.html",
+    "our menu": "menu.html",
+    "events": "events.html",
+    "upcoming events": "events.html",
+    "contact us": "contact.html",
+    "get in touch": "contact.html",
+    "services": "services.html",
+    "our services": "services.html",
+    "gallery": "gallery.html",
+    "photo gallery": "gallery.html",
+    "photos": "gallery.html",
+    "specials": "specials.html",
+    "deals": "specials.html",
+    "offers": "specials.html",
+    "catering": "catering.html",
+    "locations": "locations.html",
+    "location": "locations.html",
+    "pricing": "pricing.html",
+    "prices": "pricing.html",
+    "reviews": "reviews.html",
+    "testimonials": "reviews.html",
+    "portfolio": "portfolio.html",
+    "booking": "booking.html",
+    "book": "booking.html",
+    "aftercare": "aftercare.html",
+    "rentals": "rentals.html",
+    "safety": "safety.html",
+    "guided tours": "guided-tours.html",
+    "tours": "guided-tours.html",
+    "hours": "hours.html",
+}
+
+_BANNED_TEMPLATE_PHRASES = (
+    "premier destination for an unforgettable experience",
+    "lorem ipsum",
+    "your business name",
+    "replace this text",
+)
+_REQUIRED_HTML_MARKERS = ("site-header", "page-content")
+_REQUIRED_CSS_MARKERS = ("--bg:", "--accent:", "--text:", "site-header", "button-primary")
+
+
+def is_site_bundle_request(normalized_question: str) -> bool:
+    """Return True when the prompt clearly requests a multi-page website bundle."""
+
+    if _EXPLICIT_SINGLE_PATTERN.search(normalized_question):
+        return False
+    if _WEBSITE_ARTIFACT_PATTERN.search(normalized_question):
+        return True
+    has_action = bool(SITE_BUNDLE_ACTION_PATTERN.search(normalized_question))
+    has_site_hint = bool(SITE_BUNDLE_HINT_PATTERN.search(normalized_question))
+    has_multi_hint = bool(SITE_BUNDLE_INTENT_PATTERN.search(normalized_question))
+    return has_action and has_site_hint and has_multi_hint
+
 
 def default_pages_for_business(business_name: str, question: str) -> list[str]:
     """Return the default file list for the detected business category."""
 
     requested_pages = extract_requested_page_paths(question)
     if requested_pages:
-        pages = [
-            "index.html",
-            *[page for page in requested_pages if page != "index.html"],
-        ]
+        pages = ["index.html", *[page for page in requested_pages if page != "index.html"]]
         return [*pages, "assets/site.css", "assets/site.js"]
 
     prompt_context = f"{business_name} {question}"
     business_type = WebsiteBusinessTypeManager.infer_business_type(prompt_context)
-    q = question.lower()
-    b = business_name.lower()
-    has_legacy_food_term = any(w in q or w in b for w in _FOOD_TERMS)
+    lowered_question = question.lower()
+    lowered_business = business_name.lower()
+    has_legacy_food_term = any(
+        term in lowered_question or term in lowered_business for term in _FOOD_TERMS
+    )
     if business_type.kind in _FOOD_BUSINESS_TYPES or has_legacy_food_term:
         return [
             "index.html",
@@ -106,9 +156,6 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
     ]
 
 
-# ─── Path helpers ─────────────────────────────────────────────────────────────
-
-
 def page_label(path: str) -> str:
     return render_page_label(path)
 
@@ -118,68 +165,21 @@ def is_safe_bundle_path(path: str) -> bool:
 
     if not isinstance(path, str) or not path.strip():
         return False
-    p = path.strip().replace("\\", "/")
-    if p.startswith("/") or re.match(r"^[A-Za-z]:", p):
+    normalized = path.strip().replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
         return False
-    if ".." in p.split("/"):
+    if ".." in normalized.split("/"):
         return False
-    if re.search(r"[;&|`$<>]", p):
-        return False
-    return True
+    return not bool(re.search(r"[;&|`$<>]", normalized))
 
 
 def normalize_page_path(label: str) -> str:
-    """Convert 'Our Services' -> 'services.html'."""
+    """Convert a page label into a safe HTML file path."""
 
-    _ov: dict[str, str] = {
-        "home": "index.html",
-        "homepage": "index.html",
-        "landing": "index.html",
-        "about us": "about.html",
-        "about me": "about.html",
-        "our story": "about.html",
-        "products": "products.html",
-        "our products": "products.html",
-        "product": "products.html",
-        "faq": "faq.html",
-        "faqs": "faq.html",
-        "frequently asked questions": "faq.html",
-        "menu": "menu.html",
-        "food menu": "menu.html",
-        "our menu": "menu.html",
-        "events": "events.html",
-        "upcoming events": "events.html",
-        "contact us": "contact.html",
-        "get in touch": "contact.html",
-        "services": "services.html",
-        "our services": "services.html",
-        "gallery": "gallery.html",
-        "photo gallery": "gallery.html",
-        "photos": "gallery.html",
-        "specials": "specials.html",
-        "deals": "specials.html",
-        "offers": "specials.html",
-        "catering": "catering.html",
-        "locations": "locations.html",
-        "location": "locations.html",
-        "pricing": "pricing.html",
-        "prices": "pricing.html",
-        "reviews": "reviews.html",
-        "testimonials": "reviews.html",
-        "portfolio": "portfolio.html",
-        "booking": "booking.html",
-        "book": "booking.html",
-        "aftercare": "aftercare.html",
-        "rentals": "rentals.html",
-        "safety": "safety.html",
-        "guided tours": "guided-tours.html",
-        "tours": "guided-tours.html",
-        "hours": "hours.html",
-    }
-    low = label.strip().lower()
-    if low in _ov:
-        return _ov[low]
-    slug = re.sub(r"[^a-z0-9]+", "-", low).strip("-")
+    lowered = label.strip().lower()
+    if lowered in _PAGE_OVERRIDES:
+        return _PAGE_OVERRIDES[lowered]
+    slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
     return f"{slug}.html" if slug else "page.html"
 
 
@@ -190,8 +190,10 @@ def _page_aliases() -> list[tuple[str, str]]:
         ("products", "products"),
         ("product", "products"),
     ]
-    for alias, title in WebsitePagePlanManager.PAGE_ALIASES:
-        aliases.append((alias, WebsitePagePlanManager.page_slug(title)))
+    aliases.extend(
+        (alias, WebsitePagePlanManager.page_slug(title))
+        for alias, title in WebsitePagePlanManager.PAGE_ALIASES
+    )
     aliases.extend(
         [
             ("faq", "faq"),
@@ -212,17 +214,16 @@ def extract_requested_page_paths(question: str) -> list[str]:
     if not isinstance(question, str) or not question.strip():
         return []
 
-    lowered = question.lower()
     hits: list[tuple[int, str]] = []
+    lowered = question.lower()
     for token, canonical in _page_aliases():
         pattern = re.compile(rf"\b{re.escape(token)}\b", re.IGNORECASE)
-        for match in pattern.finditer(lowered):
-            hits.append((match.start(), canonical))
+        hits.extend((match.start(), canonical) for match in pattern.finditer(lowered))
 
     if len(hits) < 2:
         return []
-
     hits.sort(key=lambda item: item[0])
+
     ordered: list[str] = []
     seen: set[str] = set()
     for _, canonical in hits:
@@ -231,22 +232,14 @@ def extract_requested_page_paths(question: str) -> list[str]:
         seen.add(canonical)
         ordered.append(canonical)
 
-    if len(ordered) < 2:
-        return []
-
     normalized = [normalize_page_path(label) for label in ordered]
     html_only = [path for path in normalized if path.endswith(".html")]
-    if len(html_only) < 2:
-        return []
-    return html_only
-
-
-# ─── File content generation ───────────────────────────────────────────────────
+    return html_only if len(html_only) >= 2 else []
 
 
 def build_nav_html(pages: list[str]) -> str:
-    html_pages = [p for p in pages if p.endswith(".html")]
-    links = "".join(f'<a href="{p}">{page_label(p)}</a>' for p in html_pages)
+    html_pages = [page for page in pages if page.endswith(".html")]
+    links = "".join(f'<a href="{page}">{page_label(page)}</a>' for page in html_pages)
     return f'<nav class="site-nav">{links}</nav>'
 
 
@@ -269,29 +262,6 @@ def build_bundle_files(
     )
 
 
-# ─── Validation ────────────────────────────────────────────────────────────────
-
-_BANNED_TEMPLATE_PHRASES = (
-    "premier destination for an unforgettable experience",
-    "lorem ipsum",
-    "your business name",
-    "replace this text",
-)
-
-_REQUIRED_HTML_MARKERS = (
-    "site-header",
-    "page-content",
-)
-
-_REQUIRED_CSS_MARKERS = (
-    "--bg:",
-    "--accent:",
-    "--text:",
-    "site-header",
-    "button-primary",
-)
-
-
 def validate_bundle(
     *,
     bundle_files: list[dict[str, str]],
@@ -300,64 +270,74 @@ def validate_bundle(
     style_hints: dict[str, list[str]],
 ) -> tuple[bool, list[str]]:
     failures: list[str] = []
-    paths = [str(f.get("path", "")) for f in bundle_files]
+    paths = [str(file_item.get("path", "")) for file_item in bundle_files]
     if entry not in paths:
         failures.append(f"entry file {entry!r} missing from bundle")
 
-    html_pages = [f for f in bundle_files if str(f.get("path", "")).endswith(".html")]
+    html_pages = [
+        file_item for file_item in bundle_files if str(file_item.get("path", "")).endswith(".html")
+    ]
     if len(html_pages) < 2:
         failures.append("bundle must have at least 2 HTML pages")
 
-    css_files = [f for f in bundle_files if str(f.get("path", "")).endswith(".css")]
+    css_files = [
+        file_item for file_item in bundle_files if str(file_item.get("path", "")).endswith(".css")
+    ]
     if not css_files:
         failures.append("bundle must include a CSS file")
 
-    normalized_html_signatures: set[str] = set()
-    for f in bundle_files:
-        path = str(f.get("path", ""))
+    signatures: set[str] = set()
+    for file_item in bundle_files:
+        path = str(file_item.get("path", ""))
+        content = str(file_item.get("content", ""))
+        lowered = content.lower()
         if not is_safe_bundle_path(path):
             failures.append(f"unsafe bundle path: {path!r}")
-        content = str(f.get("content", ""))
-        lowered = content.lower()
         if not content.strip():
             failures.append(f"empty bundle content: {path!r}")
             continue
         if any(phrase in lowered for phrase in _BANNED_TEMPLATE_PHRASES):
             failures.append(f"generic template copy found in {path!r}")
         if path.endswith(".html"):
-            if business_name and business_name.lower() not in lowered:
-                failures.append(f"business name missing from {path!r}")
-            for marker in _REQUIRED_HTML_MARKERS:
-                if marker not in content:
-                    failures.append(f"quality marker {marker!r} missing from {path!r}")
-            label = page_label(path).lower()
-            if path != entry and label not in lowered:
-                failures.append(f"page-specific label {label!r} missing from {path!r}")
-            normalized_html_signatures.add(_normalize_quality_signature(content))
-    if len(html_pages) > 1 and len(normalized_html_signatures) < len(html_pages):
+            failures.extend(_validate_html_file(path, content, lowered, business_name, entry))
+            signatures.add(_normalize_quality_signature(content))
+
+    if len(html_pages) > 1 and len(signatures) < len(html_pages):
         failures.append("html pages must not be duplicate template copies")
 
-    css_content = "\n".join(
-        str(f.get("content", "")) for f in css_files
-    ).lower()
+    css_content = "\n".join(str(file_item.get("content", "")) for file_item in css_files).lower()
     for marker in _REQUIRED_CSS_MARKERS:
         if marker not in css_content:
             failures.append(f"css quality marker missing: {marker!r}")
-
-    requested_colors = [str(color).strip() for color in style_hints.get("colors", [])]
-    for color in requested_colors:
+    for color in [str(color).strip() for color in style_hints.get("colors", [])]:
         if color and color.lower() not in css_content:
             failures.append(f"requested color missing from css: {color!r}")
+
     return (len(failures) == 0, failures)
+
+
+def _validate_html_file(
+    path: str,
+    content: str,
+    lowered: str,
+    business_name: str,
+    entry: str,
+) -> list[str]:
+    failures: list[str] = []
+    if business_name and business_name.lower() not in lowered:
+        failures.append(f"business name missing from {path!r}")
+    for marker in _REQUIRED_HTML_MARKERS:
+        if marker not in content:
+            failures.append(f"quality marker {marker!r} missing from {path!r}")
+    label = page_label(path).lower()
+    if path != entry and label not in lowered:
+        failures.append(f"page-specific label {label!r} missing from {path!r}")
+    return failures
 
 
 def _normalize_quality_signature(content: str) -> str:
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", content.lower())).strip()
-    # Remove the business name-heavy title/header noise so duplicate body shells show up.
     return text[:1200]
-
-
-# ─── Patch proposal construction ───────────────────────────────────────────────
 
 
 def build_patch_proposals(
@@ -371,18 +351,16 @@ def build_patch_proposals(
     """Return one patch proposal dict per file in the bundle."""
 
     proposals: list[dict[str, Any]] = []
-    for f in bundle_files:
-        path = str(f.get("path", ""))
-        content = str(f.get("content", ""))
-        language = str(f.get("language", "html"))
+    for file_item in bundle_files:
+        path = str(file_item.get("path", ""))
+        content = str(file_item.get("content", ""))
+        language = str(file_item.get("language", "html"))
         if not is_safe_bundle_path(path):
             continue
         target_path = f"generated-sites/{slug}/{path}"
         resolved_target = (root / Path(target_path)).resolve()
-        existing_content: str | None = (
-            resolved_target.read_text(encoding="utf-8")
-            if resolved_target.exists()
-            else None
+        existing_content = (
+            resolved_target.read_text(encoding="utf-8") if resolved_target.exists() else None
         )
         operation = "update" if existing_content is not None else "create"
         validation_status, checks, validation_failures = validate_fn(
@@ -392,11 +370,6 @@ def build_patch_proposals(
             language=language,
             business_name="",
             operation=operation,
-        )
-        diff_text = diff_fn(
-            target_path=target_path,
-            before_content=existing_content,
-            after_content=content,
         )
         proposals.append(
             {
@@ -408,7 +381,11 @@ def build_patch_proposals(
                 "applied": False,
                 "requires_confirmation": True,
                 "content": content,
-                "diff": diff_text,
+                "diff": diff_fn(
+                    target_path=target_path,
+                    before_content=existing_content,
+                    after_content=content,
+                ),
                 "validation": {
                     "status": validation_status,
                     "checks": checks,
@@ -417,9 +394,6 @@ def build_patch_proposals(
             }
         )
     return proposals
-
-
-# ─── Apply ─────────────────────────────────────────────────────────────────────
 
 
 def apply_proposals(
@@ -433,11 +407,9 @@ def apply_proposals(
     written: list[str] = []
     errors: list[str] = []
     for proposal in proposals:
-        v = proposal.get("validation") or {}
-        if str(v.get("status") or "failed").lower() != "passed":
-            errors.append(
-                f"skipped {proposal.get('target_path')}: validation not passed"
-            )
+        validation = proposal.get("validation") or {}
+        if str(validation.get("status") or "failed").lower() != "passed":
+            errors.append(f"skipped {proposal.get('target_path')}: validation not passed")
             continue
         target_path = str(proposal.get("target_path") or "").replace("\\", "/")
         content = str(proposal.get("content") or "")
@@ -454,33 +426,16 @@ def apply_proposals(
     return written, errors
 
 
-# ─── Session lookup helpers ────────────────────────────────────────────────────
-
-
 def latest_pending_bundle_proposals(
     session_messages: list[Any] | None,
     session_metadata: dict[str, Any] | None,
 ) -> list[dict[str, Any]] | None:
-    if isinstance(session_messages, list):
-        for message in reversed(session_messages):
-            if not isinstance(message, dict):
-                continue
-            if str(message.get("role") or "").lower() != "assistant":
-                continue
-            metadata = message.get("metadata")
-            if not isinstance(metadata, dict):
-                continue
-            proposals = metadata.get("site_bundle_patch_proposals")
-            if isinstance(proposals, list) and proposals:
-                if not any(p.get("applied") for p in proposals):
-                    return proposals
-    if isinstance(session_metadata, dict):
-        payload = session_metadata.get("last_assistant_payload")
-        if isinstance(payload, dict):
-            proposals = payload.get("site_bundle_patch_proposals")
-            if isinstance(proposals, list) and proposals:
-                if not any(p.get("applied") for p in proposals):
-                    return proposals
+    for metadata in _assistant_metadata(session_messages, session_metadata):
+        proposals = metadata.get("site_bundle_patch_proposals")
+        if isinstance(proposals, list) and proposals and not any(
+            proposal.get("applied") for proposal in proposals
+        ):
+            return proposals
     return None
 
 
@@ -488,6 +443,18 @@ def latest_bundle_artifact(
     session_messages: list[Any] | None,
     session_metadata: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
+    for metadata in _assistant_metadata(session_messages, session_metadata):
+        bundle = metadata.get("site_bundle")
+        if isinstance(bundle, dict) and bundle.get("artifact_type") == "site_bundle":
+            return bundle
+    return None
+
+
+def _assistant_metadata(
+    session_messages: list[Any] | None,
+    session_metadata: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    metadata_items: list[dict[str, Any]] = []
     if isinstance(session_messages, list):
         for message in reversed(session_messages):
             if not isinstance(message, dict):
@@ -495,21 +462,10 @@ def latest_bundle_artifact(
             if str(message.get("role") or "").lower() != "assistant":
                 continue
             metadata = message.get("metadata")
-            if not isinstance(metadata, dict):
-                continue
-            bundle = metadata.get("site_bundle")
-            if (
-                isinstance(bundle, dict)
-                and bundle.get("artifact_type") == "site_bundle"
-            ):
-                return bundle
+            if isinstance(metadata, dict):
+                metadata_items.append(metadata)
     if isinstance(session_metadata, dict):
         payload = session_metadata.get("last_assistant_payload")
         if isinstance(payload, dict):
-            bundle = payload.get("site_bundle")
-            if (
-                isinstance(bundle, dict)
-                and bundle.get("artifact_type") == "site_bundle"
-            ):
-                return bundle
-    return None
+            metadata_items.append(payload)
+    return metadata_items
