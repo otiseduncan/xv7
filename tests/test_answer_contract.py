@@ -3018,6 +3018,118 @@ def test_site_bundle_follow_up_refines_active_bundle_without_regenerating_weak_t
     assert len(normalized_bodies) == len(html_pages)
 
 
+def test_harry_hot_dog_cart_preview_refine_and_sandbox_export_workflow(
+    monkeypatch, tmp_path
+) -> None:
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path / "workspace"))
+    contract = AnswerContract()
+
+    initial = asyncio.run(
+        contract.build_code_artifact_response(
+            (
+                "Build me a multi-page website for Harry's Hot Dog Cart. "
+                "Use black, gold, white, and red. Include menu, specials, "
+                "catering, hours, about, and contact."
+            ),
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+    assert initial is not None
+    preview_bundle = initial.get("site_bundle")
+    assert isinstance(preview_bundle, dict)
+    assert preview_bundle.get("delivery_mode") in {None, "chat_artifact"}
+    assert preview_bundle.get("artifact_type") == "site_bundle"
+    assert not sandbox_root.exists()
+
+    expected_files = {
+        "index.html",
+        "menu.html",
+        "specials.html",
+        "catering.html",
+        "hours.html",
+        "about.html",
+        "contact.html",
+        "assets/site.css",
+        "assets/site.js",
+    }
+    preview_files = _site_bundle_files_by_path(preview_bundle)
+    assert expected_files.issubset(set(preview_files))
+
+    premium_bundle = _site_bundle_follow_up(
+        contract,
+        preview_bundle,
+        "Make it more premium and make the buttons pop.",
+    )
+    premium_files = _site_bundle_files_by_path(premium_bundle)
+    assert expected_files.issubset(set(premium_files))
+    assert "Harry's Hot Dog Cart" in premium_files["index.html"]
+    assert "is-premium" in premium_files["index.html"]
+    assert "is-bold" in premium_files["index.html"]
+    assert "--button-scale: 1.08;" in premium_files["assets/site.css"]
+    assert "Catering packages" in premium_files["catering.html"]
+
+    special_bundle = _site_bundle_follow_up(
+        contract,
+        premium_bundle,
+        "Add a Friday chili dog special.",
+    )
+    special_files = _site_bundle_files_by_path(special_bundle)
+    assert expected_files.issubset(set(special_files))
+    assert "Friday Chili Dog Special" in special_files["index.html"]
+    assert "Friday Chili Dog Special" in special_files["menu.html"]
+    assert "Friday Chili Dog Special" in special_files["specials.html"]
+    assert "Catering packages" in special_files["catering.html"]
+    assert "Today" in special_files["hours.html"]
+    assert "Story and promise" in special_files["about.html"]
+    assert "Call or message" in special_files["contact.html"]
+
+    export = asyncio.run(
+        contract.build_code_artifact_response(
+            "Write/export/save it to the sandbox.",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "Active site bundle preview.",
+                    "metadata": {"site_bundle": special_bundle},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+    assert export is not None
+    exported_bundle = export.get("site_bundle")
+    assert isinstance(exported_bundle, dict)
+    assert exported_bundle.get("delivery_mode") == "sandbox_write"
+    assert export.get("provenance", {}).get("delivery_mode") == "sandbox_write"
+    assert exported_bundle.get("sandbox_project_slug") == "harrys-hot-dog-cart"
+
+    project_path = sandbox_root / "harrys-hot-dog-cart"
+    written_paths = exported_bundle.get("sandbox_written_paths")
+    assert isinstance(written_paths, list)
+    assert str(project_path) in str(export.get("visible_text", ""))
+    assert "Written files:" in str(export.get("visible_text", ""))
+    for expected_file in expected_files:
+        assert (project_path / expected_file).exists(), expected_file
+        assert expected_file in str(export.get("visible_text", ""))
+
+    exported_index = (project_path / "index.html").read_text(encoding="utf-8")
+    exported_menu = (project_path / "menu.html").read_text(encoding="utf-8")
+    exported_specials = (project_path / "specials.html").read_text(encoding="utf-8")
+    exported_css = (project_path / "assets" / "site.css").read_text(encoding="utf-8")
+    assert 'href="assets/site.css"' in exported_index
+    assert 'src="assets/site.js"' in exported_index
+    assert "Friday Chili Dog Special" in exported_menu
+    assert "Friday Chili Dog Special" in exported_specials
+    assert (
+        "premier destination for an unforgettable experience"
+        not in (exported_index + exported_menu + exported_specials).lower()
+    )
+    assert "--button-scale: 1.08;" in exported_css
+
+
 def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     contract = AnswerContract()
