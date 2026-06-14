@@ -22,12 +22,14 @@ from core.operator.actions.runtime import (
     runtime_health,
 )
 from core.operator.actions.patch_plan import patch_plan
+from core.operator.actions.patch_report import operator_patch_report
 from core.operator.actions.test_runner import test_runner
 from core.operator.actions.workspace import workspace_map
 
 __all__ = [
     "apply_approved_patch",
     "diff_report",
+    "operator_patch_report",
     "patch_plan",
     "test_runner",
     "docker_compose_ps",
