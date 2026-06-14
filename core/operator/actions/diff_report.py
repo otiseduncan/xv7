@@ -6,7 +6,7 @@ import subprocess
 import time
 from typing import Any
 
-from core.operator.schema import OperatorActionResult, OperatorSafety
+from core.operator.schema import OperatorActionResult, OperatorSafety, OperatorStatus
 
 
 MAX_OUTPUT_CHARS = 4000
@@ -88,7 +88,7 @@ def _result(
     action_id: str,
     repo_root: Path,
     started: datetime,
-    status: str,
+    status: OperatorStatus,
     stdout_summary: str,
     stderr_summary: str,
     exit_code: int | None,
