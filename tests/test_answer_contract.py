@@ -879,12 +879,20 @@ def test_repo_mutation_build_phrases_do_not_bypass_build_guard() -> None:
     contract = AnswerContract()
 
     guard_cases = (
-        "build me a website for another business",
+        "build me a website for another business in the repo",
         "create a website in the repo and commit it",
     )
     for raw in guard_cases:
         normalized = contract._normalize(raw)
         assert contract._prioritize_artifact_over_build_guard(normalized) is False
+
+
+def test_natural_language_website_build_prioritizes_artifact_over_guard() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize("build me a website for another business")
+    assert contract._is_repo_mutation_build_prompt(normalized) is False
+    assert contract._prioritize_artifact_over_build_guard(normalized) is True
 
 
 def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
@@ -2449,9 +2457,7 @@ def test_site_bundle_intent_detects_multi_page_website() -> None:
     assert not sb.is_site_bundle_request(
         "create a html artifact tony's tavern biker bar"
     )
-    assert not sb.is_site_bundle_request(
-        "make a website for tony"
-    )  # no multi-page hint without page count
+    assert sb.is_site_bundle_request("make a website for tony")
 
 
 def test_site_bundle_single_file_prompt_does_not_trigger_bundle() -> None:

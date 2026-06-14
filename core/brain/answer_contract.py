@@ -88,7 +88,10 @@ class AnswerContract:
     )
     ARTIFACT_PATCH_APPLY_PATTERN = re.compile(
         r"\b(apply\s+this\s+patch|apply\s+the\s+patch|approve\s+patch|confirm\s+apply|write\s+the\s+proposed\s+patch|"
-        r"save\s+the\s+patch\s+to\s+the\s+repo|apply\s+patch)\b"
+        r"save\s+the\s+patch\s+to\s+the\s+repo|apply\s+patch|"
+        r"write\s+this\s+to\s+the\s+sandbox|write\s+this\s+to\s+sandbox|"
+        r"save\s+this\s+to\s+the\s+sandbox|save\s+this\s+to\s+sandbox|"
+        r"export\s+this\s+to\s+the\s+sandbox|export\s+this\s+to\s+sandbox)\b"
     )
     ARTIFACT_POST_APPLY_VERIFY_PATTERN = re.compile(
         r"\b(verify it|verify the file|check the applied file|make sure it wrote correctly|did it save|"
@@ -4391,6 +4394,68 @@ if __name__ == \"__main__\":
                         "push_performed": False,
                     },
                 }
+
+            latest_bundle_art = sb.latest_bundle_artifact(
+                session_messages, session_metadata
+            )
+            if isinstance(latest_bundle_art, dict):
+                slug = str(latest_bundle_art.get("slug") or "site-bundle")
+                entry = str(latest_bundle_art.get("entry") or "index.html")
+                bundle_files_raw = latest_bundle_art.get("site_bundle") or {}
+                bundle_files_to_apply: list[dict[str, str]] = []
+                if isinstance(bundle_files_raw, dict):
+                    bundle_files_to_apply = list(bundle_files_raw.get("files") or [])
+                if bundle_files_to_apply:
+                    root = self._workspace_root()
+                    generated_proposals = sb.build_patch_proposals(
+                        bundle_files=bundle_files_to_apply,
+                        slug=slug,
+                        root=root,
+                        validate_fn=self._validate_patch_proposal,
+                        diff_fn=self._build_unified_diff,
+                    )
+                    written, errors = sb.apply_proposals(
+                        proposals=generated_proposals,
+                        root=root,
+                        resolve_fn=self._resolve_safe_patch_target,
+                    )
+                    preview_path = f"/generated-sites/{slug}/{entry}"
+                    applied_bundle_proposals = [
+                        {**p, "applied": True, "preview_path": preview_path}
+                        for p in generated_proposals
+                        if p.get("target_path") in written
+                    ]
+                    return {
+                        "visible_text": (
+                            f"Applied {len(written)} file(s) for the site bundle under generated-sites/{slug}/. "
+                            + (
+                                f"Errors: {'; '.join(errors)}"
+                                if errors
+                                else "No errors."
+                            )
+                            + f" Preview entry page at {preview_path}."
+                        ),
+                        "code_artifact": {},
+                        "artifact_patch_proposal": {},
+                        "site_bundle": latest_bundle_art,
+                        "site_bundle_patch_proposals": applied_bundle_proposals,
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-apply",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_patch": "bundle_applied",
+                            "applied": True,
+                            "requires_confirmation": True,
+                            "slug": slug,
+                            "files_written": written,
+                            "errors": errors,
+                            "preview_path": preview_path,
+                            "commit_created": False,
+                            "push_performed": False,
+                        },
+                    }
 
         if is_patch_proposal_request:
             if latest_artifact is None:

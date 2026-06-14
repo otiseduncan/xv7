@@ -101,11 +101,11 @@ def test_intent_router_classifies_command_language_contract() -> None:
         IntentRouter.classify(
             "Generate a website preview for Harry's Hot Dog Cart"
         ).kind
-        == IntentKind.CODE_ARTIFACT
+        == IntentKind.SITE_BUNDLE
     )
     assert (
         IntentRouter.classify("Build me a website for another business").kind
-        == IntentKind.CODE_ARTIFACT
+        == IntentKind.SITE_BUNDLE
     )
     assert (
         IntentRouter.classify(
