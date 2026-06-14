@@ -12,6 +12,7 @@ from core.operator.registry import build_operator_registry, run_action
 EXPECTED_ACTIONS = {
     "repo_status",
     "repo_recent_commits",
+    "operator_status_report",
     "workspace_map",
     "patch_plan",
     "apply_approved_patch",

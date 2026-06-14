@@ -28,6 +28,7 @@ from core.operator.actions.runtime import (
     logs_summary,
     runtime_health,
 )
+from core.operator.actions.status_report import operator_status_report
 from core.operator.actions.patch_plan import patch_plan
 from core.operator.actions.test_runner import test_runner
 from core.operator.actions.workspace import workspace_map
@@ -46,6 +47,9 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         "repo_status": OperatorActionSpec("repo_status", "read_only", repo_status),
         "repo_recent_commits": OperatorActionSpec(
             "repo_recent_commits", "read_only", repo_recent_commits
+        ),
+        "operator_status_report": OperatorActionSpec(
+            "operator_status_report", "read_only", operator_status_report
         ),
         "workspace_map": OperatorActionSpec(
             "workspace_map", "read_only", workspace_map
