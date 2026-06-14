@@ -595,12 +595,19 @@ ACTIVE_FOCUS_UPDATE_PREFIXES = (
     "change your active focus to ",
     "change your active closest to focus to ",
     "change active focus to ",
+    "update your active focus: ",
+    "update your active focus to ",
+    "update active focus: ",
+    "update active focus to ",
     "set your focus to ",
     "set active focus to ",
+    "set the active focus to ",
     "change your focus to ",
     "change my focus to ",
     "make your focus ",
+    "make the active focus ",
     "your active focus is ",
+    "our focus right now is ",
     "from now on your focus is ",
     "your priority is ",
     "we need your focus to be ",
@@ -644,8 +651,11 @@ STATUS_QUESTION_PATTERN = re.compile(
 )
 
 CORRECTION_PREFIXES = (
+    "correction:",
     "no, that is wrong",
     "no that is wrong",
+    "no, that is not what i meant",
+    "no that is not what i meant",
     "no, that's not what i meant",
     "that's not what i meant",
     "you screwed up",
@@ -659,10 +669,13 @@ COMMUNICATION_PREFERENCE_MARKERS = (
     "i don't want",
     "i do not want",
     "i want you to",
+    "going forward",
     "don't say it that way",
     "dont say it that way",
     "remember i prefer",
     "prefer",
+    "preview first",
+    "write files only",
     "keep answers",
     "don't over-explain",
     "do not over-explain",
@@ -670,6 +683,7 @@ COMMUNICATION_PREFERENCE_MARKERS = (
 )
 
 WORKFLOW_HABIT_MARKERS = (
+    "remember this workflow correction",
     "we always",
     "my habits",
     "my workflow",
@@ -769,6 +783,8 @@ def _extract_active_focus_instruction(question: str) -> str | None:
         r"^change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus\s*[\.:,]?\s*focus\s+(?:on|or)\s+(.+)$",
         r"^change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus\s*[\.:,]?\s+(.+)$",
         r"^change\s+(?:your|my)?\s*active\s*focus\s*[\.:,]?\s+(.+)$",
+        r"^make\s+the\s+active\s+focus\s+(.+)$",
+        r"^our\s+focus\s+right\s+now\s+is\s+(.+)$",
         r"^from\s+now\s+on\s*,?\s*(?:your\s+)?focus\s+is\s+(.+)$",
         r"^your\s+priority\s+is\s+(.+)$",
         r"^we\s+need\s+your\s+focus\s+to\s+be\s+(.+)$",
@@ -793,6 +809,9 @@ def _is_active_focus_candidate(question: str) -> bool:
             r"\b(change\s+(?:your|my)?\s*active\s*focus|"
             r"change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus|"
             r"set\s+(?:your|the)?\s*active\s*focus|"
+            r"update\s+(?:your|the)?\s*active\s*focus|"
+            r"make\s+the\s+active\s+focus|"
+            r"our\s+focus\s+right\s+now\s+is|"
             r"from\s+now\s+on\s+(?:your\s+)?focus\s+is|"
             r"your\s+priority\s+is|"
             r"we\s+need\s+your\s+focus\s+to\s+be|"
@@ -808,10 +827,6 @@ def _is_unclear_focus_instruction(focus_text: str) -> bool:
     if len(cleaned) < 10:
         return True
 
-    tokens = [token for token in cleaned.split(" ") if token]
-    if len(tokens) < 3:
-        return True
-
     vague_only = {
         "this",
         "that",
@@ -821,6 +836,7 @@ def _is_unclear_focus_instruction(focus_text: str) -> bool:
         "same",
         "normal",
     }
+    tokens = [token for token in cleaned.split(" ") if token]
     return all(token in vague_only for token in tokens)
 
 
@@ -1013,6 +1029,12 @@ def _needs_learning_clarification(speech_act: str, text: str) -> bool:
             "before",
             "unless",
             "should",
+            "treat",
+            "preview",
+            "write",
+            "export",
+            "generate",
+            "going forward",
         )
     ):
         return True
@@ -2268,6 +2290,7 @@ async def add_session_message(
         session_state.metadata["active_focus"] = resolved_focus
         inference_state.metadata["active_focus"] = resolved_focus
     intent_class = _classify_speech_act(payload.raw_text)
+    active_focus_instruction = _extract_active_focus_instruction(payload.raw_text)
 
     current_history = get_history(session_state.metadata)
     action_history_refs = [
@@ -2720,7 +2743,7 @@ async def add_session_message(
         or prioritize_artifact_over_build_guard
     )
 
-    if is_artifact_patch_lane_prompt:
+    if is_artifact_patch_lane_prompt and active_focus_instruction is None:
         brain_context = brain_context_manager.build_context_for_question(
             payload.raw_text
         )

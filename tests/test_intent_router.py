@@ -145,3 +145,42 @@ def test_intent_router_classifies_command_language_contract() -> None:
         IntentRouter.classify("What verified status is loaded?").kind
         == IntentKind.NORMAL_QUESTION
     )
+
+
+def test_conceptual_website_questions_stay_out_of_artifact_lanes() -> None:
+    prompts = [
+        "What makes a good website preview?",
+        "How should a website preview be evaluated?",
+        "Why are my generated websites looking like templates?",
+        "What should we improve in the website builder?",
+    ]
+
+    for prompt in prompts:
+        normalized = IntentRouter.normalize(prompt)
+        decision = IntentRouter.classify(prompt)
+
+        assert decision.kind == IntentKind.NORMAL_QUESTION
+        assert decision.has_explicit_artifact_intent is False
+        assert decision.is_preview_artifact_request is False
+        assert decision.is_code_artifact_request is False
+        assert decision.is_site_bundle_request is False
+        assert decision.is_sandbox_build_request is False
+        assert decision.is_artifact_edit_request is False
+        assert IntentRouter.is_conceptual_website_question(normalized) is True
+
+
+def test_preview_and_explicit_export_routing_boundary() -> None:
+    assert (
+        IntentRouter.classify(
+            "generate a preview of a modern one-page website for Harrys Hot Dog Cart"
+        ).kind
+        == IntentKind.SITE_BUNDLE
+    )
+    assert (
+        IntentRouter.classify("generate a website for Harrys Hot Dog Cart").kind
+        == IntentKind.SITE_BUNDLE
+    )
+    assert (
+        IntentRouter.classify("write this to the sandbox").kind
+        == IntentKind.SANDBOX_BUILD
+    )

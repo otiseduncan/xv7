@@ -45,6 +45,14 @@ def test_check_readiness_script_exists() -> None:
     )
 
 
+def test_check_readiness_human_markers_are_cp1252_safe() -> None:
+    """Human readiness output should not require Unicode checkmark glyphs."""
+    text = (_SCRIPTS_DIR / "check_readiness.py").read_text(encoding="utf-8")
+
+    assert "✓" not in text
+    assert "✗" not in text
+
+
 def test_launcher_script_exists() -> None:
     """scripts/start_xv7_local.ps1 must exist — it is the documented launcher."""
     assert (_SCRIPTS_DIR / "start_xv7_local.ps1").is_file(), (

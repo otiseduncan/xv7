@@ -110,6 +110,9 @@ class IntentRouter:
     COLOR_CHANGE_REQUEST_PATTERN = re.compile(
         r"\b(color|colors|palette|background|theme)\b"
     )
+    CONCEPTUAL_WEBSITE_QUESTION_PATTERN = re.compile(
+        r"^(what|how|why|which)\b.*\b(website|site|preview|builder|generated websites?)\b"
+    )
 
     @staticmethod
     def normalize(text: str) -> str:
@@ -117,7 +120,24 @@ class IntentRouter:
 
     @classmethod
     def has_explicit_artifact_intent(cls, normalized_text: str) -> bool:
+        if cls.is_conceptual_website_question(normalized_text):
+            return False
         return bool(cls.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized_text))
+
+    @classmethod
+    def is_conceptual_website_question(cls, normalized_text: str) -> bool:
+        if not normalized_text:
+            return False
+        if not normalized_text.endswith("?") and not normalized_text.startswith(
+            ("what ", "how ", "why ", "which ")
+        ):
+            return False
+        if not cls.CONCEPTUAL_WEBSITE_QUESTION_PATTERN.search(normalized_text):
+            return False
+        return not re.search(
+            r"\b(generate|create|build|draft|write|export|save|revise|change|make me|show me)\b",
+            normalized_text,
+        )
 
     @classmethod
     def typography_style_request(cls, normalized_text: str) -> str | None:
@@ -134,6 +154,8 @@ class IntentRouter:
 
     @classmethod
     def artifact_refinement_mode(cls, normalized_text: str) -> str | None:
+        if cls.is_conceptual_website_question(normalized_text):
+            return None
         typography_style = cls.typography_style_request(normalized_text)
         asks_for_color_change = bool(
             cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_text)
@@ -196,6 +218,8 @@ class IntentRouter:
 
     @classmethod
     def looks_like_artifact_edit(cls, normalized_text: str) -> bool:
+        if cls.is_conceptual_website_question(normalized_text):
+            return False
         if cls.artifact_refinement_mode(normalized_text) in {
             "undo",
             "explain",
@@ -224,6 +248,8 @@ class IntentRouter:
     @classmethod
     def is_preview_artifact_request(cls, normalized_text: str) -> bool:
         if not normalized_text:
+            return False
+        if cls.is_conceptual_website_question(normalized_text):
             return False
         if cls.has_explicit_artifact_intent(normalized_text):
             return True
@@ -256,6 +282,8 @@ class IntentRouter:
     def is_sandbox_build_request(cls, normalized_text: str) -> bool:
         if not normalized_text:
             return False
+        if cls.is_conceptual_website_question(normalized_text):
+            return False
         if cls.has_explicit_artifact_intent(normalized_text):
             return False
         if cls.is_repo_mutation_build_prompt(normalized_text):
@@ -272,6 +300,8 @@ class IntentRouter:
 
     @classmethod
     def is_code_artifact_request(cls, normalized_text: str) -> bool:
+        if cls.is_conceptual_website_question(normalized_text):
+            return False
         has_hint = bool(cls.CODE_ARTIFACT_HINT_PATTERN.search(normalized_text))
         has_action = bool(cls.CODE_ARTIFACT_PATTERN.search(normalized_text))
         if has_hint and has_action:

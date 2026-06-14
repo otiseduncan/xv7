@@ -5961,6 +5961,12 @@ if __name__ == \"__main__\":
         }:
             return "I'm your personal AI assistant, trusted AI best-friend/homie, technical co-pilot, and operator partner."
 
+        if self._is_conceptual_website_advice_question(normalized):
+            return (
+                "A good website preview should show the real structure, palette, copy direction, and business-specific sections before any files are written. "
+                "Evaluate it for visible brand fit, obvious layout changes, requested colors, useful content, mobile-friendly structure, and whether revisions modify the current preview instead of starting over."
+            )
+
         tool_category = self._tool_intent_category(normalized)
         if tool_category is not None:
             return self._tool_boundary_answer(tool_category, question)
@@ -6253,3 +6259,21 @@ if __name__ == \"__main__\":
             return "Missing required record: knowledge."
 
         return None
+
+    @staticmethod
+    def _is_conceptual_website_advice_question(normalized: str) -> bool:
+        if not normalized:
+            return False
+        if not (
+            normalized.endswith("?")
+            or normalized.startswith(("what ", "how ", "why ", "which "))
+        ):
+            return False
+        if not re.search(
+            r"\b(website|site|preview|builder|generated websites?)\b", normalized
+        ):
+            return False
+        return not re.search(
+            r"\b(generate|create|build|draft|write|export|save|revise|change|make me|show me)\b",
+            normalized,
+        )

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 # Ensure `core` package is importable when running this script directly.
@@ -82,6 +83,15 @@ def _normalized(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def ollama_endpoint_mode(base_url: str) -> str:
+    hostname = (urlparse(base_url).hostname or "").lower()
+    if hostname in {"localhost", "127.0.0.1", "::1"}:
+        return "host_shell"
+    if hostname in {"ollama", "xv7-ollama"}:
+        return "docker_internal"
+    return "custom"
 
 
 def _model_name(raw_model: Any) -> str | None:
@@ -243,7 +253,7 @@ def print_summary(
 
     print("XV7 Ollama Model Inventory & Selection Proof")
     print(f"Repo root: {repo_root}")
-    print(f"Ollama endpoint: {endpoint}")
+    print(f"Ollama endpoint: {endpoint} ({ollama_endpoint_mode(endpoint)})")
     print(f"Selected profile: {profile_name or '<not_set>'} ({profile_source})")
     print(f"Active chat model: {active_chat or '<not_set>'}")
 

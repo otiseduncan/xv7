@@ -110,6 +110,99 @@ def _new_session(client: TestClient) -> str:
     return response.json()["session_id"]
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Set active focus to testing website generation quality.",
+        "Change active focus to website preview QA.",
+        "Update your active focus: chat routing fixes.",
+        "Make the active focus browser validation.",
+        "Our focus right now is website generation quality.",
+    ],
+)
+def test_natural_active_focus_updates_do_not_route_to_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    prompt: str,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    message = response.json()["messages"][-1]
+    session_metadata = response.json()["metadata"]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+
+    assert "updating active focus" in answer
+    assert "artifact" not in answer
+    assert metadata.get("policy_provenance", {}).get("intent_class") == (
+        "active_focus_update"
+    )
+    assert (
+        session_metadata.get("active_focus", {}).get("id", "").startswith("XV7-FOCUS-")
+    )
+    assert metadata.get("code_artifact", {}) == {}
+    assert metadata.get("site_bundle", {}) == {}
+
+
+@pytest.mark.parametrize(
+    "prompt,expected_intent",
+    [
+        (
+            "Correction: when I say generate a website, I mean preview only.",
+            "user_correction",
+        ),
+        (
+            "No, that is not what I meant. Treat generate as preview, not build.",
+            "user_correction",
+        ),
+        (
+            "Remember this workflow correction for website previews.",
+            "workflow_habit_learning",
+        ),
+        (
+            "Going forward, preview first, write files only when I say build or export.",
+            "communication_preference",
+        ),
+    ],
+)
+def test_website_preview_corrections_save_as_learning_not_mutation_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    prompt: str,
+    expected_intent: str,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    message = response.json()["messages"][-1]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+
+    assert "saved that as" in answer
+    assert "implementation/repo mutation task" not in answer
+    assert metadata.get("policy_provenance", {}).get("intent_class") == expected_intent
+    assert metadata.get("policy_provenance", {}).get("brain_answer_source") == (
+        "learning_rule_saved"
+    )
+    assert metadata.get("code_artifact", {}) == {}
+    assert metadata.get("site_bundle", {}) == {}
+
+
 def test_repo_check_claim_requires_live_proof_and_flips_after_success(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

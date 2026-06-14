@@ -17,6 +17,10 @@ from core.brain.website_page_plan_manager import WebsitePagePlanManager
 
 SITE_BUNDLE_ACTION_PATTERN = re.compile(r"\b(create|build|make|generate|draft)\b")
 SITE_BUNDLE_HINT_PATTERN = re.compile(r"\b(website|site)\b")
+CONCEPTUAL_WEBSITE_QUESTION_PATTERN = re.compile(
+    r"^(what|how|why|which)\b.*\b(website|site|preview|builder|generated websites?)\b",
+    re.IGNORECASE,
+)
 SITE_BUNDLE_INTENT_PATTERN = re.compile(
     r"\b(full website|multi.?page|multipage|"
     r"[3-9] page website|[3-9]-page website|[3-9] pages?|"
@@ -121,6 +125,13 @@ _REQUIRED_CSS_MARKERS = (
 def is_site_bundle_request(normalized_question: str) -> bool:
     """Return True when the prompt clearly requests a multi-page website bundle."""
 
+    if CONCEPTUAL_WEBSITE_QUESTION_PATTERN.search(
+        normalized_question
+    ) and not re.search(
+        r"\b(generate|create|build|draft|write|export|save|revise|change|make me|show me)\b",
+        normalized_question,
+    ):
+        return False
     if _EXPLICIT_SINGLE_PATTERN.search(normalized_question):
         return False
     if re.search(

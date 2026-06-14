@@ -36,7 +36,7 @@ _RESET = "\033[0m"
 
 
 def _tick(ok: bool) -> str:
-    return f"{_GREEN}✓{_RESET}" if ok else f"{_RED}✗{_RESET}"
+    return f"{_GREEN}OK{_RESET}" if ok else f"{_RED}FAIL{_RESET}"
 
 
 def _print_human(report) -> None:  # type: ignore[type-arg]

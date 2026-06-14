@@ -7,6 +7,7 @@ import re
 import subprocess
 
 from fastapi.testclient import TestClient
+import pytest
 
 from core.brain.answer_contract import AnswerContract
 from core.brain.manager import BrainContextManager
@@ -2525,6 +2526,106 @@ def test_natural_language_website_build_routes_to_site_bundle(
     assert isinstance(site_bundle, dict)
     assert site_bundle.get("artifact_type") == "site_bundle"
     assert not (tmp_path / "generated-sites").exists()
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "What makes a good website preview?",
+        "How should a website preview be evaluated?",
+        "Why are my generated websites looking like templates?",
+        "What should we improve in the website builder?",
+    ],
+)
+def test_conceptual_website_questions_do_not_generate_artifacts(
+    monkeypatch, tmp_path: Path, prompt: str
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    message = response.json()["messages"][-1]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+
+    assert "website preview" in answer or "preview" in answer
+    assert metadata.get("code_artifact", {}) == {}
+    assert metadata.get("site_bundle", {}) == {}
+    assert not (tmp_path / "generated-sites").exists()
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "generate a preview of a modern one-page website for Harrys Hot Dog Cart",
+        "generate a website for Harrys Hot Dog Cart",
+        "generate a website preview for Harrys Hot Dog Cart",
+    ],
+)
+def test_website_preview_requests_create_visible_bundle_without_writing_files(
+    monkeypatch, tmp_path: Path, prompt: str
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["messages"][-1]["metadata"]
+    site_bundle = metadata.get("site_bundle", {})
+    assert isinstance(site_bundle, dict)
+    assert site_bundle.get("artifact_type") == "site_bundle"
+    assert site_bundle.get("artifact_id")
+    assert site_bundle.get("entry") == "index.html"
+    assert not (tmp_path / "generated-sites").exists()
+
+
+@pytest.mark.parametrize(
+    "export_prompt",
+    [
+        "write this to the sandbox",
+        "export this to the sandbox",
+        "save this to the sandbox",
+    ],
+)
+def test_explicit_site_bundle_export_phrases_write_only_to_temp_sandbox(
+    monkeypatch, tmp_path: Path, export_prompt: str
+) -> None:
+    client = _setup_contract_only(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    session_id = _new_session(client)
+
+    build_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "generate a website for Harrys Hot Dog Cart"},
+    )
+    assert build_response.status_code == 200
+    assert not (tmp_path / "generated-sites").exists()
+
+    export_response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": export_prompt},
+    )
+
+    assert export_response.status_code == 200
+    export_answer = str(export_response.json()["messages"][-1]["content"]).lower()
+    assert "applied" in export_answer
+    assert "generated-sites/" in export_answer
+    assert list((tmp_path / "generated-sites").rglob("*.html"))
 
 
 def test_site_bundle_refine_then_export_to_sandbox(monkeypatch, tmp_path: Path) -> None:

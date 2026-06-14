@@ -169,3 +169,12 @@ def test_no_secret_values_are_printed_in_summary_context() -> None:
 
     assert "CORE_API_KEY" not in text
     assert "XV7_API_KEY" not in text
+
+
+def test_ollama_endpoint_mode_labels_host_shell_and_docker_urls() -> None:
+    mod = _load_module()
+
+    assert mod.ollama_endpoint_mode("http://localhost:11434") == "host_shell"
+    assert mod.ollama_endpoint_mode("http://127.0.0.1:11434") == "host_shell"
+    assert mod.ollama_endpoint_mode("http://ollama:11434") == "docker_internal"
+    assert mod.ollama_endpoint_mode("http://example.test:11434") == "custom"
