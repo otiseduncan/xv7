@@ -1257,6 +1257,16 @@ describe('ModelProfileControl', () => {
     window.webkitSpeechRecognition = undefined;
     window.speechSynthesis = undefined;
     window.SpeechSynthesisUtterance = undefined;
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
     window.localStorage.clear();
   });
 
@@ -2394,6 +2404,124 @@ describe('ModelProfileControl', () => {
     expect(cards[2]?.textContent || '').toContain('Required');
     expect(cards[2]?.textContent || '').toContain('commit=not created; push=not performed');
     expect((document.body.textContent || '').toLowerCase()).not.toContain('operator_action unknown');
+  });
+
+  it('stages final assistant response sections in progressive reveal order', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    vi.useFakeTimers();
+    try {
+      const article = ui.appendMessageCard(
+        'assistant',
+        'Repo check complete.',
+        null,
+        {
+          operator_receipts: [
+            {
+              action_id: 'OP-1',
+              action_name: 'repo_status',
+              status: 'success',
+              read_only: true,
+              receipt_label: 'repo_status OP-1',
+              summary: 'repo checked',
+            },
+          ],
+          operator_result: {
+            action_name: 'operator_status_report',
+            status: 'passed',
+            changed_files: [],
+            validation_commands_run: [],
+            first_failure: '',
+            safety_notes: [],
+            local_only_files_warning: [],
+            commit_push_state: {},
+          },
+          model_use_receipt: {
+            model_tag: 'qwen3:8b',
+          },
+        },
+        '2026-06-11T00:00:00Z',
+      );
+
+      const body = article.querySelector('.response-reveal--body');
+      const artifact = article.querySelector('.operator-runtime-card.response-reveal--artifact');
+      const chipRow = article.querySelector('.receipt-chip-row.response-reveal--actions');
+      const actions = article.querySelector('.message-actions.response-reveal--actions');
+      const details = article.querySelector('.response-details-disclosure.response-reveal--details');
+      const children = [...article.children];
+
+      expect(body?.textContent).toContain('Repo check complete.');
+      expect(artifact?.textContent).toContain('Check the repo');
+      expect(details?.hasAttribute('open')).toBe(false);
+      expect(children.indexOf(body)).toBeLessThan(children.indexOf(artifact));
+      expect(children.indexOf(artifact)).toBeLessThan(children.indexOf(chipRow));
+      expect(children.indexOf(actions)).toBeLessThan(children.indexOf(details));
+      expect(body?.classList.contains('is-visible')).toBe(false);
+      expect(artifact?.classList.contains('is-visible')).toBe(false);
+
+      vi.advanceTimersByTime(0);
+      expect(body?.classList.contains('is-visible')).toBe(true);
+      expect(artifact?.classList.contains('is-visible')).toBe(false);
+
+      vi.advanceTimersByTime(80);
+      expect(artifact?.classList.contains('is-visible')).toBe(true);
+
+      vi.advanceTimersByTime(60);
+      expect(chipRow?.classList.contains('is-visible')).toBe(true);
+      expect(actions?.classList.contains('is-visible')).toBe(true);
+      expect(details?.classList.contains('is-visible')).toBe(false);
+
+      vi.advanceTimersByTime(70);
+      expect(details?.classList.contains('is-visible')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reduced motion reveals assistant response sections immediately', async () => {
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const article = ui.appendMessageCard(
+      'assistant',
+      'Commit and push request staged.',
+      null,
+      {
+        operator_result: {
+          action_name: 'operator_commit_report',
+          status: 'needs_approval',
+          changed_files: [],
+          validation_commands_run: [],
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {
+            commit_created: false,
+            push_performed: false,
+            requires_separate_approval: true,
+          },
+        },
+      },
+      '2026-06-11T00:00:02Z',
+    );
+
+    const revealSections = [...article.querySelectorAll('.response-reveal')];
+    expect(revealSections.length).toBeGreaterThan(0);
+    expect(revealSections.every((section) => section.classList.contains('is-visible'))).toBe(true);
+    expect(article.querySelector('.operator-runtime-card')?.textContent || '').toContain('Approval required');
   });
 
   it('suppresses stale site bundle payloads on non-site operator responses', async () => {
