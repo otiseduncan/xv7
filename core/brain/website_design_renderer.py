@@ -22,6 +22,16 @@ LABELS = {
     "specials": "Specials",
     "catering": "Catering",
     "locations": "Locations",
+    "pricing": "Pricing",
+    "reviews": "Reviews",
+    "portfolio": "Portfolio",
+    "booking": "Booking",
+    "hours": "Hours",
+    "safety": "Safety",
+    "rentals": "Rentals",
+    "aftercare": "Aftercare",
+    "guided tours": "Guided Tours",
+    "guided-tours": "Guided Tours",
 }
 
 COLOR_HEX = {
@@ -36,11 +46,19 @@ COLOR_HEX = {
     "gold": "#f59e0b",
     "gray": "#64748b",
     "grey": "#64748b",
+    "silver": "#cbd5e1",
+    "teal": "#14b8a6",
+    "cyan": "#06b6d4",
+    "pink": "#ec4899",
+    "brown": "#92400e",
 }
 
 PROFILE_HINTS = {
-    "food": ("hot dog", "hotdog", "food cart", "food truck", "menu", "catering"),
-    "retail": ("vape", "cbd", "smoke shop", "shop", "store", "products"),
+    "food": ("hot dog", "hotdog", "food cart", "food truck", "menu", "catering", "restaurant", "cafe"),
+    "retail": ("vape", "cbd", "smoke shop", "shop", "store", "products", "retail", "inventory"),
+    "auto": ("adas", "calibration", "diagnostic", "diagnostics", "auto repair", "body shop", "vehicle", "automotive"),
+    "ministry": ("church", "ministry", "bible", "sermon", "fellowship", "worship"),
+    "cyber": ("cybersecurity", "cyber security", "it service", "network security", "automation", "managed monitoring"),
 }
 
 PROFILE_COPY: dict[str, dict[str, Any]] = {
@@ -51,37 +69,52 @@ PROFILE_COPY: dict[str, dict[str, Any]] = {
         "primary": "Book catering",
         "secondary": ("View menu", "menu.html"),
         "hero": ("Menu. Specials. Catering.", "Fast choices and a clear next step."),
-        "features": [
-            ("Signature menu blocks", "Featured items feel like an active cart."),
-            ("Weekly specials", "Promotional sections give customers urgency."),
-            ("Booking path", "Catering and contact calls-to-action are built in."),
-        ],
+        "features": [("Signature menu blocks", "Featured items feel like an active cart."), ("Weekly specials", "Promotional sections give customers urgency."), ("Booking path", "Catering and contact calls-to-action are built in.")],
     },
     "retail": {
         "eyebrow": "Premium local retail",
-        "tagline": "A polished retail experience with product clarity and trust.",
+        "tagline": "A polished retail experience with product clarity, trust, and offer-ready sections.",
         "proof": ["Product-forward", "Trust focused", "Offer ready"],
         "primary": "Visit the shop",
         "secondary": ("See products", "products.html"),
         "hero": ("Products with polish.", "Products and offers feel organized."),
-        "features": [
-            ("Product categories", "Products are grouped by customer intent."),
-            ("Premium visual system", "Dark panels and cards add retail polish."),
-            ("Trust signals", "FAQ and guidance make the shop feel professional."),
-        ],
+        "features": [("Product categories", "Products are grouped by customer intent."), ("Premium visual system", "Dark panels and cards add retail polish."), ("Trust signals", "FAQ and guidance make the shop feel professional.")],
+    },
+    "auto": {
+        "eyebrow": "Precision automotive service",
+        "tagline": "A technical service website built around diagnostics, calibration confidence, repair-process clarity, and shop-ready calls to action.",
+        "proof": ["ADAS-ready", "Diagnostic proof", "Shop workflow"],
+        "primary": "Schedule service",
+        "secondary": ("View services", "services.html"),
+        "hero": ("Calibration confidence.", "Technical proof and service flow are clear from the first screen."),
+        "features": [("ADAS calibration workflow", "Targets, scans, and calibration steps feel professional."), ("Diagnostic authority", "Service cards explain the technical value without filler."), ("Shop-ready CTA", "The path to schedule, document, and contact is obvious.")],
+    },
+    "ministry": {
+        "eyebrow": "Faith community online",
+        "tagline": "A welcoming ministry website with service information, teaching focus, events, and a warm path for visitors to connect.",
+        "proof": ["Service times", "Teaching focus", "Visitor friendly"],
+        "primary": "Plan a visit",
+        "secondary": ("See events", "events.html"),
+        "hero": ("Gather. Grow. Serve.", "A church site should feel warm, trustworthy, and easy to navigate."),
+        "features": [("Visitor welcome", "First-time guests can find what matters quickly."), ("Teaching and fellowship", "Sections support sermons, study, and community life."), ("Events and contact", "People can see what is happening and reach out fast.")],
+    },
+    "cyber": {
+        "eyebrow": "Cybersecurity and automation",
+        "tagline": "A sharp technical website for assessments, monitoring, network defense, automation, and consulting credibility.",
+        "proof": ["Assessment ready", "Monitoring focused", "Automation built in"],
+        "primary": "Request assessment",
+        "secondary": ("View services", "services.html"),
+        "hero": ("Security that looks serious.", "Clear offers, proof signals, and stronger conversion flow."),
+        "features": [("Risk assessment", "The offer explains what gets checked and why it matters."), ("Monitoring and response", "Customers see active protection instead of generic IT copy."), ("Automation advantage", "The site positions technical capability as the differentiator.")],
     },
     "general": {
         "eyebrow": "Local business website",
-        "tagline": "A polished multi-page website with clear offers and strong sections.",
+        "tagline": "A polished multi-page website with clear offers, strong sections, and an edit-ready structure.",
         "proof": ["Clear offer", "Modern design", "Ready to edit"],
         "primary": "Get started",
         "secondary": ("Explore pages", "about.html"),
         "hero": ("Built beyond a template.", "Designed to be refined."),
-        "features": [
-            ("Custom page structure", "Each page gets a real role."),
-            ("Modern visual rhythm", "Cards and CTAs create a finished feel."),
-            ("Edit-ready content", "Copy can change without destroying layout."),
-        ],
+        "features": [("Custom page structure", "Each page gets a real role."), ("Modern visual rhythm", "Cards and CTAs create a finished feel."), ("Edit-ready content", "Copy can change without destroying layout.")],
     },
 }
 
@@ -152,6 +185,8 @@ def _body_class(signals: dict[str, bool]) -> str:
         classes.append("is-playful")
     if signals["bold"]:
         classes.append("is-bold")
+    if signals["less_template"]:
+        classes.append("is-customized")
     return " ".join(classes)
 
 
@@ -179,7 +214,7 @@ def _main(business_name: str, label: str, path: str, profile: str, question: str
     blocks = _page_blocks(slug, profile, question)
     if slug in {"menu", "specials"}:
         blocks = _maybe_add_special(blocks, question)
-    return _page_shell(business_name, title, _page_lede(slug, title, business_name), blocks, slug == "specials", slug == "contact")
+    return _page_shell(business_name, title, _page_lede(slug, title, business_name, profile), blocks, slug == "specials", slug == "contact")
 
 
 def _home(business_name: str, profile: str, question: str, signals: dict[str, bool]) -> str:
@@ -205,8 +240,8 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         f"      <h1>{html.escape(business_name)}</h1>",
         f'      <p class="hero-lede">{html.escape(str(_copy(profile, "tagline")))}</p>',
         '      <div class="hero-actions">',
-        f'        <a class="button button-primary" href="contact.html">{_copy(profile, "primary")}</a>',
-        f'        <a class="button button-ghost" href="{secondary_href}">{secondary_label}</a>',
+        f'        <a class="button button-primary" href="contact.html">{html.escape(str(_copy(profile, "primary")))}</a>',
+        f'        <a class="button button-ghost" href="{html.escape(str(secondary_href))}">{html.escape(str(secondary_label))}</a>',
         "      </div>",
         "    </div>",
         '    <aside class="hero-card" aria-label="Featured highlights">',
@@ -286,174 +321,272 @@ def _page_shell(business_name: str, title: str, lede: str, blocks: list[tuple[st
     ])
 
 
-def _page_title(slug: str, fallback: str) -> str:
-    return {"menu": "Menu Highlights", "products": "Products", "specials": "Specials", "about": "About", "faq": "FAQ", "contact": "Contact", "services": "Services"}.get(slug, fallback)
+def _page_title(slug: str, label: str) -> str:
+    if slug == "faq":
+        return "Frequently Asked Questions"
+    if slug == "guided-tours":
+        return "Guided Tours"
+    return label
 
 
-def _page_lede(slug: str, title: str, business_name: str) -> str:
-    if slug == "menu":
-        return f"Signature favorites from {business_name}, organized like a real menu."
-    if slug == "products":
-        return f"Product categories for {business_name} with real retail structure."
-    if slug == "specials":
-        return f"Current offers for {business_name} that feel editable and alive."
-    if slug == "contact":
-        return f"Give customers a clear path to reach {business_name}."
-    return f"A focused {title.lower()} page for {business_name}."
+def _page_lede(slug: str, title: str, business_name: str, profile: str) -> str:
+    overrides = {
+        "menu": "Menu highlights, specials, and customer favorites are organized for fast decisions.",
+        "specials": "Promotions are built to feel current, urgent, and easy to act on.",
+        "products": "Product groups are presented with trust, clarity, and premium local retail polish.",
+        "services": "Service offerings are clear, credible, and ready for local customers.",
+        "contact": "Contact details and next steps stay obvious instead of buried.",
+        "faq": "Common questions are answered directly so visitors feel confident before reaching out.",
+        "portfolio": "Proof and examples show what makes the work credible.",
+        "booking": "Booking and scheduling steps are presented with less friction.",
+        "hours": "Hours and visit details are easy to scan on desktop or mobile.",
+        "safety": "Safety information is treated as a trust-building page, not an afterthought.",
+    }
+    if slug in overrides:
+        return overrides[slug]
+    return f"{title} for {business_name} is written with the {profile} site purpose in mind."
 
 
 def _page_blocks(slug: str, profile: str, question: str) -> list[tuple[str, str]]:
-    if slug == "menu":
-        return [("Classic Street Dog", "Snappy frank, toasted bun, mustard, onion."), ("Loaded Chili Dog", "Slow-simmered chili, cheddar, onion, and heat."), ("Cart Combo", "Any signature dog with chips and a cold drink.")]
-    if slug == "products":
-        return [("Premium products", "Clear categories replace generic retail filler."), ("Staff picks", "Featured items can change as inventory changes."), ("Accessories", "Add-ons and supporting products get real space.")]
-    if slug == "specials":
-        return _special_blocks(profile)
-    if slug == "contact":
-        return [("Call", _extract_phone(question) or "(555) 555-0199"), ("Email", _extract_email(question) or "hello@example.com"), ("Hours", "Monday-Saturday · 11 AM-7 PM")]
-    if slug == "services":
-        return _service_blocks(profile)
-    return [("Purpose", "This page has a dedicated job in the site."), ("Details", "Cards let real content replace placeholders."), ("Next step", "Customers always have a clear path to contact.")]
+    base = _profile_blocks(profile)
+    page_specific = {
+        "about": [("Story and promise", "Explain why this business exists and why customers should trust it."), ("Local identity", "Show the personality and service area instead of generic filler."), ("What makes it different", "Give the page a clear reason to exist.")],
+        "services": _services_blocks(profile),
+        "products": [("Featured categories", "Organize inventory into customer-friendly groups."), ("Customer guidance", "Help visitors understand what to choose next."), ("Premium presentation", "Cards and contrast make products feel intentional.")],
+        "menu": _menu_blocks(profile),
+        "specials": _special_blocks(profile),
+        "catering": [("Catering packages", "Explain event-ready options with clear next steps."), ("Group orders", "Make larger orders feel easy to request."), ("Book ahead", "Move customers toward contact or booking.")],
+        "locations": [("Where to find us", "Make location and service area information scannable."), ("Visit details", "Add directions, parking, or event-location notes."), ("Mobile-ready contact", "Keep the path from phone to visit simple.")],
+        "events": [("Upcoming schedule", "Show what is happening next."), ("Community focus", "Tie events to the business mission."), ("Easy RSVP", "Give visitors a reason to reach out.")],
+        "gallery": [("Visual proof", "Use the gallery to support trust, not just decoration."), ("Behind the scenes", "Show real work, products, people, or place."), ("Finished results", "Highlight the best examples first.")],
+        "reviews": [("Customer proof", "Use testimonials as a conversion section."), ("Trust markers", "Pull out what customers appreciate most."), ("Repeatable wins", "Show patterns in service quality.")],
+        "portfolio": [("Selected work", "Show examples with context."), ("Process notes", "Explain what problem was solved."), ("Results", "Connect the work to customer value.")],
+        "booking": [("Choose a service", "Make the first step obvious."), ("Pick a time", "Explain scheduling expectations."), ("Confirm details", "Reduce back-and-forth before contact.")],
+        "pricing": [("Simple packages", "Group pricing so it feels understandable."), ("Value notes", "Explain what customers receive."), ("Request quote", "Keep custom pricing easy to start.")],
+        "faq": [("Before you visit", "Answer the first questions customers ask."), ("What to expect", "Reduce uncertainty with plain language."), ("How to book", "Point visitors to the next step.")],
+        "hours": [("Today’s hours", "Make hours prominent and easy to scan."), ("Best time to visit", "Set expectations for busy times or appointments."), ("Contact backup", "Give an alternate path if hours change.")],
+        "contact": [("Call or message", "Give a clear contact path."), ("Service area", "Tell visitors where the business works."), ("Next step", "Set expectations for response and booking.")],
+        "safety": [("Safety-first promise", "Put trust and compliance in plain language."), ("Customer expectations", "Explain what visitors need to know."), ("Responsible service", "Make safety feel professional and visible.")],
+        "rentals": [("Rental options", "Show choices with practical details."), ("What is included", "Clarify expectations before contact."), ("Reserve now", "Move customers toward booking.")],
+        "aftercare": [("Aftercare steps", "Give customers simple follow-up guidance."), ("Common issues", "Explain what to watch for."), ("Need help", "Offer a clear contact path.")],
+        "guided-tours": [("Tour options", "Present routes or experiences clearly."), ("What to bring", "Prepare visitors before they arrive."), ("Book a guide", "Make the conversion path obvious.")],
+    }
+    return page_specific.get(slug, base)
 
 
-def _css(business_name: str, palette: dict[str, str], colors: list[str], styles: list[str], signals: dict[str, bool]) -> str:
-    requested = [f"  --requested-{i + 1}: {color};" for i, color in enumerate(colors[:8])]
-    button_scale = "1.08" if signals["bold"] else "1"
-    style_comment = ", ".join(styles) if styles else "balanced"
-    return "\n".join([
-        f"/* {business_name} — XV7 polished site bundle ({style_comment}) */",
-        ":root {",
-        f"  --bg: {palette['bg']};",
-        f"  --panel: {palette['panel']};",
-        f"  --text: {palette['text']};",
-        f"  --muted: {palette['muted']};",
-        f"  --accent: {palette['accent']};",
-        f"  --accent-2: {palette['accent_2']};",
-        f"  --shadow: {palette['shadow']};",
-        f"  --button-scale: {button_scale};",
-        *requested,
-        "}",
-        "body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,'Segoe UI',sans-serif}",
-        ".site-header{display:flex;justify-content:space-between;gap:1rem;padding:1rem 3vw;background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}",
-        ".brand-mark,.nav-link{text-decoration:none;color:var(--text);font-weight:900}.site-nav{display:flex;flex-wrap:wrap;gap:.5rem}",
-        ".page-content{width:min(1120px,calc(100% - 2rem));margin:0 auto;padding:clamp(2rem,5vw,5rem) 0}.hero-section,.page-hero{display:grid;grid-template-columns:1.25fr .75fr;gap:2rem;align-items:center}",
-        ".eyebrow{color:var(--accent);font-weight:900;letter-spacing:.14em;text-transform:uppercase}h1{font-size:clamp(3rem,8vw,6.5rem);line-height:1;letter-spacing:-.06em}.is-bold h1{font-size:clamp(3.4rem,9vw,7.4rem)}h2{font-size:clamp(1.8rem,4vw,3rem)}",
-        ".hero-lede,.content-card p,.deal-card p,.contact-item p,.split-band p,.premium-band p,.custom-band p{color:var(--muted);line-height:1.7}.hero-actions{display:flex;flex-wrap:wrap;gap:1rem;margin-top:1.5rem}",
-        ".button{display:inline-flex;align-items:center;justify-content:center;min-height:calc(3rem * var(--button-scale));padding:.8rem 1.15rem;border-radius:999px;text-decoration:none;font-weight:900}.button-primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#111;box-shadow:0 18px 40px var(--shadow)}.button-ghost{border:1px solid rgba(255,255,255,.2);color:var(--text)}",
-        ".hero-card,.content-card,.deal-card,.contact-item{border:1px solid rgba(255,255,255,.14);background:var(--panel);border-radius:1.5rem;padding:1.2rem;box-shadow:0 24px 70px rgba(0,0,0,.3)}.is-premium .hero-card,.is-premium .content-card,.is-premium .deal-card,.is-premium .contact-item{border-color:color-mix(in srgb,var(--accent) 35%,rgba(255,255,255,.16))}.hero-card strong{display:block;font-size:clamp(1.8rem,4vw,3rem);line-height:1}",
-        ".proof-strip,.card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-top:2rem}.proof-strip span{padding:1rem;border-radius:1rem;background:rgba(255,255,255,.08);text-align:center;font-weight:900}.deal-card strong{color:var(--accent)}",
-        ".split-band,.cta-band,.spotlight-section,.premium-band,.custom-band{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:2.5rem;padding:2rem;border:1px solid rgba(255,255,255,.14);border-radius:1.5rem;background:rgba(255,255,255,.06)}.custom-band{border-style:dashed}.site-footer{width:min(1120px,calc(100% - 2rem));margin:0 auto;padding:2rem 0;border-top:1px solid rgba(255,255,255,.12)}",
-        "@media(max-width:820px){.hero-section,.page-hero,.split-band,.cta-band,.spotlight-section,.premium-band,.custom-band,.proof-strip,.card-grid{grid-template-columns:1fr}}",
-    ])
+def _profile_blocks(profile: str) -> list[tuple[str, str]]:
+    return [(str(title), str(copy)) for title, copy in _copy(profile, "features")]
 
 
-def _card(title: str, copy: str) -> str:
-    return _article("content-card", title, copy)
+def _services_blocks(profile: str) -> list[tuple[str, str]]:
+    if profile == "auto":
+        return [("ADAS calibration", "Camera, radar, and driver-assistance calibration workflows are presented clearly."), ("OEM diagnostics", "Diagnostic capability and scan-based proof are front and center."), ("Repair support", "Body shops and drivers can understand the next step quickly.")]
+    if profile == "cyber":
+        return [("Security assessment", "Network and system risk checks are explained in business language."), ("Monitoring", "Ongoing visibility and alerting are positioned as core value."), ("Automation", "Repeatable scripts and workflows reduce manual busywork.")]
+    if profile == "ministry":
+        return [("Worship gatherings", "Service and meeting information is clear for visitors."), ("Bible teaching", "Teaching, study, and discipleship are easy to find."), ("Community care", "Fellowship and support are presented warmly.")]
+    return [("Core service", "The primary offer is clear and specific."), ("Process", "Visitors understand what happens next."), ("Support", "The contact path stays visible.")]
 
 
-def _deal(title: str, copy: str) -> str:
-    return _article("deal-card", title, copy, heading_tag="strong")
-
-
-def _contact(title: str, copy: str) -> str:
-    return _article("contact-item", title, copy)
-
-
-def _article(class_name: str, title: str, copy: str, *, heading_tag: str = "h3") -> str:
-    return "\n".join([f'    <article class="{class_name}">', f"      <{heading_tag}>{html.escape(title)}</{heading_tag}>", f"      <p>{html.escape(copy)}</p>", "    </article>"])
-
-
-def _service_blocks(profile: str) -> list[tuple[str, str]]:
-    if profile == "retail":
-        return [("Product guidance", "Categories and FAQ content help customers decide."), ("Featured offers", "Promotions can be edited without rebuilding."), ("Local trust", "Contact details and reviews can grow over time.")]
-    return [("Primary service", "The main offer is easy to understand."), ("Supporting service", "A second offer gets a clear card."), ("Custom requests", "The site leaves room for real details.")]
+def _menu_blocks(profile: str) -> list[tuple[str, str]]:
+    if profile == "food":
+        return [("Classic favorites", "Signature items, combos, and quick choices stand out."), ("Loaded options", "Specialty builds feel exciting without clutter."), ("Catering trays", "Group and event orders have their own path.")]
+    return _services_blocks(profile)
 
 
 def _special_blocks(profile: str) -> list[tuple[str, str]]:
     if profile == "food":
-        return [("Classic Dog Combo", "A signature dog, chips, and drink."), ("Loaded Chili Dog Special", "Chili, cheese, onion, and a limited push."), ("Family Pack Deal", "A group offer for teams and weekends.")]
-    return [("Featured Offer", "A rotating offer customers can understand quickly."), ("Limited-Time Push", "A timely deal area that feels active."), ("Custom Package", "A flexible option for real-world requests.")]
+        return [("Classic Dog Combo", "A fast lunch offer with drink and side."), ("Loaded Chili Dog Special", "A bold limited-time cart favorite."), ("Family Pack Deal", "A group-friendly special for easy ordering.")]
+    if profile == "retail":
+        return [("Featured bundle", "Pair popular products into a clear offer."), ("Weekly deal", "Give customers a reason to come back."), ("New arrival spotlight", "Make new inventory feel premium.")]
+    return [("Featured offer", "A focused promotion that feels current."), ("Limited availability", "Urgency without sounding fake."), ("Contact for details", "Move visitors toward the next step.")]
 
 
 def _maybe_add_special(blocks: list[tuple[str, str]], question: str) -> list[tuple[str, str]]:
-    requested = _named_special(question)
-    if requested and all(requested.casefold() not in item[0].casefold() for item in blocks):
-        return [(requested, "Added from the latest revision request."), *blocks]
-    return blocks
+    named = _extract_named_special(question)
+    if not named:
+        return blocks
+    lowered_titles = {title.lower() for title, _ in blocks}
+    if named.lower() in lowered_titles:
+        return blocks
+    return [(named, "Added from the latest refinement request so the site reflects the active special."), *blocks]
 
 
-def _named_special(question: str) -> str:
-    text = " ".join(str(question or "").split())
-    for pattern in (r"\badd\s+(?:a|an|the)?\s*([a-z0-9][a-z0-9 '\-&]{2,60}?\s+special)\b", r"\b([a-z0-9][a-z0-9 '\-&]{2,60}?\s+special)\b"):
-        match = re.search(pattern, text, flags=re.IGNORECASE)
+def _extract_named_special(question: str) -> str:
+    text = " ".join((question or "").split())
+    patterns = (
+        r"add (?:a |an |the )?(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
+        r"include (?:a |an |the )?(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
+        r"(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text)
         if match:
-            return _titlecase(match.group(1))
+            return match.group("name").strip(" .,!?")
     return ""
 
 
-def _why(profile: str) -> str:
-    if profile == "food":
-        return "Food customers make quick decisions, so the site leads with menu and specials."
-    if profile == "retail":
-        return "Retail sites need product clarity, trust, and offers in a clean structure."
-    return "The layout gives each page a job so the site can evolve without being rebuilt."
+def _card(title: str, copy: str) -> str:
+    return "\n".join(['    <article class="info-card">', f"      <h2>{html.escape(title)}</h2>", f"      <p>{html.escape(copy)}</p>", "    </article>"])
+
+
+def _deal(title: str, copy: str) -> str:
+    return "\n".join(['    <article class="info-card deal-card">', f"      <span>Special</span>", f"      <h2>{html.escape(title)}</h2>", f"      <p>{html.escape(copy)}</p>", "    </article>"])
+
+
+def _contact(title: str, copy: str) -> str:
+    return "\n".join(['    <article class="info-card contact-card">', f"      <h2>{html.escape(title)}</h2>", f"      <p>{html.escape(copy)}</p>", "    </article>"])
 
 
 def _footer(business_name: str) -> str:
-    return "\n".join(['<footer class="site-footer">', f"  <strong>{html.escape(business_name)}</strong>", "  <span>Generated by XV7 · Edit-ready multi-page site bundle</span>", "</footer>"])
+    return "\n".join(["<footer class=\"site-footer\">", f"  <span>{html.escape(business_name)}</span>", "  <span>Built with XV7 site bundle preview.</span>", "</footer>"])
 
 
-def _signals(question: str, styles: list[str]) -> dict[str, bool]:
-    q = str(question or "").casefold()
-    style_set = {style.casefold() for style in styles}
-    return {
-        "premium": bool({"premium", "luxury", "high-end", "polished"} & style_set) or bool(re.search(r"\b(premium|luxury|high[- ]end|more professional)\b", q)),
-        "spacious": bool(re.search(r"\b(spacing|spacious|more room|breathe)\b", q)),
-        "bold": bool({"bold", "neon", "cyberpunk"} & style_set) or bool(re.search(r"\b(bold|buttons? pop|stronger hero|bigger|punchier)\b", q)),
-        "playful": "playful" in style_set or bool(re.search(r"\b(fun|playful|friendly)\b", q)),
-        "specials": bool(re.search(r"\bspecials?\b|\bdeals?\b|\boffers?\b", q)),
-        "less_template": bool(re.search(r"\b(less template|not template|template-looking|generic|custom|specific|less basic|not basic)\b", q)),
-    }
+def _css(business_name: str, palette: dict[str, str], requested_colors: list[str], styles: list[str], signals: dict[str, bool]) -> str:
+    requested = " ".join(requested_colors) or "default"
+    style_note = " ".join(styles) or "balanced"
+    return f"""
+/* XV7 polished website renderer for {business_name} */
+/* requested-colors: {requested} */
+/* requested-styles: {style_note} */
+:root {{
+  --bg: {palette['bg']};
+  --panel: {palette['panel']};
+  --text: {palette['text']};
+  --muted: {palette['muted']};
+  --accent: {palette['accent']};
+  --accent-2: {palette['accent_2']};
+  --ring: color-mix(in srgb, var(--accent) 52%, transparent);
+}}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 26%, transparent), transparent 34rem), linear-gradient(135deg, var(--bg), #111827); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+a {{ color: inherit; }}
+.site-header {{ position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem clamp(1rem, 4vw, 4rem); backdrop-filter: blur(18px); background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); }}
+.brand-mark {{ display: inline-flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; border-radius: 1rem; text-decoration: none; font-weight: 900; letter-spacing: .06em; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #020617; box-shadow: 0 18px 50px color-mix(in srgb, var(--accent) 26%, transparent); }}
+.site-nav {{ display: flex; flex-wrap: wrap; gap: .55rem; justify-content: flex-end; }}
+.nav-link {{ text-decoration: none; padding: .7rem .9rem; border-radius: 999px; color: var(--muted); border: 1px solid transparent; }}
+.nav-link.active, .nav-link:hover {{ color: var(--text); border-color: var(--ring); background: color-mix(in srgb, var(--panel) 76%, transparent); }}
+.page-content {{ width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(2rem, 6vw, 5rem) 0; }}
+.hero-section {{ display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: clamp(1.25rem, 4vw, 3rem); align-items: center; min-height: 65vh; }}
+.hero-copy h1, .page-hero h1 {{ margin: 0; font-size: clamp(3rem, 9vw, 7rem); line-height: .88; letter-spacing: -.08em; }}
+.hero-lede {{ max-width: 64ch; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.35rem); line-height: 1.7; }}
+.eyebrow {{ color: var(--accent); text-transform: uppercase; font-weight: 900; letter-spacing: .16em; font-size: .8rem; }}
+.hero-actions {{ display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.5rem; }}
+.button {{ display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; padding: .9rem 1.15rem; border-radius: 999px; text-decoration: none; font-weight: 900; border: 1px solid var(--ring); }}
+.button-primary {{ color: #020617; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 18px 55px color-mix(in srgb, var(--accent) 28%, transparent); }}
+.button-ghost {{ color: var(--text); background: color-mix(in srgb, var(--panel) 70%, transparent); }}
+.hero-card, .info-card, .split-band, .premium-band, .custom-band, .spotlight-section, .cta-band {{ border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 92%, transparent), color-mix(in srgb, var(--bg) 84%, transparent)); box-shadow: 0 30px 90px rgba(0,0,0,.28); }}
+.hero-card {{ border-radius: 2rem; padding: clamp(1.25rem, 4vw, 2rem); }}
+.hero-card strong {{ display: block; margin: .75rem 0; font-size: clamp(1.8rem, 4vw, 3.35rem); line-height: .95; letter-spacing: -.05em; }}
+.proof-strip {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; margin: 1.5rem 0; }}
+.proof-strip span {{ padding: 1rem; border-radius: 1.2rem; background: color-mix(in srgb, var(--panel) 75%, transparent); color: var(--muted); border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent); }}
+.card-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }}
+.info-card {{ border-radius: 1.35rem; padding: 1.25rem; }}
+.info-card h2 {{ margin: 0 0 .5rem; font-size: 1.25rem; }}
+.info-card p {{ margin: 0; color: var(--muted); line-height: 1.65; }}
+.deal-card span {{ display: inline-flex; margin-bottom: .75rem; color: var(--accent); font-weight: 900; text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; }}
+.split-band, .premium-band, .custom-band, .spotlight-section, .cta-band {{ margin-top: 1.25rem; border-radius: 1.6rem; padding: clamp(1.25rem, 4vw, 2rem); }}
+.split-band {{ display: grid; grid-template-columns: .9fr 1.1fr; gap: 1.25rem; align-items: center; }}
+.split-band h2, .premium-band h2, .custom-band h2, .cta-band h2 {{ margin: 0; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1; letter-spacing: -.05em; }}
+.compact-hero {{ min-height: auto; padding-bottom: 1.5rem; }}
+.inner-page .card-grid {{ margin-top: 1rem; }}
+.compact-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+.is-premium .hero-card, .is-premium .info-card {{ border-color: color-mix(in srgb, var(--accent) 48%, transparent); }}
+.is-spacious .page-content {{ padding-top: clamp(3rem, 8vw, 7rem); }}
+.is-bold .button-primary {{ transform: scale(1.04); }}
+.is-bold .hero-copy h1 {{ text-shadow: 0 16px 50px color-mix(in srgb, var(--accent) 22%, transparent); }}
+.is-playful .brand-mark, .is-playful .button {{ border-radius: 1.35rem; }}
+.is-customized .custom-band {{ border-style: dashed; }}
+.site-footer {{ display: flex; justify-content: space-between; gap: 1rem; padding: 2rem clamp(1rem, 4vw, 4rem); color: var(--muted); border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); }}
+@media (max-width: 820px) {{ .hero-section, .split-band, .card-grid, .proof-strip {{ grid-template-columns: 1fr; }} .site-header {{ position: relative; align-items: flex-start; flex-direction: column; }} .site-footer {{ flex-direction: column; }} }}
+""".strip() + "\n"
 
 
 def _profile(text: str) -> str:
-    normalized = text.casefold()
+    lowered = (text or "").lower()
     for profile, hints in PROFILE_HINTS.items():
-        if any(hint in normalized for hint in hints):
+        if any(hint in lowered for hint in hints):
             return profile
     return "general"
 
 
+def _signals(question: str, styles: list[str]) -> dict[str, bool]:
+    lowered = f"{question or ''} {' '.join(styles)}".lower()
+    return {
+        "premium": any(term in lowered for term in ("premium", "luxury", "high end", "high-end", "polished")),
+        "spacious": any(term in lowered for term in ("space", "spacing", "breathe", "roomy", "larger gaps")),
+        "playful": any(term in lowered for term in ("fun", "playful", "friendly", "bright")),
+        "bold": any(term in lowered for term in ("bold", "pop", "stronger hero", "hero stronger", "bigger buttons", "buttons pop", "make the buttons")),
+        "specials": "special" in lowered or "deal" in lowered or "offer" in lowered,
+        "less_template": any(term in lowered for term in ("less template", "not template", "template-looking", "less basic", "more custom", "customize")),
+    }
+
+
 def _palette(colors: list[str], styles: list[str], signals: dict[str, bool]) -> dict[str, str]:
-    normalized = [_color(color) for color in colors]
-    normalized = [color for color in normalized if color]
-    wants_light = "light" in {style.lower() for style in styles}
-    primary = normalized[0] if normalized else "#0b1020"
-    secondary = normalized[1] if len(normalized) > 1 else "#ffffff"
-    accent = normalized[2] if len(normalized) > 2 else primary
-    bg = "#f8fafc" if wants_light else primary if _dark(primary) else "#09090b"
-    if signals["premium"] and wants_light:
-        bg = "#f8fafc"
-    return {"bg": bg, "panel": "rgba(255,255,255,.76)" if wants_light else "rgba(255,255,255,.075)", "text": "#0f172a" if wants_light else "#f8fafc", "muted": "#475569" if wants_light else "#cbd5e1", "accent": accent, "accent_2": secondary if secondary != bg else accent, "shadow": f"color-mix(in srgb, {accent} 35%, transparent)"}
+    resolved = [_to_color(color) for color in colors if _to_color(color)]
+    if not resolved:
+        if "light" in styles:
+            resolved = ["#f8fafc", "#0f172a", "#2563eb"]
+        elif signals["playful"]:
+            resolved = ["#111827", "#facc15", "#ef4444"]
+        else:
+            resolved = ["#050505", "#22c55e", "#ffffff"]
+    bg = resolved[0]
+    accent = resolved[1] if len(resolved) > 1 else "#22c55e"
+    accent_2 = resolved[2] if len(resolved) > 2 else accent
+    text = "#ffffff" if _is_dark(bg) else "#0f172a"
+    muted = "#cbd5e1" if _is_dark(bg) else "#475569"
+    panel = "rgba(15,23,42,.72)" if _is_dark(bg) else "rgba(255,255,255,.76)"
+    return {"bg": bg, "panel": panel, "text": text, "muted": muted, "accent": accent, "accent_2": accent_2}
 
 
-def _color(color: str) -> str:
-    value = str(color or "").strip().lower()
-    if re.fullmatch(r"#[0-9a-f]{3}(?:[0-9a-f]{3})?", value):
-        return value
-    return COLOR_HEX.get(value, "")
+def _to_color(value: str) -> str:
+    token = (value or "").strip().lower()
+    if re.fullmatch(r"#[0-9a-f]{3}(?:[0-9a-f]{3})?", token):
+        return token
+    return COLOR_HEX.get(token, "")
 
 
-def _dark(color: str) -> bool:
-    value = _color(color) if not color.startswith("#") else color
-    if len(value) == 4:
-        value = "#" + "".join(ch * 2 for ch in value[1:])
-    if not re.fullmatch(r"#[0-9a-f]{6}", value):
+def _is_dark(color: str) -> bool:
+    token = color.lstrip("#")
+    if len(token) == 3:
+        token = "".join(ch * 2 for ch in token)
+    if len(token) != 6:
         return True
-    red = int(value[1:3], 16)
-    green = int(value[3:5], 16)
-    blue = int(value[5:7], 16)
-    return (red * 0.299 + green * 0.587 + blue * 0.114) < 140
+    red = int(token[0:2], 16)
+    green = int(token[2:4], 16)
+    blue = int(token[4:6], 16)
+    return ((red * 299) + (green * 587) + (blue * 114)) / 1000 < 145
+
+
+def _clean_list(values: list[str] | tuple[str, ...] | None) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values or []:
+        text = str(value).strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            result.append(text)
+    return result
+
+
+def _copy(profile: str, key: str) -> Any:
+    return PROFILE_COPY.get(profile, PROFILE_COPY["general"])[key]
+
+
+def _why(profile: str) -> str:
+    return {
+        "food": "Food businesses need speed, appetite, specials, and a clear catering/contact path.",
+        "retail": "Retail sites need product clarity, trust, and polished offers that make inventory feel intentional.",
+        "auto": "Automotive service sites need technical trust, a clear process, and proof that the shop is in capable hands.",
+        "ministry": "Church and ministry sites need warmth, clarity, visitor guidance, and visible community connection.",
+        "cyber": "Cybersecurity sites need credibility, clear services, risk language, and a strong assessment path.",
+    }.get(profile, "The layout gives every page a role so edits can improve the site without starting over.")
+
+
+def _short_brand(name: str) -> str:
+    letters = "".join(part[0] for part in re.findall(r"[A-Za-z0-9]+", name or "X"))[:3]
+    return letters.upper() or "XV7"
 
 
 def _href(current_path: str, target_path: str | None) -> str:
@@ -462,52 +595,5 @@ def _href(current_path: str, target_path: str | None) -> str:
     current_parent = PurePosixPath(current_path).parent
     if str(current_parent) == ".":
         return target_path
-    try:
-        return str(PurePosixPath(target_path).relative_to(current_parent))
-    except ValueError:
-        return "../" * len(current_parent.parts) + target_path
-
-
-def _copy(profile: str, key: str) -> Any:
-    return PROFILE_COPY.get(profile, PROFILE_COPY["general"])[key]
-
-
-def _clean_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    result: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        text = str(item or "").strip()
-        if text and text not in seen:
-            seen.add(text)
-            result.append(text)
-    return result
-
-
-def _extract_email(text: str) -> str:
-    match = re.search(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", text or "")
-    return match.group(0) if match else ""
-
-
-def _extract_phone(text: str) -> str:
-    match = re.search(r"(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}", text or "")
-    return match.group(0) if match else ""
-
-
-def _short_brand(business_name: str) -> str:
-    cleaned = " ".join(str(business_name or "Home").split())
-    if len(cleaned) <= 24:
-        return cleaned
-    words = cleaned.split()
-    compact = " ".join(words[:3]) if len(words) > 1 else cleaned[:24]
-    return compact if len(compact) <= 24 else words[0]
-
-
-def _titlecase(value: str) -> str:
-    keep_upper = {"bbq", "cbd", "adas", "faq", "seo", "it"}
-    parts = []
-    for word in str(value or "").strip().split():
-        stripped = word.strip()
-        parts.append(stripped.upper() if stripped.casefold() in keep_upper else stripped.capitalize())
-    return " ".join(parts)
+    depth = len(current_parent.parts)
+    return "../" * depth + target_path
