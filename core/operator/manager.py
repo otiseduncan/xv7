@@ -49,6 +49,13 @@ NON_MUTATION_WRITING_PATTERNS = (
     "test planning",
     "debugging guidance",
     "documentation help",
+    # Sandbox export/write intent: writing the active artifact to the approved sandbox
+    # is allowed without Operator Mode — it is not repo mutation.
+    "to the sandbox",
+    "to sandbox",
+    "export to sandbox",
+    "save to sandbox",
+    "write to sandbox",
 )
 
 
@@ -1336,7 +1343,9 @@ class OperatorManager:
             if not history:
                 # Preserve legacy behavior: allow answer-contract path until any operator action exists.
                 return None
-            last_repo = latest_action_by_name(session_metadata, "repo_status")
+            last_repo = latest_action_by_name(
+                session_metadata, "operator_status_report"
+            ) or latest_action_by_name(session_metadata, "repo_status")
             if last_repo is None:
                 answer = "No live repo check has run in this session."
             else:
@@ -1421,7 +1430,7 @@ class OperatorManager:
         return any(token in normalized for token in NON_MUTATION_WRITING_PATTERNS)
 
     @staticmethod
-    def _is_commit_proposal_or_approval_request(normalized: str) -> bool:
+    def _is_commit_proposal_request(normalized: str) -> bool:
         return any(
             token in normalized
             for token in (
@@ -1436,33 +1445,118 @@ class OperatorManager:
                 "what would the commit be",
                 "what should i commit",
                 "commit it",
+            )
+        )
+
+    @staticmethod
+    def _is_commit_push_operator_request(normalized: str) -> bool:
+        return any(
+            token in normalized
+            for token in (
+                "commit the approved changes",
+                "commit these changes",
                 "commit the proposal",
                 "approve commit",
                 "confirm commit",
                 "make the commit",
                 "create the commit",
                 "go ahead and commit",
-                "commit these changes",
+                "push the branch",
+                "push branch",
+                "git push",
+                "commit and push",
             )
         )
+
+    def _natural_commit_payload(self, normalized: str) -> str:
+        commit_requested = any(
+            token in normalized
+            for token in (
+                "commit",
+                "commit it",
+                "commit these changes",
+                "commit the approved changes",
+                "approve commit",
+                "confirm commit",
+                "make the commit",
+                "create the commit",
+                "go ahead and commit",
+            )
+        )
+        push_requested = any(
+            token in normalized
+            for token in (
+                "push",
+                "push the branch",
+                "git push",
+                "commit and push",
+            )
+        )
+        explicit_commit_approval = any(
+            token in normalized
+            for token in (
+                "approved",
+                "approve commit",
+                "confirm commit",
+                "commit these changes",
+                "go ahead and commit",
+            )
+        )
+        explicit_push_approval = any(
+            token in normalized
+            for token in (
+                "approved to push",
+                "approve push",
+                "confirm push",
+                "go ahead and push",
+            )
+        )
+
+        mode = "apply" if (commit_requested or push_requested) else "preview"
+        payload: dict[str, Any] = {
+            "mode": mode,
+            "push": push_requested,
+            "approval": {"approved": explicit_commit_approval},
+            "push_approval": {"approved": explicit_push_approval},
+        }
+        return json.dumps(payload)
 
     def _match_action(
         self, question: str, normalized: str
     ) -> tuple[str, str | None] | None:
+        patch_payload = self._natural_patch_payload(question, normalized)
+        if patch_payload is not None:
+            return "operator_patch_report", patch_payload
+        if self._is_natural_repair_request(normalized):
+            return "operator_repair_report", json.dumps(
+                {
+                    "profile": "python-core",
+                    "max_cycles": 1,
+                    "reason": question.strip(),
+                }
+            )
+        if self._is_natural_validation_request(normalized):
+            return "operator_validation_report", json.dumps({"profile": "python-core"})
+        if self._is_commit_push_operator_request(normalized):
+            return "operator_commit_report", self._natural_commit_payload(normalized)
         if normalized in {
             "check the repo.",
             "check the repo",
+            "give me repo status.",
+            "give me repo status",
+            "repo status.",
+            "repo status",
             "what is git status?",
             "what is git status",
         }:
-            return "repo_status", None
+            return "operator_status_report", None
         if normalized in {
             "what branch are we on?",
             "what branch are we on",
             "is the working tree clean?",
             "is the working tree clean",
         }:
-            return "repo_status", None
+            return "operator_status_report", None
         if normalized in {
             "list the project files.",
             "list the project files",
@@ -1666,6 +1760,76 @@ class OperatorManager:
             return "repo_recent_commits", None
         return None
 
+    @staticmethod
+    def _extract_json_object(text: str) -> dict[str, Any] | None:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            parsed = json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _natural_patch_payload(self, question: str, normalized: str) -> str | None:
+        is_preview = any(
+            phrase in normalized
+            for phrase in (
+                "preview this patch",
+                "preview the patch",
+                "show patch preview",
+            )
+        )
+        is_apply = any(
+            phrase in normalized
+            for phrase in (
+                "apply this patch",
+                "apply the patch",
+                "apply this approved patch",
+                "apply approved patch",
+            )
+        )
+        if not (is_preview or is_apply):
+            return None
+        payload = self._extract_json_object(question) or {}
+        if not payload:
+            payload = {"changes": []}
+        payload = dict(payload)
+        payload["mode"] = "preview" if is_preview else "apply"
+        if is_apply and "approved patch" in normalized and "approval" not in payload:
+            payload["approval"] = {
+                "approved": True,
+                "source": "natural-language explicit approval",
+            }
+        return json.dumps(payload)
+
+    @staticmethod
+    def _is_natural_validation_request(normalized: str) -> bool:
+        return normalized in {
+            "run validation.",
+            "run validation",
+            "run the checks.",
+            "run the checks",
+            "run checks.",
+            "run checks",
+            "what's failing?",
+            "what's failing",
+            "what is failing?",
+            "what is failing",
+        }
+
+    @staticmethod
+    def _is_natural_repair_request(normalized: str) -> bool:
+        return normalized in {
+            "fix the first failure.",
+            "fix the first failure",
+            "fix first failure.",
+            "fix first failure",
+            "fix it.",
+            "fix it",
+        }
+
     def _build_answer(self, action_name: str, result: OperatorActionResult) -> str:
         if action_name in {"build_task", "patch_plan"}:
             data = result.data if isinstance(result.data, dict) else {}
@@ -1736,6 +1900,93 @@ class OperatorManager:
                 "Host scan failed. "
                 f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
             )
+        if action_name == "operator_validation_report":
+            passed = bool(result.data.get("passed", False))
+            commands = result.data.get("selected_commands", [])
+            command_count = len(commands) if isinstance(commands, list) else 0
+            if passed:
+                return (
+                    f"Validation passed for {command_count} allowlisted command(s). "
+                    "No files were changed. No commit or push occurred."
+                )
+            first_failure = str(result.data.get("first_failure_command") or "unknown")
+            return (
+                f"Validation failed. First failing command: {first_failure}. "
+                "No files were changed. No commit or push occurred."
+            )
+        if action_name == "operator_patch_report":
+            changed_files = result.data.get("changed_files", [])
+            changed_count = len(changed_files) if isinstance(changed_files, list) else 0
+            if result.status == "denied":
+                return (
+                    "Patch request was denied by safety policy. "
+                    f"Safe detail: {result.stderr_summary or 'no detail available.'} "
+                    "No commit or push occurred."
+                )
+            mode = str(result.data.get("mode") or "preview")
+            if mode == "preview":
+                return (
+                    f"Patch preview completed for {changed_count} changed file(s). "
+                    "No files were changed. No commit or push occurred."
+                )
+            return (
+                f"Patch apply completed for {changed_count} changed file(s). "
+                "No commit or push occurred."
+            )
+        if action_name == "operator_commit_report":
+            candidate_files = result.data.get("candidate_files", [])
+            committed_files = result.data.get("committed_files", [])
+            skipped_files = result.data.get("skipped_files", [])
+            commit_message = str(result.data.get("commit_message") or "").strip()
+            commit_sha = str(result.data.get("commit_sha") or "").strip()
+            pushed = bool(result.data.get("pushed", False))
+            mode = str(result.data.get("mode") or "preview")
+            if result.status == "denied" and result.safety.requires_approval:
+                return (
+                    "Commit/push request requires explicit approval before mutation. "
+                    "No merge was performed."
+                )
+            if result.status == "denied":
+                return (
+                    "Commit/push request was blocked by safety policy. "
+                    f"Safe detail: {result.stderr_summary or 'no detail available.'}"
+                )
+            if mode == "preview" and result.status == "success":
+                return (
+                    f"Commit/push preview prepared with {len(candidate_files)} candidate file(s), "
+                    f"{len(skipped_files)} skipped file(s), and commit message '{commit_message}'. "
+                    "Approval is required before commit or push."
+                )
+            if result.status == "success":
+                return (
+                    f"Commit workflow completed for {len(committed_files)} file(s); "
+                    f"commit_sha={commit_sha or 'n/a'}; pushed={str(pushed).lower()}. "
+                    "No merge was performed."
+                )
+            return (
+                "Commit/push workflow failed. "
+                f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
+            )
+        if action_name == "operator_repair_report":
+            if result.status == "denied":
+                return (
+                    "Repair cycle was denied by safety policy. "
+                    f"Safe detail: {result.stderr_summary or 'no detail available.'} "
+                    "No commit or push occurred."
+                )
+            if result.status == "failed":
+                first_failure = str(
+                    result.data.get("first_failure_command") or "unknown"
+                )
+                return (
+                    f"Repair cycle did not complete successfully. First failure: {first_failure}. "
+                    "A concrete approved patch is required when no safe patch is supplied. "
+                    "No commit or push occurred."
+                )
+            return (
+                "Repair cycle completed. "
+                "No commit or push occurred; commit/push still require separate approval."
+            )
         if result.status == "failed":
             return (
                 f"Operator action {result.action_name} failed. "
@@ -1746,7 +1997,7 @@ class OperatorManager:
                 "The requested operator action was denied by read-only safety policy."
             )
 
-        if action_name == "repo_status":
+        if action_name in {"repo_status", "operator_status_report"}:
             branch = str(result.data.get("branch", "unknown"))
             clean = bool(result.data.get("clean", False))
             clean_text = "clean" if clean else "not clean"
@@ -1907,8 +2158,22 @@ class OperatorManager:
         if any(
             token in normalized for token in MUTATION_PATTERNS
         ) and not self._is_non_mutation_writing_request(normalized):
-            if self._is_commit_proposal_or_approval_request(normalized):
+            if self._is_commit_proposal_request(normalized):
                 return None
+            if self._is_commit_push_operator_request(normalized):
+                action_name = "operator_commit_report"
+                commit_target = self._natural_commit_payload(normalized)
+                result = run_action(
+                    action_name,
+                    action_id=self._next_action_id(),
+                    repo_root=self.repo_root,
+                    target=commit_target,
+                )
+                return OperatorExecution(
+                    result=result,
+                    answer=self._build_answer(action_name, result),
+                    record_history=True,
+                )
             denied = self._denied_result(
                 question,
                 "Mutation requires Operator Mode plus a staged slash command confirmation flow.",
