@@ -6,6 +6,14 @@
  * - Favor async/await and cancellation-safe request handling.
  * - Leave extension points for streaming/WebSocket and avatar channels.
  */
+import {
+  classifyPromptRuntime,
+  createRuntimeStatusModel,
+  phaseFromOperatorStatus,
+  runtimeActionLabel,
+  updateRuntimeStatusElement,
+} from './runtime-status.js';
+
 class Xv7UI {
   /** @type {string | null} */
   currentSessionId = null;
@@ -95,6 +103,15 @@ class Xv7UI {
 
   /** @type {boolean} */
   isSending = false;
+
+  /** @type {AbortController | null} */
+  activeRequestController = null;
+
+  /** @type {boolean} */
+  requestStopRequested = false;
+
+  /** @type {{phase:string,label:string,hint:string,actionName:string,startedAt:number,endedAt:number|null,busy:boolean}|null} */
+  runtimeStatusModel = null;
 
   /** @type {number} */
   messageCounter = 0;
@@ -229,6 +246,7 @@ class Xv7UI {
       chatTimeline: document.getElementById('chatTimeline'),
       promptInput: document.getElementById('promptInput'),
       slashMenu: document.getElementById('slashMenu'),
+      runtimeStatus: document.getElementById('runtimeStatus'),
       sendButton: document.getElementById('sendButton'),
       operatorModeToggle: document.getElementById('operatorModeToggle'),
       operatorModeBanner: document.getElementById('operatorModeBanner'),
@@ -347,6 +365,12 @@ class Xv7UI {
       brainRecordEditorRaw: document.getElementById('brainRecordEditorRaw'),
     };
 
+    this.setRuntimeStatus({
+      phase: 'idle',
+      label: 'Ready',
+      hint: 'Ready for the next instruction.',
+    });
+
     this.bindEvents();
     void this.initialize();
   }
@@ -368,6 +392,10 @@ class Xv7UI {
 
   bindEvents() {
     this.els.sendButton.addEventListener('click', () => {
+      if (this.isSending) {
+        this.stopActiveRequest();
+        return;
+      }
       void this.sendMessage();
     });
 
@@ -1043,6 +1071,19 @@ class Xv7UI {
     const raw = this.els.promptInput.value.trim();
     if (!raw) return;
 
+    const classifiedRuntime = classifyPromptRuntime(raw);
+    const activePhase = classifiedRuntime.phase === 'needs_approval'
+      ? 'routing'
+      : classifiedRuntime.phase;
+
+    this.requestStopRequested = false;
+    this.activeRequestController = new AbortController();
+    this.setRuntimeStatus({
+      phase: activePhase,
+      label: classifiedRuntime.label,
+      actionName: '',
+    });
+
     this.setAvatarState('thinking', 'message-sent');
 
     this.showAlert('', false);
@@ -1050,7 +1091,7 @@ class Xv7UI {
     this.setHardwareLoad('Inference', 74);
 
     try {
-      await this.ensureSession();
+      await this.ensureSession(this.activeRequestController.signal);
 
       this.appendMessageCard('user', raw, null, null, this.nowIso());
       this.els.promptInput.value = '';
@@ -1064,11 +1105,16 @@ class Xv7UI {
       this.renderVoiceDiagnostics();
 
       if (raw.startsWith('/')) {
-        await this.sendSlashCommand(raw);
+        await this.sendSlashCommand(raw, this.activeRequestController.signal);
         this.memoryLogCount += 1;
         this.updateSessionTelemetry();
         this.setHardwareLoad('Ready', 12);
         this.setAvatarState('idle', 'operator-stage-response');
+        this.setRuntimeStatus({
+          phase: 'complete',
+          label: 'Complete',
+          hint: 'Finished.',
+        });
         return;
       }
 
@@ -1079,15 +1125,39 @@ class Xv7UI {
           body: JSON.stringify({ raw_text: raw }),
         },
         this.chatMessageTimeoutMs,
+        this.activeRequestController.signal,
       );
 
+      this.setRuntimeStatus({
+        phase: 'streaming',
+        label: 'Streaming',
+        hint: 'Rendering the response.',
+      });
       this.renderSessionResponse(data);
     } catch (error) {
+      if (error && typeof error === 'object' && error.name === 'AbortError' && this.requestStopRequested) {
+        this.setHardwareLoad('Ready', 12);
+        this.setAvatarState('idle', 'message-stopped');
+        this.setRuntimeStatus({
+          phase: 'blocked',
+          label: 'Stopped',
+          hint: 'Request cancelled.',
+        });
+        return;
+      }
+
       this.setHardwareLoad('Recovery', 24);
       this.showAlert(this.humanizeError(error), true);
       this.setAvatarState('error', 'message-error');
       this.scheduleAvatarReset('idle', 1800);
+      this.setRuntimeStatus({
+        phase: 'failed',
+        label: 'Failed',
+        hint: 'Action failed. Review the result card.',
+      });
     } finally {
+      this.activeRequestController = null;
+      this.requestStopRequested = false;
       this.setSendBusy(false);
       this.els.promptInput.focus();
     }
@@ -1142,6 +1212,11 @@ class Xv7UI {
         this.renderRetrievalJournal(response);
         this.setHardwareLoad('Ready', 12);
         this.setAvatarState('idle', 'assistant-response-received');
+        this.setRuntimeStatus({
+          phase: 'complete',
+          label: 'Complete',
+          hint: 'Site preview ready.',
+        });
         return;
       }
     const messages = Array.isArray(response.messages) ? response.messages : [];
@@ -1255,6 +1330,16 @@ class Xv7UI {
     this.updateSessionTelemetry();
     this.renderRetrievalJournal(response);
     this.setHardwareLoad('Ready', 12);
+
+    if (operatorHistory.length) {
+      this.updateRuntimeStatusFromHistory(operatorHistory);
+    } else {
+      this.setRuntimeStatus({
+        phase: 'complete',
+        label: 'Complete',
+        hint: 'Finished.',
+      });
+    }
   }
 
   resolveAssistantPayload(responseJson) {
@@ -1284,7 +1369,7 @@ class Xv7UI {
     await this.sendMessage();
   }
 
-  async ensureSession() {
+  async ensureSession(signal = undefined) {
     if (this.currentSessionId) return;
     const sessionData = await this.fetchJson('/api/sessions', {
       method: 'POST',
@@ -1295,14 +1380,14 @@ class Xv7UI {
           started_at: new Date().toISOString(),
         },
       }),
-    });
+    }, undefined, signal);
     this.currentSessionId = sessionData.session_id;
     if (!this.currentSessionId || typeof this.currentSessionId !== 'string') {
       throw new Error('Session creation response did not include a valid session_id.');
     }
   }
 
-  async sendSlashCommand(commandText) {
+  async sendSlashCommand(commandText, signal = undefined) {
     let payload;
     try {
       payload = await this.fetchJson('/api/operator/stage', {
@@ -1312,7 +1397,7 @@ class Xv7UI {
           command_text: commandText,
           operator_mode: this.operatorModeActive,
         }),
-      });
+      }, undefined, signal);
     } catch (error) {
       this.showAlert(this.humanizeError(error), true);
       return;
@@ -4009,16 +4094,77 @@ class Xv7UI {
   setSendBusy(locked) {
     this.isSending = locked;
     this.els.promptInput.disabled = locked;
-    this.els.sendButton.textContent = locked ? 'Processing...' : 'Send';
+    this.els.sendButton.textContent = locked ? 'Stop' : 'Send';
+    this.els.sendButton.classList.toggle('is-stop', locked);
+    this.els.sendButton.classList.toggle('is-busy', locked);
+    this.els.sendButton.setAttribute('aria-label', locked ? 'Stop active request' : 'Send message');
+    this.els.sendButton.title = locked ? 'Stop active request' : 'Send message';
     this.syncComposerSendAvailability();
   }
 
   syncComposerSendAvailability() {
-    this.els.sendButton.disabled = this.isSending;
+    this.els.sendButton.disabled = false;
   }
 
   lockInput(locked) {
     this.setSendBusy(locked);
+  }
+
+  stopActiveRequest() {
+    if (!this.isSending) return;
+    this.requestStopRequested = true;
+    if (this.activeRequestController && !this.activeRequestController.signal.aborted) {
+      this.activeRequestController.abort();
+      return;
+    }
+
+    this.setRuntimeStatus({
+      phase: 'blocked',
+      label: 'Stopped',
+      hint: 'Request cancelled.',
+    });
+    this.setSendBusy(false);
+  }
+
+  setRuntimeStatus(model) {
+    this.runtimeStatusModel = updateRuntimeStatusElement(this.els.runtimeStatus, model) || this.runtimeStatusModel;
+    return this.runtimeStatusModel;
+  }
+
+  updateRuntimeStatusFromHistory(history) {
+    const items = Array.isArray(history) ? history : [];
+    if (!items.length) return;
+
+    const latest = items[items.length - 1];
+    const actionName = typeof latest?.action_name === 'string' ? latest.action_name : '';
+    const actionLabel = runtimeActionLabel(actionName);
+    const phase = phaseFromOperatorStatus(latest?.status);
+    let hint = 'Finished.';
+
+    if (phase === 'failed') {
+      hint = `${actionLabel} failed. Review the result card.`;
+    } else if (phase === 'blocked') {
+      hint = `${actionLabel} was blocked by safety policy.`;
+    } else if (phase === 'needs_approval') {
+      hint = `${actionLabel} is waiting for explicit approval.`;
+    } else if (phase === 'complete') {
+      hint = `Finished: ${actionLabel}.`;
+    }
+
+    this.setRuntimeStatus({
+      phase,
+      label: phase === 'needs_approval'
+        ? 'Approval required'
+        : phase === 'blocked'
+          ? 'Blocked'
+          : phase === 'failed'
+            ? 'Failed'
+            : phase === 'complete'
+              ? 'Complete'
+              : actionLabel,
+      hint,
+      actionName,
+    });
   }
 
   /**
@@ -4816,7 +4962,7 @@ class Xv7UI {
    * @param {string} path
    * @param {RequestInit} init
    */
-  async fetchJson(path, init, timeoutMs = 15 * 60 * 1000) {
+  async fetchJson(path, init, timeoutMs = 15 * 60 * 1000, externalSignal = undefined) {
     const headers = new Headers(init?.headers || {});
     if (!headers.has('Content-Type') && init?.body) {
       headers.set('Content-Type', 'application/json');
@@ -4825,6 +4971,15 @@ class Xv7UI {
     // Intentionally long timeout to avoid failing while large model weights load.
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    const abortFromExternal = () => controller.abort();
+
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort();
+      } else {
+        externalSignal.addEventListener('abort', abortFromExternal, { once: true });
+      }
+    }
 
     try {
       const response = await fetch(`${this.apiBase}${path}`, {
@@ -4841,6 +4996,9 @@ class Xv7UI {
       return await response.json();
     } finally {
       window.clearTimeout(timeout);
+      if (externalSignal) {
+        externalSignal.removeEventListener('abort', abortFromExternal);
+      }
     }
   }
 

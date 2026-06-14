@@ -39,6 +39,7 @@ function buildDom() {
     <div id="operatorConfirmArea" class="hidden"></div>
     <textarea id="promptInput"></textarea>
     <div id="slashMenu" class="hidden"></div>
+    <div id="runtimeStatus"></div>
     <button id="micButton"></button>
     <button id="sendButton"></button>
     <section id="avatarCard" class="avatar-card">
@@ -1341,12 +1342,13 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('chatReceiptRole').textContent).toBe('chat');
     expect(document.getElementById('chatReceiptSelectionSource').textContent).toBe('registry_effective_profile');
     expect(document.getElementById('chatReceiptRequestId').textContent).toBe('req-1');
+    expect(document.getElementById('runtimeStatus')?.dataset.runtimePhase).toBe('complete');
     expect(document.getElementById('sendButton').disabled).toBe(false);
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(document.getElementById('promptInput').disabled).toBe(false);
   });
 
-  it('shows Processing while request is in flight and restores controls on success', async () => {
+  it('shows stop mode and thinking status while a normal request is in flight and restores controls on success', async () => {
     const fetchMock = createRuntimeFetchMock({ source: 'runtime_override', activeProfile: 'local_test' });
     let resolveMessage;
 
@@ -1373,13 +1375,17 @@ describe('ModelProfileControl', () => {
 
     const prompt = document.getElementById('promptInput');
     const sendButton = document.getElementById('sendButton');
+    const runtimeStatus = document.getElementById('runtimeStatus');
     prompt.value = 'Prompt in flight';
     sendButton.click();
     await flushAsync();
 
-    expect(sendButton.textContent).toBe('Processing...');
-    expect(sendButton.disabled).toBe(true);
+    expect(sendButton.textContent).toBe('Stop');
+    expect(sendButton.disabled).toBe(false);
+    expect(sendButton.classList.contains('is-stop')).toBe(true);
     expect(prompt.disabled).toBe(true);
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('thinking');
+    expect(runtimeStatus?.textContent).toContain('Thinking');
     expect(typeof resolveMessage).toBe('function');
 
     resolveMessage();
@@ -1387,8 +1393,216 @@ describe('ModelProfileControl', () => {
 
     expect(sendButton.textContent).toBe('Send');
     expect(sendButton.disabled).toBe(false);
+    expect(sendButton.classList.contains('is-stop')).toBe(false);
     expect(prompt.disabled).toBe(false);
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('complete');
+    expect(runtimeStatus?.textContent).toContain('Complete');
     expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Recovered after pending.');
+  });
+
+  it('renders idle runtime status when the app is ready', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('idle');
+    expect(runtimeStatus?.textContent).toContain('Ready');
+  });
+
+  it('shows website preview status for website prompts while active', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(okJson({
+            session_id: 'session-1',
+            current_persona: 'default',
+            metadata: {},
+            messages: [
+              { role: 'user', content: 'Build me a website for Thinking Test Hot Dog Cart.', metadata: {} },
+              { role: 'assistant', content: 'Site preview ready.', metadata: {} },
+            ],
+          }));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Build me a website for Thinking Test Hot Dog Cart.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('running');
+    expect(runtimeStatus?.textContent).toContain('Building site preview');
+
+    resolveMessage();
+    await flushAsync();
+  });
+
+  it('shows checking repo status for operator status prompts while active', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(fetchMock(input, init));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'check the repo';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('running');
+    expect(runtimeStatus?.textContent).toContain('Checking repo');
+
+    resolveMessage();
+    await flushAsync();
+  });
+
+  it('shows running validation status for validation prompts while active', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    let resolveMessage;
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve) => {
+          resolveMessage = () => resolve(fetchMock(input, init));
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'run validation';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('running');
+    expect(runtimeStatus?.textContent).toContain('Running validation');
+
+    resolveMessage();
+    await flushAsync();
+  });
+
+  it('stop click aborts the active request and restores send mode', async () => {
+    const fetchMock = createRuntimeFetchMock();
+
+    global.fetch = vi.fn((input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return new Promise((resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Request cancelled.', 'AbortError'));
+          }, { once: true });
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Hello X.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const sendButton = document.getElementById('sendButton');
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    sendButton.click();
+    await flushAsync();
+
+    expect(sendButton.textContent).toBe('Send');
+    expect(sendButton.classList.contains('is-stop')).toBe(false);
+    expect(runtimeStatus?.textContent).toContain('Stopped');
+    expect(runtimeStatus?.textContent).toContain('Request cancelled.');
+    expect(document.querySelector('.chat-card-assistant')).toBe(null);
+  });
+
+  it('shows failed status when a request errors and restores send mode', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return errorText(500, 'server exploded');
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Hello X.';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const sendButton = document.getElementById('sendButton');
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    expect(sendButton.textContent).toBe('Send');
+    expect(sendButton.disabled).toBe(false);
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('failed');
+    expect(runtimeStatus?.textContent).toContain('Failed');
+  });
+
+  it('shows approval required for commit-and-push responses without exposing hidden reasoning', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            operator_action_history: [
+              {
+                action_id: 'OP-COMMIT-1',
+                action_name: 'operator_commit_report',
+                status: 'needs_approval',
+              },
+            ],
+          },
+          messages: [
+            { role: 'user', content: 'commit and push', metadata: {} },
+            { role: 'assistant', content: 'Internal reasoning should never appear here.', metadata: {} },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'commit and push';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    const runtimeStatus = document.getElementById('runtimeStatus');
+    expect(runtimeStatus?.dataset.runtimePhase).toBe('needs_approval');
+    expect(runtimeStatus?.textContent).toContain('Approval required');
+    expect(runtimeStatus?.textContent || '').not.toContain('Internal reasoning');
+    expect(runtimeStatus?.textContent || '').not.toContain('chain-of-thought');
   });
 
   it('prefers the latest assistant role message over metadata fallback payload', async () => {
