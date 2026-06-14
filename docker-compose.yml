@@ -174,9 +174,17 @@ services:
       - ASSETS_PATH=${ASSETS_PATH:-/app/shared/assets}
       - XV7_MODEL_PROFILE=${XV7_MODEL_PROFILE:-balanced}
       - XV7_OPERATOR_REPO_ROOT=/workspace
+      - XV7_OPERATOR_FAST_GIT_STATUS=1
       - XV7_LOCAL_BRIDGE_URL=${XV7_LOCAL_BRIDGE_URL:-http://host.docker.internal:8765}
       - XV7_LOCAL_BRIDGE_TOKEN=${XV7_LOCAL_BRIDGE_TOKEN:-xv7-local-bridge-token}
       - XV7_LOCAL_BRIDGE_TIMEOUT_SECONDS=${XV7_LOCAL_BRIDGE_TIMEOUT_SECONDS:-10}
+      - GIT_CONFIG_COUNT=3
+      - GIT_CONFIG_KEY_0=safe.directory
+      - GIT_CONFIG_VALUE_0=/workspace
+      - GIT_CONFIG_KEY_1=core.autocrlf
+      - GIT_CONFIG_VALUE_1=true
+      - GIT_CONFIG_KEY_2=core.filemode
+      - GIT_CONFIG_VALUE_2=false
     depends_on:
       ollama:
         condition: service_healthy

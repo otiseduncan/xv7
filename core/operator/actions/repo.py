@@ -27,6 +27,14 @@ SENSITIVE_FILE_PATTERNS = (
 
 
 def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    if args == ["status", "--short", "--branch"]:
+        from core.operator.actions.status_report import (
+            _fast_status,
+            _fast_status_enabled,
+        )
+
+        if _fast_status_enabled(repo_root):
+            return _fast_status(repo_root)
     try:
         return subprocess.run(
             ["git", *args],

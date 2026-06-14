@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -91,10 +92,29 @@ def _run_command(
     repo_root: Path, command: Command, timeout_seconds: int
 ) -> tuple[int, str, str, int]:
     started = time.perf_counter()
+    env = os.environ.copy()
+    for isolated_name in (
+        "CORE_API_KEY",
+        "XV7_API_KEY",
+        "WEBUI_SECRET_KEY",
+        "XV7_BRAIN_RECORDS_PATH",
+    ):
+        env.pop(isolated_name, None)
+    env["XV7_BRAIN_RUNTIME_RECORDS_PATH"] = "/tmp/xv7-brain-runtime-records"
+    env.setdefault("RUFF_CACHE_DIR", "/tmp/xv7-ruff-cache")
+    env.setdefault("MYPY_CACHE_DIR", "/tmp/xv7-mypy-cache")
+    pytest_addopts = str(env.get("PYTEST_ADDOPTS", "")).strip()
+    if "-p no:cacheprovider" not in pytest_addopts:
+        env["PYTEST_ADDOPTS"] = (
+            f"{pytest_addopts} -p no:cacheprovider"
+            if pytest_addopts
+            else "-p no:cacheprovider"
+        )
     try:
         proc = subprocess.run(
             list(command),
             cwd=repo_root,
+            env=env,
             capture_output=True,
             text=True,
             shell=False,
@@ -118,11 +138,41 @@ def _run_command(
 
 
 def _docker_compose_modified(repo_root: Path) -> bool:
-    proc = _run_git(repo_root, ["status", "--short"])
-    if proc.returncode != 0:
-        return False
-    for line in proc.stdout.splitlines():
-        path = (line[3:] if len(line) > 3 else line).strip().replace("\\", "/")
+    tracked_proc = _run_git(
+        repo_root,
+        ["diff", "--name-only", "--", "docker-compose.yml", "compose.yml", "docker"],
+    )
+    staged_proc = _run_git(
+        repo_root,
+        [
+            "diff",
+            "--cached",
+            "--name-only",
+            "--",
+            "docker-compose.yml",
+            "compose.yml",
+            "docker",
+        ],
+    )
+    untracked_proc = _run_git(
+        repo_root,
+        [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "docker-compose.yml",
+            "compose.yml",
+            "docker",
+        ],
+    )
+    outputs = [
+        proc.stdout
+        for proc in (tracked_proc, staged_proc, untracked_proc)
+        if proc.returncode == 0
+    ]
+    for line in "\n".join(outputs).splitlines():
+        path = line.strip().replace("\\", "/")
         if path in {"docker-compose.yml", "compose.yml"} or path.startswith("docker/"):
             return True
     return False

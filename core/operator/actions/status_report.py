@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -24,6 +25,7 @@ BASE_VALIDATION_COMMANDS = [
     "python -m mypy core",
     "python -m pytest",
 ]
+FAST_STATUS_PATHSPEC = ["--", ".", ":!node_modules"]
 
 
 def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -50,6 +52,96 @@ def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[st
             stdout="",
             stderr=f"limitation: git check timed out after {GIT_TIMEOUT_SECONDS}s",
         )
+
+
+def _fast_status_enabled(repo_root: Path) -> bool:
+    enabled = os.getenv("XV7_OPERATOR_FAST_GIT_STATUS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not enabled:
+        return False
+    configured_root = os.getenv("XV7_OPERATOR_REPO_ROOT", "").strip()
+    if not configured_root:
+        return True
+    return repo_root.resolve() == Path(configured_root).expanduser().resolve()
+
+
+def _status_line_from_name_status(line: str, *, staged: bool) -> str:
+    parts = line.split("\t")
+    if not parts:
+        return ""
+    status = parts[0][:1]
+    path = parts[-1].strip().replace("\\", "/")
+    if not path:
+        return ""
+    code = f"{status} " if staged else f" {status}"
+    return f"{code} {path}"
+
+
+def _fast_status(repo_root: Path) -> subprocess.CompletedProcess[str]:
+    branch_proc = _run_git(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"])
+    if branch_proc.returncode != 0:
+        return branch_proc
+
+    branch = branch_proc.stdout.strip() or "unknown"
+    upstream_proc = _run_git(
+        repo_root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+    )
+    upstream = upstream_proc.stdout.strip() if upstream_proc.returncode == 0 else ""
+    header = f"## {branch}"
+    if upstream:
+        header = f"{header}...{upstream}"
+        counts_proc = _run_git(
+            repo_root, ["rev-list", "--left-right", "--count", "HEAD...@{u}"]
+        )
+        if counts_proc.returncode == 0:
+            counts = counts_proc.stdout.split()
+            if len(counts) == 2:
+                ahead, behind = counts
+                meta = []
+                if ahead != "0":
+                    meta.append(f"ahead {ahead}")
+                if behind != "0":
+                    meta.append(f"behind {behind}")
+                if meta:
+                    header = f"{header} [{', '.join(meta)}]"
+
+    lines = [header]
+    for args, staged in (
+        (["diff", "--name-status", *FAST_STATUS_PATHSPEC], False),
+        (["diff", "--cached", "--name-status", *FAST_STATUS_PATHSPEC], True),
+    ):
+        proc = _run_git(repo_root, args)
+        if proc.returncode != 0:
+            return proc
+        for line in proc.stdout.splitlines():
+            status_line = _status_line_from_name_status(line, staged=staged)
+            if status_line:
+                lines.append(status_line)
+
+    untracked_proc = _run_git(repo_root, ["ls-files", "--others", "--exclude-standard"])
+    if untracked_proc.returncode != 0:
+        return untracked_proc
+    lines.extend(
+        "?? " + line.strip().replace("\\", "/")
+        for line in untracked_proc.stdout.splitlines()
+        if line.strip()
+    )
+    return subprocess.CompletedProcess(
+        args=["git", "fast-status"],
+        returncode=0,
+        stdout="\n".join(lines) + "\n",
+        stderr="",
+    )
+
+
+def _read_status(repo_root: Path) -> subprocess.CompletedProcess[str]:
+    if _fast_status_enabled(repo_root):
+        return _fast_status(repo_root)
+    return _run_git(repo_root, ["status", "--short", "--branch"])
 
 
 def _parse_branch_header(header: str) -> dict[str, Any]:
@@ -150,7 +242,7 @@ def _sanitize_git_failure(stderr_text: str, repo_root: Path) -> str:
 def operator_status_report(*, action_id: str, repo_root: Path) -> OperatorActionResult:
     started = datetime.now(UTC)
     repo_root = repo_root.resolve()
-    proc = _run_git(repo_root, ["status", "--short", "--branch"])
+    proc = _read_status(repo_root)
     completed = datetime.now(UTC)
 
     if proc.returncode != 0:

@@ -10,7 +10,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY core/requirements.txt /tmp/requirements.txt
-RUN grep -Ev '^(pytest|pytest-asyncio|pytest-httpx)==|^#|^\s*$' /tmp/requirements.txt > /tmp/requirements.runtime.txt \
+RUN grep -Ev '^#|^\s*$' /tmp/requirements.txt > /tmp/requirements.runtime.txt \
     && pip install --no-cache-dir -r /tmp/requirements.runtime.txt
 
 EXPOSE 8000
