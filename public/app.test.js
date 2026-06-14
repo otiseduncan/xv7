@@ -2317,6 +2317,11 @@ describe('ModelProfileControl', () => {
           first_failure: '',
           safety_notes: [],
           local_only_files_warning: [],
+          repo_state: {
+            branch: 'ui/p1-operator-runtime-cards',
+            clean: true,
+            sync: 'synced',
+          },
           commit_push_state: {},
         },
       },
@@ -2336,6 +2341,11 @@ describe('ModelProfileControl', () => {
           first_failure: '',
           safety_notes: [],
           local_only_files_warning: [],
+          validation_summary: {
+            status: 'passed',
+            passed: 1,
+            failed: 0,
+          },
           commit_push_state: {},
         },
       },
@@ -2371,6 +2381,18 @@ describe('ModelProfileControl', () => {
     expect(cards[1]?.textContent || '').toContain('Run validation');
     expect(cards[2]?.textContent || '').toContain('Commit and push');
     expect(cards[2]?.textContent || '').toContain('Approval required');
+    expect(cards[0]?.textContent || '').toContain('Branch');
+    expect(cards[0]?.textContent || '').toContain('ui/p1-operator-runtime-cards');
+    expect(cards[0]?.textContent || '').toContain('Working tree');
+    expect(cards[0]?.textContent || '').toContain('Clean');
+    expect(cards[0]?.textContent || '').toContain('Remote');
+    expect(cards[0]?.textContent || '').toContain('Synced');
+    expect(cards[1]?.textContent || '').toContain('Validation');
+    expect(cards[1]?.textContent || '').toContain('passed');
+    expect(cards[1]?.textContent || '').toContain('pass=1; fail=0');
+    expect(cards[2]?.textContent || '').toContain('Approval');
+    expect(cards[2]?.textContent || '').toContain('Required');
+    expect(cards[2]?.textContent || '').toContain('commit=not created; push=not performed');
     expect((document.body.textContent || '').toLowerCase()).not.toContain('operator_action unknown');
   });
 

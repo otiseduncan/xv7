@@ -1337,6 +1337,37 @@ details[open] > .diag-section-title::before {
   font-size: 0.73rem;
 }
 
+.operator-runtime-card-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.35rem;
+  margin: 0.48rem 0 0;
+}
+
+.operator-runtime-card-fact {
+  min-width: 0;
+  border: 1px solid rgba(122, 214, 255, 0.16);
+  border-radius: 0.38rem;
+  background: rgba(2, 6, 14, 0.54);
+  padding: 0.32rem 0.42rem;
+}
+
+.operator-runtime-card-fact dt {
+  margin: 0 0 0.1rem;
+  color: var(--color-text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.operator-runtime-card-fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 0.72rem;
+}
+
 .operator-runtime-card.status-success {
   border-color: rgba(122, 214, 255, 0.42);
 }

@@ -2770,6 +2770,52 @@ class Xv7UI {
     return `${items.slice(0, max).join(', ')} (+${items.length - max} more)`;
   }
 
+  firstOperatorRuntimeValue(sources, keys) {
+    const sourceList = Array.isArray(sources) ? sources : [];
+    const keyList = Array.isArray(keys) ? keys : [];
+    for (const source of sourceList) {
+      if (!source || typeof source !== 'object') continue;
+      for (const key of keyList) {
+        const value = source[key];
+        if (this.hasMeaningfulValue(value, { allowFalse: true })) return value;
+      }
+    }
+    return null;
+  }
+
+  operatorRuntimeBoolLabel(value, trueLabel, falseLabel) {
+    if (value === true) return trueLabel;
+    if (value === false) return falseLabel;
+    const text = String(value ?? '').trim().toLowerCase();
+    if (!text) return '';
+    if (['true', 'yes', 'clean', 'synced', 'in_sync'].includes(text)) return trueLabel;
+    if (['false', 'no', 'dirty', 'not_clean', 'not_synced', 'out_of_sync', 'ahead', 'behind', 'diverged'].includes(text)) return falseLabel;
+    return String(value).trim();
+  }
+
+  appendOperatorRuntimeRows(card, rows) {
+    const safeRows = Array.isArray(rows) ? rows.filter((row) => row && row.value) : [];
+    if (!safeRows.length) return false;
+
+    const list = document.createElement('dl');
+    list.className = 'operator-runtime-card-facts';
+    safeRows.forEach((row) => {
+      const item = document.createElement('div');
+      item.className = 'operator-runtime-card-fact';
+
+      const label = document.createElement('dt');
+      label.textContent = row.label;
+
+      const value = document.createElement('dd');
+      value.textContent = row.value;
+
+      item.append(label, value);
+      list.append(item);
+    });
+    card.append(list);
+    return true;
+  }
+
   appendOperatorRuntimeCard(article, messageMetadata) {
     const data = this.getOperatorRuntimeCardData(messageMetadata);
     if (!data) return false;
@@ -2795,6 +2841,7 @@ class Xv7UI {
     summary.textContent = data.summary;
 
     card.append(header, summary);
+    this.appendOperatorRuntimeRows(card, data.rows);
     article.append(card);
     return true;
   }
@@ -2820,16 +2867,62 @@ class Xv7UI {
     const commitPushState = result.commit_push_state && typeof result.commit_push_state === 'object'
       ? result.commit_push_state
       : {};
+    const meta = messageMetadata && typeof messageMetadata === 'object' ? messageMetadata : {};
+    const receipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts.filter((receipt) => receipt && typeof receipt === 'object') : [];
+    const latestReceipt = receipts.length ? receipts[receipts.length - 1] : {};
+    const receiptPreview = latestReceipt.data_preview && typeof latestReceipt.data_preview === 'object'
+      ? latestReceipt.data_preview
+      : {};
+    const repoState = result.repo_state && typeof result.repo_state === 'object'
+      ? result.repo_state
+      : {};
+    const validationSummary = result.validation_summary && typeof result.validation_summary === 'object'
+      ? result.validation_summary
+      : {};
+    const runtimeSources = [result, repoState, receiptPreview, latestReceipt];
+    const rows = [];
 
     let summary = '';
     if (actionName === 'operator_status_report') {
       summary = changedFiles.length
         ? `Changed files: ${this.summarizeOperatorList(changedFiles, 2)}.`
         : 'No changed files reported.';
+      const branch = this.firstOperatorRuntimeValue(runtimeSources, ['branch', 'current_branch', 'git_branch']);
+      const clean = this.firstOperatorRuntimeValue(runtimeSources, ['clean', 'working_tree_clean', 'is_clean']);
+      const sync = this.firstOperatorRuntimeValue(runtimeSources, ['sync', 'sync_status', 'remote_sync', 'remote_tracking_status']);
+      if (branch) rows.push({ label: 'Branch', value: String(branch).trim() });
+      const cleanLabel = this.operatorRuntimeBoolLabel(clean, 'Clean', 'Dirty');
+      if (cleanLabel) rows.push({ label: 'Working tree', value: cleanLabel });
+      const syncLabel = this.operatorRuntimeBoolLabel(sync, 'Synced', 'Not synced');
+      if (syncLabel) rows.push({ label: 'Remote', value: syncLabel });
     } else if (actionName === 'operator_validation_report') {
       summary = validationCommands.length
         ? `Checks: ${this.summarizeOperatorList(validationCommands, 1)}.`
         : 'No validation commands were reported.';
+      const validationStatus = this.firstOperatorRuntimeValue(
+        [validationSummary, result, receiptPreview, latestReceipt],
+        ['status', 'validation_status', 'result'],
+      );
+      const passCount = this.firstOperatorRuntimeValue(
+        [validationSummary, result, receiptPreview],
+        ['passed', 'pass_count', 'passed_count'],
+      );
+      const failCount = this.firstOperatorRuntimeValue(
+        [validationSummary, result, receiptPreview],
+        ['failed', 'fail_count', 'failed_count'],
+      );
+      const validationLabel = validationStatus
+        ? String(validationStatus).trim()
+        : (normalizedStatus ? statusLabel : '');
+      if (validationLabel) rows.push({ label: 'Validation', value: validationLabel });
+      if (passCount !== null || failCount !== null) {
+        rows.push({
+          label: 'Summary',
+          value: `pass=${passCount ?? 0}; fail=${failCount ?? 0}`,
+        });
+      } else if (result.first_failure) {
+        rows.push({ label: 'Summary', value: 'fail=1' });
+      }
     } else if (actionName === 'operator_commit_report') {
       if (commitPushState.commit_created === true || commitPushState.push_performed === true) {
         summary = `Commit created: ${commitPushState.commit_created === true ? 'yes' : 'no'}; push performed: ${commitPushState.push_performed === true ? 'yes' : 'no'}.`;
@@ -2838,6 +2931,16 @@ class Xv7UI {
           ? 'Waiting for explicit approval before mutation.'
           : 'No commit or push was performed.';
       }
+      rows.push({
+        label: 'Approval',
+        value: commitPushState.requires_separate_approval === true || normalizedStatus === 'needs_approval'
+          ? 'Required'
+          : 'Not required',
+      });
+      rows.push({
+        label: 'Mutation',
+        value: `commit=${commitPushState.commit_created === true ? 'created' : 'not created'}; push=${commitPushState.push_performed === true ? 'performed' : 'not performed'}`,
+      });
     }
 
     if (!summary) return null;
@@ -2846,6 +2949,7 @@ class Xv7UI {
       statusLabel,
       statusTone,
       summary,
+      rows,
     };
   }
 
