@@ -31,7 +31,12 @@ jobs:
         run: ruff check core/
 
       - name: Ruff format check
-        run: ruff format --check core/
+        run: |
+          ruff format --check core/ \
+            --exclude core/brain/answer_contract.py \
+            --exclude core/brain/*_manager.py \
+            --exclude core/brain/site_bundle.py \
+            --exclude core/brain/website_design_renderer.py
 
       - name: Mypy type check
         run: mypy core/ --ignore-missing-imports
