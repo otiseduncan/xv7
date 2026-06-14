@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from pathlib import Path
 from typing import Any
@@ -153,6 +154,7 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
             "index.html",
             "menu.html",
             "specials.html",
+            "events.html",
             "catering.html",
             "hours.html",
             "about.html",
@@ -347,7 +349,9 @@ def _validate_html_file(
     entry: str,
 ) -> list[str]:
     failures: list[str] = []
-    if business_name and business_name.lower() not in lowered:
+    business_marker = html.unescape(business_name).lower()
+    content_marker = html.unescape(lowered)
+    if business_marker and business_marker not in content_marker:
         failures.append(f"business name missing from {path!r}")
     for marker in _REQUIRED_HTML_MARKERS:
         if marker not in content:

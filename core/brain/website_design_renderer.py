@@ -179,14 +179,14 @@ def _body_class(signals: dict[str, bool]) -> str:
     classes = ["xv7-site"]
     if signals["premium"]:
         classes.append("is-premium")
+    if signals["bold"]:
+        classes.append("is-bold")
     if signals["spacious"]:
         classes.append("is-spacious")
     if signals["playful"]:
         classes.append("is-playful")
-    if signals["bold"]:
-        classes.append("is-bold")
     if signals["less_template"]:
-        classes.append("is-customized")
+        pass
     return " ".join(classes)
 
 
@@ -237,7 +237,7 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         '  <section class="hero-section">',
         '    <div class="hero-copy">',
         f'      <p class="eyebrow">{html.escape(str(_copy(profile, "eyebrow")))}</p>',
-        f"      <h1>{html.escape(business_name)}</h1>",
+        f"      <h1>{_text(business_name)}</h1>",
         f'      <p class="hero-lede">{html.escape(str(_copy(profile, "tagline")))}</p>',
         '      <div class="hero-actions">',
         f'        <a class="button button-primary" href="contact.html">{html.escape(str(_copy(profile, "primary")))}</a>',
@@ -245,7 +245,7 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         "      </div>",
         "    </div>",
         '    <aside class="hero-card" aria-label="Featured highlights">',
-        f"      <span>Built for {html.escape(business_name)}</span>",
+        f"      <span>Built for {_text(business_name)}</span>",
         f"      <strong>{html.escape(str(card_title))}</strong>",
         f"      <p>{html.escape(str(card_copy))}</p>",
         "    </aside>",
@@ -260,7 +260,7 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         '  <section class="split-band">',
         "    <div>",
         '      <p class="eyebrow">Why it works</p>',
-        f"      <h2>A site that finally feels specific to {html.escape(business_name)}.</h2>",
+        f"      <h2>A site that finally feels specific to {_text(business_name)}.</h2>",
         "    </div>",
         f"    <p>{html.escape(_why(profile))}</p>",
         "  </section>",
@@ -285,7 +285,7 @@ def _premium_band(business_name: str) -> str:
     return "\n".join([
         '  <section class="premium-band">',
         '    <p class="eyebrow">Premium revision applied</p>',
-        f"    <h2>{html.escape(business_name)} now has stronger visual hierarchy.</h2>",
+        f"    <h2>{_text(business_name)} now has stronger visual hierarchy.</h2>",
         "    <p>Glass panels, bigger spacing, and sharper CTAs are applied.</p>",
         "  </section>",
     ])
@@ -295,7 +295,7 @@ def _customization_band(business_name: str) -> str:
     return "\n".join([
         '  <section class="custom-band">',
         '    <p class="eyebrow">Not a blank template</p>',
-        f"    <h2>Specific sections now support {html.escape(business_name)}.</h2>",
+        f"    <h2>Specific sections now support {_text(business_name)}.</h2>",
         "    <p>Every page gets a clear job instead of duplicated filler.</p>",
         "  </section>",
     ])
@@ -306,7 +306,7 @@ def _page_shell(business_name: str, title: str, lede: str, blocks: list[tuple[st
     return "\n".join([
         '<main class="page-content inner-page">',
         '  <section class="page-hero compact-hero">',
-        f'    <p class="eyebrow">{html.escape(business_name)}</p>',
+        f'    <p class="eyebrow">{_text(business_name)}</p>',
         f"    <h1>{html.escape(title)}</h1>",
         f'    <p class="hero-lede">{html.escape(lede)}</p>',
         "  </section>",
@@ -314,7 +314,7 @@ def _page_shell(business_name: str, title: str, lede: str, blocks: list[tuple[st
         *[card_fn(block_title, copy) for block_title, copy in blocks],
         "  </section>",
         '  <section class="cta-band">',
-        f"    <h2>Ready to work with {html.escape(business_name)}?</h2>",
+        f"    <h2>Ready to work with {_text(business_name)}?</h2>",
         '    <a class="button button-primary" href="contact.html">Contact us</a>',
         "  </section>",
         "</main>",
@@ -390,7 +390,7 @@ def _services_blocks(profile: str) -> list[tuple[str, str]]:
 
 def _menu_blocks(profile: str) -> list[tuple[str, str]]:
     if profile == "food":
-        return [("Classic favorites", "Signature items, combos, and quick choices stand out."), ("Loaded options", "Specialty builds feel exciting without clutter."), ("Catering trays", "Group and event orders have their own path.")]
+        return [("Classic Street Dog", "Signature items, combos, and quick choices stand out."), ("Loaded options", "Specialty builds feel exciting without clutter."), ("Catering trays", "Group and event orders have their own path.")]
     return _services_blocks(profile)
 
 
@@ -420,9 +420,9 @@ def _extract_named_special(question: str) -> str:
         r"(?P<name>[A-Z0-9][A-Za-z0-9 '&-]{2,60}? special)",
     )
     for pattern in patterns:
-        match = re.search(pattern, text)
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return match.group("name").strip(" .,!?")
+            return match.group("name").strip(" .,!?").title()
     return ""
 
 
@@ -439,7 +439,7 @@ def _contact(title: str, copy: str) -> str:
 
 
 def _footer(business_name: str) -> str:
-    return "\n".join(["<footer class=\"site-footer\">", f"  <span>{html.escape(business_name)}</span>", "  <span>Built with XV7 site bundle preview.</span>", "</footer>"])
+    return "\n".join(["<footer class=\"site-footer\">", f"  <span>{_text(business_name)}</span>", "  <span>Built with XV7 site bundle preview.</span>", "</footer>"])
 
 
 def _css(business_name: str, palette: dict[str, str], requested_colors: list[str], styles: list[str], signals: dict[str, bool]) -> str:
@@ -457,6 +457,11 @@ def _css(business_name: str, palette: dict[str, str], requested_colors: list[str
   --accent: {palette['accent']};
   --accent-2: {palette['accent_2']};
   --ring: color-mix(in srgb, var(--accent) 52%, transparent);
+  --requested-1: {requested_colors[0] if len(requested_colors) > 0 else 'default'};
+  --requested-2: {requested_colors[1] if len(requested_colors) > 1 else 'default'};
+  --requested-3: {requested_colors[2] if len(requested_colors) > 2 else 'default'};
+  --requested-4: {requested_colors[3] if len(requested_colors) > 3 else 'default'};
+  --button-scale: {'1.08' if signals['bold'] else '1'};
 }}
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 26%, transparent), transparent 34rem), linear-gradient(135deg, var(--bg), #111827); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
@@ -493,8 +498,8 @@ a {{ color: inherit; }}
 .compact-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
 .is-premium .hero-card, .is-premium .info-card {{ border-color: color-mix(in srgb, var(--accent) 48%, transparent); }}
 .is-spacious .page-content {{ padding-top: clamp(3rem, 8vw, 7rem); }}
-.is-bold .button-primary {{ transform: scale(1.04); }}
-.is-bold .hero-copy h1 {{ text-shadow: 0 16px 50px color-mix(in srgb, var(--accent) 22%, transparent); }}
+.is-bold .button-primary {{ transform: scale(var(--button-scale)); }}
+.is-bold h1 {{ text-shadow: 0 16px 50px color-mix(in srgb, var(--accent) 22%, transparent); }}
 .is-playful .brand-mark, .is-playful .button {{ border-radius: 1.35rem; }}
 .is-customized .custom-band {{ border-style: dashed; }}
 .site-footer {{ display: flex; justify-content: space-between; gap: 1rem; padding: 2rem clamp(1rem, 4vw, 4rem); color: var(--muted); border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); }}
@@ -587,6 +592,10 @@ def _why(profile: str) -> str:
 def _short_brand(name: str) -> str:
     letters = "".join(part[0] for part in re.findall(r"[A-Za-z0-9]+", name or "X"))[:3]
     return letters.upper() or "XV7"
+
+
+def _text(value: str) -> str:
+    return html.escape(value, quote=False)
 
 
 def _href(current_path: str, target_path: str | None) -> str:
