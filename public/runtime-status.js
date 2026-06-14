@@ -43,11 +43,11 @@ const PHASE_HINTS = {
 };
 
 const ACTION_LABELS = {
-  operator_status_report: 'Checking repo',
-  operator_validation_report: 'Running validation',
+  operator_status_report: 'Checking repository...',
+  operator_validation_report: 'Running validation...',
   operator_patch_report: 'Preparing patch',
   operator_repair_report: 'Repair planning',
-  operator_commit_report: 'Preparing commit/push',
+  operator_commit_report: 'Checking commit/push approval...',
   site_bundle_preview: 'Building site preview',
   site_bundle_export: 'Exporting sandbox files',
 };

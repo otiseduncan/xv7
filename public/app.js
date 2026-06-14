@@ -1591,6 +1591,7 @@ class Xv7UI {
         if (!siteBundlePayload) {
           this.appendCodeArtifacts(article, messageMetadata);
         }
+        this.appendOperatorRuntimeCard(article, messageMetadata);
         this.appendArtifactPatchProposal(article, patchProposal, content, messageMetadata);
         this.appendResponseDetailsDisclosure(article, messageMetadata);
         if (messageMetadata && typeof messageMetadata === 'object') {
@@ -1680,6 +1681,7 @@ class Xv7UI {
     if (!source) return null;
 
     const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : source;
+    if (this.shouldSuppressSiteBundleForOperatorPayload(metadata)) return null;
     const candidates = [];
 
     if (source.site_bundle && typeof source.site_bundle === 'object') {
@@ -1695,6 +1697,25 @@ class Xv7UI {
     }
 
     return null;
+  }
+
+  shouldSuppressSiteBundleForOperatorPayload(metadata) {
+    const meta = metadata && typeof metadata === 'object' ? metadata : null;
+    if (!meta) return false;
+
+    const operatorResult = this.resolveOperatorResult(meta);
+    const receipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts : [];
+    const hasOperatorPayload = Boolean(operatorResult) || receipts.length > 0;
+    if (!hasOperatorPayload) return false;
+
+    const actionName = String(
+      operatorResult?.action_name
+      || receipts[receipts.length - 1]?.action_name
+      || '',
+    ).trim().toLowerCase();
+
+    if (!actionName) return true;
+    return !actionName.startsWith('site_bundle');
   }
 
   normalizeSiteBundle(bundlePayload) {
@@ -2747,6 +2768,103 @@ class Xv7UI {
     if (!items.length) return 'none';
     if (items.length <= max) return items.join(', ');
     return `${items.slice(0, max).join(', ')} (+${items.length - max} more)`;
+  }
+
+  appendOperatorRuntimeCard(article, messageMetadata) {
+    const data = this.getOperatorRuntimeCardData(messageMetadata);
+    if (!data) return false;
+
+    const card = document.createElement('section');
+    card.className = `operator-runtime-card status-${data.statusTone}`;
+
+    const header = document.createElement('div');
+    header.className = 'operator-runtime-card-header';
+
+    const title = document.createElement('p');
+    title.className = 'operator-runtime-card-title';
+    title.textContent = data.title;
+
+    const badge = document.createElement('span');
+    badge.className = `operator-runtime-card-badge status-${data.statusTone}`;
+    badge.textContent = data.statusLabel;
+
+    header.append(title, badge);
+
+    const summary = document.createElement('p');
+    summary.className = 'operator-runtime-card-summary';
+    summary.textContent = data.summary;
+
+    card.append(header, summary);
+    article.append(card);
+    return true;
+  }
+
+  getOperatorRuntimeCardData(messageMetadata) {
+    const result = this.getMessageOperatorResult(messageMetadata);
+    if (!result) return null;
+
+    const actionName = String(result.action_name || '').trim();
+    const actionLabels = {
+      operator_status_report: 'Check the repo',
+      operator_validation_report: 'Run validation',
+      operator_commit_report: 'Commit and push',
+    };
+    const title = actionLabels[actionName];
+    if (!title) return null;
+
+    const normalizedStatus = String(result.status || '').trim().toLowerCase();
+    const statusLabel = this.operatorRuntimeStatusLabel(normalizedStatus);
+    const statusTone = this.operatorRuntimeStatusTone(normalizedStatus);
+    const changedFiles = Array.isArray(result.changed_files) ? result.changed_files : [];
+    const validationCommands = Array.isArray(result.validation_commands_run) ? result.validation_commands_run : [];
+    const commitPushState = result.commit_push_state && typeof result.commit_push_state === 'object'
+      ? result.commit_push_state
+      : {};
+
+    let summary = '';
+    if (actionName === 'operator_status_report') {
+      summary = changedFiles.length
+        ? `Changed files: ${this.summarizeOperatorList(changedFiles, 2)}.`
+        : 'No changed files reported.';
+    } else if (actionName === 'operator_validation_report') {
+      summary = validationCommands.length
+        ? `Checks: ${this.summarizeOperatorList(validationCommands, 1)}.`
+        : 'No validation commands were reported.';
+    } else if (actionName === 'operator_commit_report') {
+      if (commitPushState.commit_created === true || commitPushState.push_performed === true) {
+        summary = `Commit created: ${commitPushState.commit_created === true ? 'yes' : 'no'}; push performed: ${commitPushState.push_performed === true ? 'yes' : 'no'}.`;
+      } else {
+        summary = normalizedStatus === 'needs_approval'
+          ? 'Waiting for explicit approval before mutation.'
+          : 'No commit or push was performed.';
+      }
+    }
+
+    if (!summary) return null;
+    return {
+      title,
+      statusLabel,
+      statusTone,
+      summary,
+    };
+  }
+
+  operatorRuntimeStatusLabel(status) {
+    if (status === 'passed' || status === 'success' || status === 'succeeded') return 'Complete';
+    if (status === 'needs_approval') return 'Approval required';
+    if (status === 'failed' || status === 'error') return 'Failed';
+    if (status === 'denied' || status === 'blocked') return 'Blocked';
+    if (status === 'running' || status === 'pending') return 'Running';
+    return 'Complete';
+  }
+
+  operatorRuntimeStatusTone(status) {
+    if (status === 'passed' || status === 'success' || status === 'succeeded') return 'success';
+    if (status === 'needs_approval' || status === 'pending') return 'pending';
+    if (status === 'failed' || status === 'error') return 'failed';
+    if (status === 'denied' || status === 'blocked') return 'blocked';
+    if (status === 'running') return 'running';
+    return 'success';
   }
 
   appendResponseDetailsDisclosure(article, messageMetadata) {
