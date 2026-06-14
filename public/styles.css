@@ -1477,6 +1477,17 @@ details[open] > .diag-section-title::before {
   gap: 0.28rem;
 }
 
+.safe-trace-grid {
+  border-top: 0;
+  padding: 0;
+}
+
+.safe-trace-grid .receipt-field {
+  border-radius: 0.38rem;
+  background: rgba(15, 23, 42, 0.48);
+  padding: 0.25rem 0.35rem;
+}
+
 .brain-record-tabs {
   display: flex;
   flex-wrap: wrap;

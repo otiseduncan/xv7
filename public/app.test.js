@@ -2248,6 +2248,13 @@ describe('ModelProfileControl', () => {
     expect(document.querySelector('.site-bundle-card')).toBeNull();
     expect(document.querySelector('.site-bundle-mode-button')).toBeNull();
     const text = (disclosure?.textContent || '').toLowerCase();
+    expect(text).toContain('trace summary');
+    expect(text).toContain('response type');
+    expect(text).toContain('operator');
+    expect(text).toContain('action taken');
+    expect(text).toContain('check the repo');
+    expect(text).toContain('safety/approval');
+    expect(text).toContain('approval required');
     expect(text).toContain('operator status');
     expect(text).toContain('repo_status op-1');
     expect(text).toContain('operator_status_report');
@@ -2262,6 +2269,81 @@ describe('ModelProfileControl', () => {
     expect(text).not.toContain('intent_class');
     expect(text).not.toContain('speech_act');
     expect(text).not.toContain('validation_commands');
+  });
+
+  it('renders safe trace metadata inside the single collapsed Details drawer', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Safe trace response.',
+      null,
+      {
+        response_mode: 'operator_response',
+        context_receipt: {
+          context_receipts: [
+            { layer: 'active_focus', record_id: 'XV7-FOCUS-0005' },
+            { layer: 'knowledge', record_id: 'XV7-KNOWLEDGE-0006' },
+          ],
+        },
+        operator_receipts: [
+          {
+            action_id: 'OP-TRACE-1',
+            action_name: 'operator_validation_report',
+            status: 'success',
+            read_only: true,
+            receipt_label: 'operator_validation_report OP-TRACE-1',
+            summary: 'validation passed',
+            safety: { allowed: true, read_only: true },
+          },
+        ],
+        operator_result: {
+          action_name: 'operator_validation_report',
+          status: 'passed',
+          changed_files: [],
+          validation_commands_run: ['npm test'],
+          validation_summary: {
+            status: 'passed',
+            passed: 12,
+            failed: 0,
+          },
+          first_failure: '',
+          safety_notes: [],
+          local_only_files_warning: [],
+          commit_push_state: {},
+        },
+        hidden_reasoning: 'PRIVATE_CHAIN_OF_THOUGHT',
+        raw_model_prompt: 'RAW_PROMPT_SHOULD_NOT_RENDER',
+        debug_blob: { secret: 'DEBUG_BLOB_SHOULD_NOT_RENDER' },
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const card = document.querySelector('.chat-card-assistant:last-child');
+    const disclosures = [...card.querySelectorAll('.response-details-disclosure')];
+    expect(disclosures).toHaveLength(1);
+    expect(disclosures[0]?.hasAttribute('open')).toBe(false);
+
+    const trace = disclosures[0]?.querySelector('.response-details-section');
+    const detailText = (disclosures[0]?.textContent || '').toLowerCase();
+    expect((trace?.textContent || '').toLowerCase()).toContain('trace summary');
+    expect(detailText).toContain('response type');
+    expect(detailText).toContain('operator_response');
+    expect(detailText).toContain('action taken');
+    expect(detailText).toContain('run validation');
+    expect(detailText).toContain('status');
+    expect(detailText).toContain('passed');
+    expect(detailText).toContain('source layers');
+    expect(detailText).toContain('focus, knowledge');
+    expect(detailText).toContain('safety/approval');
+    expect(detailText).toContain('read-only');
+    expect(detailText).toContain('validation summary');
+    expect(detailText).toContain('pass=12; fail=0');
+    expect(detailText).not.toContain('private_chain_of_thought');
+    expect(detailText).not.toContain('raw_prompt_should_not_render');
+    expect(detailText).not.toContain('debug_blob_should_not_render');
   });
 
   it('suppresses placeholder operator result cards without meaningful payload', async () => {
@@ -2291,6 +2373,61 @@ describe('ModelProfileControl', () => {
     expect(document.querySelector('.response-details-disclosure')).toBeFalsy();
     expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('operator_action');
     expect((document.querySelector('.chat-card-assistant:last-child')?.textContent || '').toLowerCase()).not.toContain('unknown');
+  });
+
+  it('hides default operator_action unknown metadata in response details', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Receipt response.',
+      null,
+      {
+        operator_receipts: [
+          {
+            action_id: 'OP-UNKNOWN-1',
+            action_name: 'operator_action',
+            status: 'unknown',
+            receipt_label: 'operator_action OP-UNKNOWN-1',
+            read_only: true,
+            summary: 'receipt available',
+          },
+        ],
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const drawer = document.querySelector('.chat-card-assistant:last-child .response-details-disclosure');
+    expect(drawer).toBeTruthy();
+    const text = (drawer?.textContent || '').toLowerCase();
+    expect(text).toContain('receipt available');
+    expect(text).not.toContain('action_name:operator_action');
+    expect(text).not.toContain('status:unknown');
+    expect(text).not.toContain('operator_action unknown');
+  });
+
+  it('does not render hidden reasoning in a second details drawer', async () => {
+    global.fetch = createRuntimeFetchMock();
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    ui.appendMessageCard(
+      'assistant',
+      'Visible answer.',
+      'PRIVATE REASONING SHOULD NOT RENDER',
+      {
+        response_mode: 'direct_answer',
+      },
+      '2026-06-11T00:00:00Z',
+    );
+
+    const card = document.querySelector('.chat-card-assistant:last-child');
+    expect([...card.querySelectorAll('details')]).toHaveLength(1);
+    expect([...card.querySelectorAll('.response-details-disclosure')]).toHaveLength(1);
+    expect(card.textContent || '').not.toContain('PRIVATE REASONING SHOULD NOT RENDER');
+    expect(card.textContent || '').not.toContain('Cognitive Reasoning History');
   });
 
   it('run validation shows validation commands summary inside response details disclosure', async () => {
