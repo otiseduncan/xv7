@@ -3827,9 +3827,15 @@ class AnswerContract:
                     if idx < len(written_relative) and idx < len(written_absolute)
                 ]
 
+            sandbox_file_lines = (
+                "\n".join(f"  - {path}" for path in written_relative)
+                if site_bundle_deliver_to_sandbox
+                else ""
+            )
             return {
                 "visible_text": (
-                    f"Updated the sandbox website in {self._sandbox_root() / _slug} and refreshed the inline preview."
+                    f"Updated the sandbox website in {self._sandbox_root() / _slug} and refreshed the inline preview.\n\n"
+                    f"Written files:\n{sandbox_file_lines}"
                     if site_bundle_deliver_to_sandbox
                     else 'Updated the active site bundle revision and preserved all pages/content. Review it here, then say "write this to the sandbox" when it is ready.'
                 ),
