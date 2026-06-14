@@ -129,6 +129,40 @@ def test_operator_status_report_sanitizes_not_git_repo_error(
     assert "/workspace/X:/XV7" not in result.stderr_summary
 
 
+def test_operator_status_report_fast_mode_uses_plumbing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("XV7_OPERATOR_FAST_GIT_STATUS", "1")
+    monkeypatch.setenv("XV7_OPERATOR_REPO_ROOT", str(tmp_path))
+    calls: list[list[str]] = []
+
+    def _fake_run_git(_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return _Proc(0, "main\n")  # type: ignore[return-value]
+        if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return _Proc(0, "origin/main\n")  # type: ignore[return-value]
+        if args == ["rev-list", "--left-right", "--count", "HEAD...@{u}"]:
+            return _Proc(0, "0\t0\n")  # type: ignore[return-value]
+        if args == ["diff", "--name-status", "--", ".", ":!node_modules"]:
+            return _Proc(0, "M\tcore/main.py\n")  # type: ignore[return-value]
+        if args == ["diff", "--cached", "--name-status", "--", ".", ":!node_modules"]:
+            return _Proc(0, "")  # type: ignore[return-value]
+        if args == ["ls-files", "--others", "--exclude-standard"]:
+            return _Proc(0, "docker-compose.local.diff\n")  # type: ignore[return-value]
+        raise AssertionError(f"unexpected git args: {args}")
+
+    monkeypatch.setattr(status_report_module, "_run_git", _fake_run_git)
+
+    result = operator_status_report(action_id="OP-STATUS-FAST", repo_root=tmp_path)
+
+    assert result.status == "success"
+    assert result.data["branch"] == "main"
+    assert result.data["repo_files"] == ["core/main.py"]
+    assert result.data["local_only_files"] == ["docker-compose.local.diff"]
+    assert ["status", "--short", "--branch"] not in calls
+
+
 def test_operator_status_report_is_available_through_registry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
