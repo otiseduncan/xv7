@@ -1872,6 +1872,136 @@ class Xv7UI {
     return Boolean(file && typeof file === 'object' && /\.html?$/i.test(String(file.path || '')));
   }
 
+  normalizeBundlePath(path) {
+    const raw = String(path || '').trim().replace(/\\/g, '/');
+    if (!raw) return '';
+
+    const hasLeadingSlash = raw.startsWith('/');
+    const parts = raw.split('/');
+    const normalizedParts = [];
+    parts.forEach((part) => {
+      if (!part || part === '.') return;
+      if (part === '..') {
+        if (normalizedParts.length > 0) {
+          normalizedParts.pop();
+        }
+        return;
+      }
+      normalizedParts.push(part);
+    });
+
+    const normalized = normalizedParts.join('/');
+    return hasLeadingSlash ? `/${normalized}` : normalized;
+  }
+
+  splitAssetReference(reference) {
+    const ref = String(reference || '').trim();
+    if (!ref) {
+      return { path: '', suffix: '' };
+    }
+
+    const hashIndex = ref.indexOf('#');
+    const queryIndex = ref.indexOf('?');
+    const breakpoints = [hashIndex, queryIndex].filter((index) => index >= 0);
+    const splitIndex = breakpoints.length ? Math.min(...breakpoints) : -1;
+
+    if (splitIndex < 0) {
+      return { path: ref, suffix: '' };
+    }
+    return {
+      path: ref.slice(0, splitIndex),
+      suffix: ref.slice(splitIndex),
+    };
+  }
+
+  isLocalBundleAssetReference(reference) {
+    const ref = String(reference || '').trim();
+    if (!ref || ref.startsWith('#') || ref.startsWith('//')) return false;
+    return !/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(ref);
+  }
+
+  resolveBundleAssetPath(baseFilePath, reference) {
+    if (!this.isLocalBundleAssetReference(reference)) return '';
+    const { path: referencePath } = this.splitAssetReference(reference);
+    const trimmedRef = String(referencePath || '').trim();
+    if (!trimmedRef) return '';
+
+    if (trimmedRef.startsWith('/')) {
+      return this.normalizeBundlePath(trimmedRef.slice(1));
+    }
+
+    const normalizedBase = this.normalizeBundlePath(baseFilePath || '');
+    const baseParts = normalizedBase ? normalizedBase.split('/') : [];
+    if (baseParts.length > 0) {
+      baseParts.pop();
+    }
+    const joined = [...baseParts, trimmedRef].join('/');
+    return this.normalizeBundlePath(joined);
+  }
+
+  siteBundlePreviewAllowsScripts() {
+    // Keep script behavior aligned with existing preview policy (iframe sandbox includes allow-scripts).
+    return true;
+  }
+
+  buildSiteBundlePreviewSrcdoc(bundle, selectedFile) {
+    if (!selectedFile || !this.isSiteBundlePreviewableFile(selectedFile)) {
+      return String(selectedFile?.content || '');
+    }
+
+    const files = Array.isArray(bundle?.files) ? bundle.files : [];
+    const fileMap = new Map();
+    files.forEach((file) => {
+      const normalizedPath = this.normalizeBundlePath(file?.path || '');
+      if (!normalizedPath) return;
+      fileMap.set(normalizedPath, String(file?.content || ''));
+    });
+
+    const source = String(selectedFile.content || '');
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(source, 'text/html');
+
+    const stylesheetLinks = [...doc.querySelectorAll('link[rel~="stylesheet"][href]')];
+    stylesheetLinks.forEach((linkNode) => {
+      const href = String(linkNode.getAttribute('href') || '').trim();
+      const resolvedPath = this.resolveBundleAssetPath(selectedFile.path, href);
+      const css = resolvedPath ? fileMap.get(resolvedPath) : null;
+      if (typeof css !== 'string') return;
+
+      const styleNode = doc.createElement('style');
+      styleNode.setAttribute('data-site-bundle-inline', resolvedPath);
+      styleNode.textContent = css;
+      linkNode.replaceWith(styleNode);
+    });
+
+    const allowScripts = this.siteBundlePreviewAllowsScripts();
+    const scriptNodes = [...doc.querySelectorAll('script[src]')];
+    scriptNodes.forEach((scriptNode) => {
+      const src = String(scriptNode.getAttribute('src') || '').trim();
+      const resolvedPath = this.resolveBundleAssetPath(selectedFile.path, src);
+      const scriptSource = resolvedPath ? fileMap.get(resolvedPath) : null;
+      if (typeof scriptSource !== 'string') return;
+
+      if (!allowScripts) {
+        scriptNode.remove();
+        return;
+      }
+
+      const inlineScriptNode = doc.createElement('script');
+      [...scriptNode.attributes].forEach((attribute) => {
+        if (attribute.name.toLowerCase() === 'src') return;
+        inlineScriptNode.setAttribute(attribute.name, attribute.value);
+      });
+      inlineScriptNode.setAttribute('data-site-bundle-inline', resolvedPath);
+      inlineScriptNode.textContent = scriptSource;
+      scriptNode.replaceWith(inlineScriptNode);
+    });
+
+    const hasDoctype = /^\s*<!doctype\s+html/i.test(source);
+    const docMarkup = doc.documentElement ? doc.documentElement.outerHTML : source;
+    return hasDoctype ? `<!doctype html>\n${docMarkup}` : docMarkup;
+  }
+
   appendSiteBundleCard(article, bundlePayload) {
     const bundle = this.normalizeSiteBundle(bundlePayload);
     if (!bundle) return;
@@ -2014,7 +2144,7 @@ class Xv7UI {
         iframe.className = 'code-artifact-preview-frame';
         iframe.setAttribute('sandbox', 'allow-scripts');
         iframe.setAttribute('title', `${selectedFile.path} preview`);
-        iframe.srcdoc = selectedFile.content;
+        iframe.srcdoc = this.buildSiteBundlePreviewSrcdoc(bundle, selectedFile);
         previewPane.append(iframe);
       } else {
         const previewNote = document.createElement('p');

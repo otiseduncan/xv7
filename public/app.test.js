@@ -1466,6 +1466,129 @@ describe('ModelProfileControl', () => {
     expect(document.querySelector('.site-bundle-card')).toBeTruthy();
   });
 
+  it('inlines local site bundle CSS and JS into preview iframe srcdoc', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const article = ui.appendMessageCard('assistant', 'Bundle ready.', null, null, '2026-06-11T00:00:10Z');
+    ui.appendSiteBundleCard(article, {
+      artifact_type: 'site_bundle',
+      title: 'Styled Bundle',
+      slug: 'styled-bundle',
+      entry: 'index.html',
+      active_file: 'index.html',
+      files: [
+        {
+          path: 'index.html',
+          language: 'html',
+          content: [
+            '<!doctype html>',
+            '<html>',
+            '<head>',
+            '  <link rel="stylesheet" href="assets/site.css">',
+            '</head>',
+            '<body>',
+            '  <main class="hero">Bundle preview</main>',
+            '  <script src="assets/site.js"></script>',
+            '</body>',
+            '</html>',
+          ].join('\n'),
+        },
+        {
+          path: 'assets/site.css',
+          language: 'css',
+          content: '.hero { background: rgb(8, 12, 24); color: rgb(240, 250, 255); }',
+        },
+        {
+          path: 'assets/site.js',
+          language: 'javascript',
+          content: 'window.__sitePreviewLoaded = true;',
+        },
+      ],
+    });
+
+    const card = document.querySelector('.site-bundle-card');
+    expect(card).toBeTruthy();
+
+    const codePanel = card.querySelector('.site-bundle-code-panel');
+    const previewPanel = card.querySelector('.site-bundle-preview-panel');
+    expect(codePanel?.hidden).toBe(false);
+    expect(previewPanel?.hidden).toBe(true);
+
+    const previewTab = [...card.querySelectorAll('.site-bundle-mode-button')].find((node) =>
+      (node.textContent || '').trim() === 'Preview',
+    );
+    previewTab?.click();
+    await flushAsync();
+
+    const iframe = card.querySelector('iframe.code-artifact-preview-frame');
+    const srcdoc = String(iframe?.getAttribute('srcdoc') || '');
+    expect(codePanel?.hidden).toBe(true);
+    expect(previewPanel?.hidden).toBe(false);
+    expect(srcdoc).toContain('<style data-site-bundle-inline="assets/site.css">');
+    expect(srcdoc).toContain('.hero { background: rgb(8, 12, 24); color: rgb(240, 250, 255); }');
+    expect(srcdoc).toContain('<script data-site-bundle-inline="assets/site.js">window.__sitePreviewLoaded = true;</script>');
+    expect(srcdoc).not.toContain('href="assets/site.css"');
+    expect(srcdoc).not.toContain('src="assets/site.js"');
+
+    const codeText = card.querySelector('.site-bundle-code-panel .code-artifact-codeview')?.textContent || '';
+    expect(codeText).toContain('<link rel="stylesheet" href="assets/site.css">');
+    expect(codeText).toContain('<script src="assets/site.js"></script>');
+  });
+
+  it('resolves relative bundle assets from nested HTML files', async () => {
+    global.fetch = createRuntimeFetchMock();
+
+    const ui = new Xv7UI();
+    await flushAsync();
+
+    const article = ui.appendMessageCard('assistant', 'Bundle ready.', null, null, '2026-06-11T00:00:11Z');
+    ui.appendSiteBundleCard(article, {
+      artifact_type: 'site_bundle',
+      title: 'Nested Bundle',
+      slug: 'nested-bundle',
+      entry: 'pages/about.html',
+      active_file: 'pages/about.html',
+      files: [
+        {
+          path: 'pages/about.html',
+          language: 'html',
+          content: [
+            '<!doctype html>',
+            '<html>',
+            '<head>',
+            '  <link rel="stylesheet" href="../assets/site.css">',
+            '</head>',
+            '<body>',
+            '  <main class="hero">About</main>',
+            '</body>',
+            '</html>',
+          ].join('\n'),
+        },
+        {
+          path: 'assets/site.css',
+          language: 'css',
+          content: '.hero { border: 1px solid rgb(11, 99, 180); }',
+        },
+      ],
+    });
+
+    const card = document.querySelector('.site-bundle-card');
+    expect(card).toBeTruthy();
+
+    const previewTab = [...card.querySelectorAll('.site-bundle-mode-button')].find((node) =>
+      (node.textContent || '').trim() === 'Preview',
+    );
+    previewTab?.click();
+    await flushAsync();
+
+    const srcdoc = String(card.querySelector('iframe.code-artifact-preview-frame')?.getAttribute('srcdoc') || '');
+    expect(srcdoc).toContain('<style data-site-bundle-inline="assets/site.css">');
+    expect(srcdoc).toContain('.hero { border: 1px solid rgb(11, 99, 180); }');
+  });
+
   it('shows checking repo status for operator prompts in a pending assistant card while active', async () => {
     const fetchMock = createRuntimeFetchMock();
     let resolveMessage;
