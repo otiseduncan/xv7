@@ -4233,6 +4233,7 @@ if __name__ == \"__main__\":
         )
         is_generation = self.is_code_artifact_request(normalized)
         is_site_bundle_generation = sb.is_site_bundle_request(normalized)
+        is_sandbox_build = self._is_sandbox_build_request(normalized)
         has_artifact_edit_intent = self._looks_like_artifact_edit(normalized)
         has_explicit_artifact_generation_language = bool(
             self.EXPLICIT_ARTIFACT_INTENT_PATTERN.search(normalized)
@@ -4963,8 +4964,148 @@ if __name__ == \"__main__\":
             not is_generation
             and not is_refinement_request
             and not is_site_bundle_generation
+            and not is_sandbox_build
         ):
             return None
+
+        # ─── Sandbox website build/export ──────────────────────────────────────────
+        if is_sandbox_build and not is_patch_apply_request:
+            latest_bundle_artifact = (
+                latest_artifact
+                if isinstance(latest_artifact, dict)
+                and latest_artifact.get("artifact_type") == "site_bundle"
+                else None
+            )
+            if latest_bundle_artifact is not None and re.search(
+                r"\b(it|this|approved|current|latest|the website|the site)\b",
+                normalized,
+            ):
+                _biz = self._format_business_name(
+                    str(latest_bundle_artifact.get("title") or "Website"),
+                    "Local Business Website",
+                )
+                _slug = self._safe_slug(
+                    str(latest_bundle_artifact.get("slug") or _biz),
+                    fallback="site-bundle",
+                )
+                _entry = str(latest_bundle_artifact.get("entry") or "index.html")
+                latest_bundle_payload = latest_bundle_artifact.get("site_bundle") or {}
+                _files = (
+                    list(latest_bundle_payload.get("files") or [])
+                    if isinstance(latest_bundle_payload, dict)
+                    else []
+                )
+                if not _files:
+                    return {
+                        "visible_text": "I do not have an active website bundle to export to the sandbox yet. Generate a preview first or ask me to build a named website.",
+                        "code_artifact": {},
+                        "artifact_patch_proposal": {},
+                        "site_bundle": latest_bundle_artifact,
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-build",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_generation": "sandbox_build_unavailable",
+                            "artifact_validation": "failed",
+                            "failure_reason": "empty_active_bundle",
+                        },
+                    }
+                _sandbox_bundle_artifact = latest_bundle_artifact
+            else:
+                _biz = self._format_business_name(
+                    self._extract_artifact_name(question), "Local Business Website"
+                )
+                _style = self._extract_style_hints(question)
+                _slug = self._safe_slug(_biz, fallback="site-bundle")
+                _entry = "index.html"
+                _pages = sb.default_pages_for_business(_biz, question)
+                _files = sb.build_bundle_files(
+                    business_name=_biz,
+                    slug=_slug,
+                    pages=_pages,
+                    style_hints=_style,
+                    question=question,
+                )
+                _passed, _failures = sb.validate_bundle(
+                    bundle_files=_files,
+                    entry=_entry,
+                    business_name=_biz,
+                    style_hints=_style,
+                )
+                if not _passed:
+                    return {
+                        "visible_text": "I could not generate a valid sandbox website. "
+                        + "; ".join(_failures),
+                        "code_artifact": {},
+                        "artifact_patch_proposal": {},
+                        "site_bundle": {},
+                        "context_receipt": {
+                            "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-build",
+                            "context_receipts": [],
+                            "record_ids": [],
+                        },
+                        "provenance": {
+                            "artifact_generation": "sandbox_build_failed",
+                            "artifact_validation": "failed",
+                            "failure_reason": "; ".join(_failures),
+                        },
+                    }
+                _bundle_id = f"{_slug}-bundle"
+                _rev = len(artifact_history) + 1
+                _sandbox_bundle_artifact = {
+                    "artifact_type": "site_bundle",
+                    "artifact_id": _bundle_id,
+                    "revision_id": f"{_bundle_id}:r{_rev}",
+                    "revision_number": _rev,
+                    "title": _biz,
+                    "slug": _slug,
+                    "entry": _entry,
+                    "source_prompt": question.strip(),
+                    "site_bundle": {"files": _files},
+                }
+
+            written_relative, written_absolute = self._write_sandbox_bundle(
+                project_slug=_slug,
+                bundle_files=_files,
+            )
+            display_paths = [
+                SandboxWriteManager.display_path_for_write_target(path)
+                for path in written_absolute
+            ]
+            preview_path = f"/generated-sites/{_slug}/{_entry}"
+            return {
+                "visible_text": (
+                    f"Built {len(written_relative)} website file(s) in the sandbox under {_slug}/. "
+                    f"Entry: {preview_path}. "
+                    f"Sandbox root: {self._sandbox_display_root()}."
+                ),
+                "code_artifact": {},
+                "artifact_patch_proposal": {},
+                "site_bundle": {
+                    **_sandbox_bundle_artifact,
+                    "sandbox_project_slug": _slug,
+                    "sandbox_relative_path": f"{_slug}/{_entry}",
+                    "sandbox_written_paths": written_relative,
+                    "sandbox_display_paths": display_paths,
+                    "preview_path": preview_path,
+                },
+                "context_receipt": {
+                    "compact": "Memory: -; Knowledge: -; Focus: -; Proof: sandbox-build",
+                    "context_receipts": [],
+                    "record_ids": [],
+                },
+                "provenance": {
+                    "artifact_generation": "sandbox_build",
+                    "artifact_validation": "passed",
+                    "slug": _slug,
+                    "entry": _entry,
+                    "files_written": written_relative,
+                    "sandbox_display_paths": display_paths,
+                    "preview_path": preview_path,
+                },
+            }
 
         # ─── Site bundle generation ─────────────────────────────────────────────────
         if is_site_bundle_generation and not is_refinement_request:

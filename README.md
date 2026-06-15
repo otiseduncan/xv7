@@ -131,6 +131,11 @@ mypy core/ --ignore-missing-imports
 | `config/models.yml`    | Model registry, auto-pull list, prompts         |
 | `docker-compose.yml`   | Multi-container orchestration                   |
 
+## Website Command Semantics
+
+- `generate`, `preview`, and `show preview` create chat-window website previews/artifacts only.
+- `build`, `write`, `create`, `export`, and `save` write website files to the configured sandbox export path.
+
 ## Canonical Brain Records
 
 Canonical brain records live in `data/brain/records/*.json` and are committed on purpose.

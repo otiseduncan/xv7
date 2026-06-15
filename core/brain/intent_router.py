@@ -63,14 +63,19 @@ class IntentRouter:
         r"\b(html artifact|code artifact|draft html|inline html|single-file html|single file html|"
         r"one-page html artifact|one page html artifact|generate html artifact|create html artifact|artifact)\b"
     )
+    PREVIEW_VERB_PATTERN = re.compile(
+        r"\b(generate|preview|show|render|display|draft|mock\s*up|mockup)\b"
+    )
     PREVIEW_ARTIFACT_PATTERN = re.compile(
         r"\b(preview|show|render|display|mock\s*up|mockup)\b"
     )
     SANDBOX_BUILD_ACTION_PATTERN = re.compile(
-        r"\b(build|write|create|scaffold)\b|\bmake\s+(?:a\s+)?project\b|\bgenerate\s+files\b|\bwrite\s+files\b"
+        r"\b(build|write|create|export|save|scaffold)\b|"
+        r"\bmake\s+(?:a\s+)?project\b|\bgenerate\s+files\b|\bwrite\s+files\b|"
+        r"\bpublish\s+to\s+sandbox\b"
     )
     SANDBOX_BUILD_TARGET_PATTERN = re.compile(
-        r"\b(website|site|page|design|project|app|files|react|vite|frontend|landing page|web page|homepage|sandbox)\b"
+        r"\b(website|site|page|design|project|app|files?|react|vite|frontend|landing page|web page|homepage|sandbox)\b"
     )
     ARTIFACT_REPO_MUTATION_PATTERN = re.compile(
         r"\b(create a website in the repo|make the app|implement this feature|"
@@ -288,12 +293,16 @@ class IntentRouter:
             return False
         if cls.is_repo_mutation_build_prompt(normalized_text):
             return False
-        # Code artifact and site-bundle requests are chat-artifact delivery by default;
-        # sandbox export is only triggered by explicit write/export/save intent.
-        if cls.is_code_artifact_request(normalized_text):
+        if re.search(
+            r"\b(generate|preview|show|display|draft|mock\s*up|mockup)\b",
+            normalized_text,
+        ) and not re.search(
+            r"\b(to|into)\s+(?:the\s+)?sandbox\b|\bgenerate\s+files\b|\bexport\b|\bsave\b|\bwrite\b|\bbuild\b|\bcreate\b",
+            normalized_text,
+        ):
             return False
-        if sb.is_site_bundle_request(normalized_text):
-            return False
+        # Site preview/artifact requests are chat delivery by default; sandbox export
+        # is triggered only by explicit write/build/create/export/save intent.
         has_action = bool(cls.SANDBOX_BUILD_ACTION_PATTERN.search(normalized_text))
         has_target = bool(cls.SANDBOX_BUILD_TARGET_PATTERN.search(normalized_text))
         return has_action and has_target
@@ -338,10 +347,10 @@ class IntentRouter:
         kind = IntentKind.NORMAL_QUESTION
         if repo_mutation:
             kind = IntentKind.PROTECTED_REPO_MUTATION
-        elif site_bundle:
-            kind = IntentKind.SITE_BUNDLE
         elif sandbox_build:
             kind = IntentKind.SANDBOX_BUILD
+        elif site_bundle:
+            kind = IntentKind.SITE_BUNDLE
         elif code_artifact:
             kind = IntentKind.CODE_ARTIFACT
         elif artifact_edit:

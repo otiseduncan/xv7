@@ -15,8 +15,14 @@ from core.brain.website_design_renderer import (
 )
 from core.brain.website_page_plan_manager import WebsitePagePlanManager
 
-SITE_BUNDLE_ACTION_PATTERN = re.compile(r"\b(create|build|make|generate|draft)\b")
+SITE_BUNDLE_ACTION_PATTERN = re.compile(
+    r"\b(generate|preview|show|display|draft|mock\s*up|mockup)\b"
+)
 SITE_BUNDLE_HINT_PATTERN = re.compile(r"\b(website|site)\b")
+SITE_SANDBOX_WRITE_PATTERN = re.compile(
+    r"\b(build|write|create|export|save)\b|\bpublish\s+to\s+sandbox\b",
+    re.IGNORECASE,
+)
 CONCEPTUAL_WEBSITE_QUESTION_PATTERN = re.compile(
     r"^(what|how|why|which)\b.*\b(website|site|preview|builder|generated websites?)\b",
     re.IGNORECASE,
@@ -133,6 +139,14 @@ def is_site_bundle_request(normalized_question: str) -> bool:
     ):
         return False
     if _EXPLICIT_SINGLE_PATTERN.search(normalized_question):
+        return False
+    if SITE_SANDBOX_WRITE_PATTERN.search(normalized_question) and not (
+        _WEBSITE_ARTIFACT_PATTERN.search(normalized_question)
+        or re.search(
+            r"\b(generate|preview|show|display|draft|mock\s*up|mockup)\b",
+            normalized_question,
+        )
+    ):
         return False
     if re.search(
         r"\b(change|revise|edit|update|restyle|refresh|tweak|adjust|rewrite|switch|preserve|keep|undo|revert)\b",

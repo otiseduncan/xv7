@@ -105,7 +105,7 @@ def test_intent_router_classifies_command_language_contract() -> None:
     )
     assert (
         IntentRouter.classify("Build me a website for another business").kind
-        == IntentKind.SITE_BUNDLE
+        == IntentKind.SANDBOX_BUILD
     )
     assert (
         IntentRouter.classify(
@@ -117,7 +117,7 @@ def test_intent_router_classifies_command_language_contract() -> None:
         IntentRouter.classify(
             "Create a 5 page website for Tony's Tavern biker bar using black orange and yellow"
         ).kind
-        == IntentKind.SITE_BUNDLE
+        == IntentKind.SANDBOX_BUILD
     )
     assert (
         IntentRouter.classify(
@@ -184,3 +184,40 @@ def test_preview_and_explicit_export_routing_boundary() -> None:
         IntentRouter.classify("write this to the sandbox").kind
         == IntentKind.SANDBOX_BUILD
     )
+
+
+def test_website_command_semantics_routing_matrix() -> None:
+    preview_cases = [
+        "generate a website for Harry's Hot Dog Cart",
+        "generate a preview of a website for Harry's Hot Dog Cart",
+        "show me a preview of the website",
+        "preview a website for Harry's Hot Dog Cart",
+    ]
+    sandbox_cases = [
+        "build me a website for Harry's Hot Dog Cart",
+        "write the website to sandbox",
+        "create the website files for Harry's Hot Dog Cart",
+        "export the approved website",
+    ]
+
+    for prompt in preview_cases:
+        decision = IntentRouter.classify(prompt)
+        assert decision.kind == IntentKind.SITE_BUNDLE
+        assert decision.is_site_bundle_request is True
+        assert decision.is_sandbox_build_request is False
+
+    for prompt in sandbox_cases:
+        decision = IntentRouter.classify(prompt)
+        assert decision.kind == IntentKind.SANDBOX_BUILD
+        assert decision.is_sandbox_build_request is True
+
+
+def test_saved_preview_preference_does_not_override_current_explicit_build_command() -> (
+    None
+):
+    prompt = (
+        "Saved preference: preview first, write files only when I say build or export. "
+        "Now build me a website for Harry's Hot Dog Cart."
+    )
+
+    assert IntentRouter.classify(prompt).kind == IntentKind.SANDBOX_BUILD

@@ -319,6 +319,7 @@ def test_website_prompt_api_stays_out_of_operator_lane(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     client = _setup_client(monkeypatch, tmp_path)
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(tmp_path / "sandbox"))
     session_id = _new_session(client)
 
     def _run_action(*_args: Any, **_kwargs: Any) -> OperatorActionResult:
@@ -338,6 +339,8 @@ def test_website_prompt_api_stays_out_of_operator_lane(
     assert assistant_payload.get("operator_result") == {}
     site_bundle = assistant_payload.get("site_bundle", {})
     assert site_bundle.get("artifact_type") == "site_bundle"
+    assert site_bundle.get("sandbox_written_paths")
+    assert (tmp_path / "sandbox").exists()
 
 
 def test_commit_request_api_returns_operator_commit_result_shape(

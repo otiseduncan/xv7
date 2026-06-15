@@ -869,7 +869,7 @@ def test_site_bundle_intent_prioritizes_artifact_over_build_guard() -> None:
     contract = AnswerContract()
 
     normalized = contract._normalize(
-        "create a 5 page website for Tony's Tavern biker bar using black orange and yellow"
+        "generate a 5 page website for Tony's Tavern biker bar using black orange and yellow"
     )
     assert contract._is_repo_mutation_build_prompt(normalized) is False
     assert contract._prioritize_artifact_over_build_guard(normalized) is True
@@ -887,12 +887,13 @@ def test_repo_mutation_build_phrases_do_not_bypass_build_guard() -> None:
         assert contract._prioritize_artifact_over_build_guard(normalized) is False
 
 
-def test_natural_language_website_build_prioritizes_artifact_over_guard() -> None:
+def test_natural_language_website_build_routes_to_sandbox_build() -> None:
     contract = AnswerContract()
 
     normalized = contract._normalize("build me a website for another business")
     assert contract._is_repo_mutation_build_prompt(normalized) is False
-    assert contract._prioritize_artifact_over_build_guard(normalized) is True
+    assert contract._prioritize_artifact_over_build_guard(normalized) is False
+    assert contract._is_sandbox_build_request(normalized) is True
 
 
 def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
@@ -2448,16 +2449,18 @@ def test_failed_validation_patch_cannot_be_applied(tmp_path, monkeypatch) -> Non
 def test_site_bundle_intent_detects_multi_page_website() -> None:
     from core.brain import site_bundle as sb
 
-    assert sb.is_site_bundle_request("create a multi-page website for tony's tavern")
-    assert sb.is_site_bundle_request("build a full website for the fuze boxx")
+    assert sb.is_site_bundle_request("generate a multi-page website for tony's tavern")
+    assert sb.is_site_bundle_request("preview a full website for the fuze boxx")
     assert sb.is_site_bundle_request(
-        "create a 5 page website for tony's tavern biker bar"
+        "generate a 5 page website for tony's tavern biker bar"
     )
     assert sb.is_site_bundle_request("create a website artifact tonys tavern")
+    assert not sb.is_site_bundle_request("create a website for tonys tavern")
+    assert not sb.is_site_bundle_request("build a website for tonys tavern")
     assert not sb.is_site_bundle_request(
         "create a html artifact tony's tavern biker bar"
     )
-    assert sb.is_site_bundle_request("make a website for tony")
+    assert sb.is_site_bundle_request("draft a website for tony")
 
 
 def test_site_bundle_single_file_prompt_does_not_trigger_bundle() -> None:
@@ -2621,12 +2624,14 @@ def test_site_bundle_validate_requires_two_html_pages() -> None:
     assert any("2" in f or "html pages" in f.lower() for f in failures)
 
 
-def test_site_bundle_generation_returns_bundle_payload(monkeypatch, tmp_path) -> None:
+def test_site_bundle_generation_returns_bundle_payload_without_writing_files(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     contract = AnswerContract()
     response = asyncio.run(
         contract.build_code_artifact_response(
-            "create a 5 page website for Tony's Tavern biker bar using black orange and yellow",
+            "generate a 5 page website for Tony's Tavern biker bar using black orange and yellow",
             session_messages=[],
             session_metadata={},
         )
@@ -2646,6 +2651,78 @@ def test_site_bundle_generation_returns_bundle_payload(monkeypatch, tmp_path) ->
     assert "contact.html" in paths
     assert any(p.endswith(".css") for p in paths)
     assert not response.get("code_artifact")
+    assert not (tmp_path / "generated-sites").exists()
+
+
+def test_direct_website_build_writes_bundle_to_sandbox(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(tmp_path / "sandbox"))
+    contract = AnswerContract()
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "build me a website for Harry's Hot Dog Cart",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    provenance = response.get("provenance", {})
+    assert provenance.get("artifact_generation") == "sandbox_build"
+    written = provenance.get("files_written")
+    assert isinstance(written, list)
+    assert "harry-s-hot-dog-cart/index.html" in written
+    assert (tmp_path / "sandbox" / "harry-s-hot-dog-cart" / "index.html").exists()
+
+
+def test_export_approved_website_writes_latest_bundle_to_sandbox(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(tmp_path / "sandbox"))
+    contract = AnswerContract()
+    bundle_artifact = {
+        "artifact_type": "site_bundle",
+        "artifact_id": "harrys-hot-dog-cart-bundle",
+        "revision_id": "harrys-hot-dog-cart-bundle:r1",
+        "revision_number": 1,
+        "title": "Harry's Hot Dog Cart",
+        "slug": "harrys-hot-dog-cart",
+        "entry": "index.html",
+        "source_prompt": "generate a website for Harry's Hot Dog Cart",
+        "site_bundle": {
+            "files": [
+                {
+                    "path": "index.html",
+                    "language": "html",
+                    "content": "<!doctype html><html><body>Harry's Hot Dog Cart</body></html>",
+                },
+                {
+                    "path": "assets/site.css",
+                    "language": "css",
+                    "content": "body { color: red; }",
+                },
+            ]
+        },
+    }
+
+    response = asyncio.run(
+        contract.build_code_artifact_response(
+            "export the approved website",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": "Here is the preview.",
+                    "metadata": {"site_bundle": bundle_artifact},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert response is not None
+    provenance = response.get("provenance", {})
+    assert provenance.get("artifact_generation") == "sandbox_build"
+    assert (tmp_path / "sandbox" / "harrys-hot-dog-cart" / "index.html").exists()
 
 
 def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:

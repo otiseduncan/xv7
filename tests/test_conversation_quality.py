@@ -2500,11 +2500,11 @@ def test_build_wording_with_explicit_artifact_routes_to_artifact_generation(
     assert not (tmp_path / "generated-sites").exists()
 
 
-def test_natural_language_website_build_routes_to_site_bundle(
+def test_natural_language_website_build_writes_to_sandbox(
     monkeypatch, tmp_path: Path
 ) -> None:
     client = _setup_contract_only(monkeypatch, tmp_path)
-    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(tmp_path / "sandbox"))
     session_id = _new_session(client)
 
     response = client.post(
@@ -2525,7 +2525,8 @@ def test_natural_language_website_build_routes_to_site_bundle(
     site_bundle = metadata.get("site_bundle", {})
     assert isinstance(site_bundle, dict)
     assert site_bundle.get("artifact_type") == "site_bundle"
-    assert not (tmp_path / "generated-sites").exists()
+    assert "sandbox_written_paths" in site_bundle
+    assert (tmp_path / "sandbox").exists()
 
 
 @pytest.mark.parametrize(
@@ -2648,7 +2649,7 @@ def test_site_bundle_refine_then_export_to_sandbox(monkeypatch, tmp_path: Path) 
     build_response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "build me a website for Tony's Tavern biker bar"},
+        json={"raw_text": "generate a website for Tony's Tavern biker bar"},
     )
     assert build_response.status_code == 200
     build_message = build_response.json()["messages"][-1]
@@ -2696,7 +2697,7 @@ def test_site_bundle_export_phrase_with_slashes_is_handled(
     build_response = client.post(
         f"/sessions/{session_id}/messages",
         headers={"X-XV7-API-Key": "test-secret"},
-        json={"raw_text": "build me a website for Tony's Tavern biker bar"},
+        json={"raw_text": "generate a website for Tony's Tavern biker bar"},
     )
     assert build_response.status_code == 200
 
