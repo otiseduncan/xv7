@@ -12,9 +12,12 @@ async function sendPromptAndGetAssistantCard(page, prompt) {
   await page.locator("#sendButton").click();
 
   await expect(assistantCards).toHaveCount(previousCount + 1);
-  await expect(page.locator("#sendButton")).toBeEnabled({ timeout: 60_000 });
   const latest = assistantCards.last();
   await expect(latest).toBeVisible();
+  await expect(latest).not.toHaveClass(/pending-assistant/, { timeout: 60_000 });
+  await expect(page.locator("#promptInput")).toBeEnabled({ timeout: 60_000 });
+  await expect(page.locator("#sendButton")).toHaveText("Send", { timeout: 60_000 });
+  await expect(page.locator("#sendButton")).toBeEnabled({ timeout: 60_000 });
   return latest;
 }
 
