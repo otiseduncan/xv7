@@ -59,6 +59,16 @@ NON_MUTATION_WRITING_PATTERNS = (
     "write to sandbox",
 )
 
+FIRST_CLASS_SLASH_COMMANDS = {
+    "/build",
+    "/export",
+    "/write",
+    "/commit",
+    "/push",
+    "/github",
+    "/publish",
+}
+
 
 @dataclass
 class OperatorExecution:
@@ -143,6 +153,27 @@ class OperatorManager:
             ),
             "/build-task": SlashCommandSpec(
                 "/build-task", "planning", "low", "operator"
+            ),
+            "/build": SlashCommandSpec(
+                "/build", "project_workflow", "medium", "operator"
+            ),
+            "/export": SlashCommandSpec(
+                "/export", "project_workflow", "medium", "operator"
+            ),
+            "/write": SlashCommandSpec(
+                "/write", "project_workflow", "medium", "operator"
+            ),
+            "/commit": SlashCommandSpec(
+                "/commit", "git_mutation", "medium", "operator"
+            ),
+            "/push": SlashCommandSpec(
+                "/push", "git_mutation", "destructive", "operator"
+            ),
+            "/github": SlashCommandSpec(
+                "/github", "git_mutation", "destructive", "operator"
+            ),
+            "/publish": SlashCommandSpec(
+                "/publish", "git_mutation", "destructive", "operator"
             ),
             "/vscode-open-workspace": SlashCommandSpec(
                 "/vscode-open-workspace",
@@ -382,8 +413,9 @@ class OperatorManager:
         for slash, spec in sorted(
             self.slash_commands.items(), key=lambda item: item[0]
         ):
-            enabled = spec.mode == "read_only" or operator_mode
-            visible = spec.mode == "read_only" or operator_mode
+            first_class = slash in FIRST_CLASS_SLASH_COMMANDS
+            enabled = spec.mode == "read_only" or operator_mode or first_class
+            visible = spec.mode == "read_only" or operator_mode or first_class
             commands.append(
                 {
                     "slash": slash,
@@ -1031,6 +1063,45 @@ class OperatorManager:
                 "executed": False,
             }
 
+        if slash in FIRST_CLASS_SLASH_COMMANDS:
+            execution = self.try_handle_chat(
+                command_text,
+                session_metadata=session_metadata,
+                operator_mode_enabled=True,
+            )
+            if execution is None:
+                result = self._build_result(
+                    action_name=slash.strip("/"),
+                    status="failed",
+                    command_preview=normalized,
+                    target=str(self.repo_root),
+                    stderr="Command was recognized but could not be routed.",
+                    mutates_files=True,
+                )
+                return {
+                    "answer": self._build_answer(result.action_name, result),
+                    "result": result,
+                    "pending_action": None,
+                    "executed": True,
+                }
+            pending_action = None
+            executed = execution.result.status != "pending"
+            if execution.result.status == "pending":
+                pending_action = {
+                    "action_id": execution.result.action_id,
+                    "command_name": slash.strip("/"),
+                    "target": execution.result.target,
+                    "command_preview": normalized,
+                    "status": "pending",
+                    "requires_confirmation": True,
+                }
+            return {
+                "answer": execution.answer,
+                "result": execution.result,
+                "pending_action": pending_action,
+                "executed": executed,
+            }
+
         if spec.mode != "read_only" and not operator_mode:
             result = self._build_result(
                 action_name=slash.strip("/"),
@@ -1473,6 +1544,147 @@ class OperatorManager:
     def _strip_operator_mode_prefix(normalized: str) -> str:
         return re.sub(r"^operator\s+mode\s*:\s*", "", normalized, flags=re.IGNORECASE)
 
+    @staticmethod
+    def _extract_windows_paths(text: str) -> list[str]:
+        return [
+            match.strip().rstrip(".,;:)\"'")
+            for match in re.findall(r"[A-Za-z]:\\[^\n\r\"']+", text or "")
+        ]
+
+    @classmethod
+    def _is_first_class_operator_request(cls, normalized: str) -> bool:
+        stripped = cls._strip_operator_mode_prefix(normalized)
+        if any(stripped.startswith(prefix) for prefix in FIRST_CLASS_SLASH_COMMANDS):
+            return True
+        return cls._is_github_proof_project_request(
+            stripped
+        ) or cls._is_commit_push_operator_request(stripped)
+
+    def is_first_class_operator_prompt(self, question: str) -> bool:
+        normalized = self._normalize(self._translate_first_class_slash(question))
+        return self._is_first_class_operator_request(normalized)
+
+    @staticmethod
+    def _dedup_paths(paths: list[str]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for raw in paths:
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(text)
+        return ordered
+
+    @classmethod
+    def _candidate_project_paths(cls, session_metadata: dict[str, Any]) -> list[str]:
+        candidates: list[str] = []
+        artifact_history = session_metadata.get("artifact_history")
+        if isinstance(artifact_history, list):
+            for item in artifact_history:
+                if not isinstance(item, dict):
+                    continue
+                artifact = (
+                    item.get("artifact")
+                    if isinstance(item.get("artifact"), dict)
+                    else item
+                )
+                if not isinstance(artifact, dict):
+                    continue
+                for key in (
+                    "sandbox_project_path",
+                    "sandbox_target_path",
+                    "project_path",
+                ):
+                    value = artifact.get(key)
+                    if isinstance(value, str):
+                        candidates.append(value)
+
+        last_action = session_metadata.get("operator_last_action")
+        if isinstance(last_action, dict):
+            data = last_action.get("data")
+            if isinstance(data, dict) and isinstance(data.get("project_path"), str):
+                candidates.append(str(data["project_path"]))
+
+        return cls._dedup_paths(candidates)
+
+    def _pending_operator_confirmation(
+        self,
+        *,
+        question: str,
+        reason: str,
+        target: str,
+        candidates: list[str] | None = None,
+    ) -> OperatorExecution:
+        now = datetime.now(UTC)
+        action_id = self._next_action_id()
+        data: dict[str, Any] = {
+            "confirmation_needed": True,
+            "reason": reason,
+        }
+        if candidates:
+            data["candidates"] = candidates
+        result = OperatorActionResult(
+            action_id=action_id,
+            action_name="operator_github_proof_project",
+            mode="operator",
+            status="pending",
+            started_at=now,
+            completed_at=now,
+            command_or_operation="operator project workflow requires confirmation",
+            target=target,
+            stdout_summary="",
+            stderr_summary=reason,
+            exit_code=None,
+            data=data,
+            safety=OperatorSafety(
+                allowed=True,
+                read_only=False,
+                mutates_files=True,
+                mutates_git=True,
+                requires_approval=True,
+            ),
+            receipt_label=f"operator_github_proof_project {action_id}",
+        )
+        answer = (
+            "I can run that operator workflow, but I need one confirmation first. "
+            f"{reason}"
+        )
+        return OperatorExecution(result=result, answer=answer, record_history=True)
+
+    def _translate_first_class_slash(self, question: str) -> str:
+        stripped = question.strip()
+        if not stripped.startswith("/"):
+            return stripped
+        slash, args = self._parse_slash_command(stripped)
+        lower_args = [arg.lower() for arg in args]
+
+        if slash in {"/build", "/export", "/write"}:
+            if "sandbox" in lower_args or not args:
+                return "build the approved website to sandbox"
+        if slash == "/commit":
+            return "commit and push this project"
+        if slash == "/push":
+            if lower_args and lower_args[0] == "github":
+                return "initialize the new repository and push to github"
+            return "push to github"
+        if slash == "/github":
+            if lower_args and lower_args[0] == "create":
+                repo_name = args[1] if len(args) > 1 else ""
+                if repo_name:
+                    return (
+                        f"create a new repository on github named {repo_name} and push"
+                    )
+                return "create a new repository on github and push"
+            if lower_args and lower_args[0] == "push":
+                return "finish the github push for the existing proof project"
+        if slash == "/publish" and lower_args and lower_args[0] == "github":
+            return "create a new repository on github and push"
+        return stripped
+
     @classmethod
     def _is_github_proof_project_request(cls, normalized: str) -> bool:
         stripped = cls._strip_operator_mode_prefix(normalized)
@@ -1483,9 +1695,13 @@ class OperatorManager:
                 "push to github",
                 "create a github repo",
                 "create a new repository on github",
+                "initialize the new repository and push to github",
                 "initialize git",
                 "git init",
                 "commit and push",
+                "commit and push this project",
+                "finish the github push",
+                "existing proof project",
                 "real github proof project",
                 "real build and push",
                 "not a preview",
@@ -1493,16 +1709,43 @@ class OperatorManager:
             )
         )
 
-    def _natural_github_project_payload(self, question: str, normalized: str) -> str:
+    def _natural_github_project_payload(
+        self,
+        question: str,
+        normalized: str,
+        session_metadata: dict[str, Any],
+    ) -> tuple[str | None, str | None, list[str]]:
         source_text = self._strip_operator_mode_prefix(question).strip()
         lowered = self._strip_operator_mode_prefix(normalized)
 
-        path_match = re.search(
-            r"\bunder\s+([A-Za-z]:\\[^\s,.;\"]+)",
-            source_text,
-            flags=re.IGNORECASE,
+        explicit_paths = self._extract_windows_paths(source_text)
+        project_path = explicit_paths[0] if explicit_paths else ""
+        candidate_paths = self._candidate_project_paths(session_metadata)
+        if not project_path and len(candidate_paths) == 1:
+            project_path = candidate_paths[0]
+
+        if not project_path and len(candidate_paths) > 1:
+            return (
+                None,
+                "I found multiple sandbox project candidates. Reply with the exact target path to continue push safely.",
+                candidate_paths,
+            )
+
+        needs_existing_project = any(
+            token in lowered
+            for token in (
+                "initialize the new repository and push to github",
+                "finish the github push",
+                "existing proof project",
+                "commit and push this project",
+            )
         )
-        project_path = path_match.group(1).strip() if path_match else ""
+        if needs_existing_project and not project_path:
+            return (
+                None,
+                "I need the sandbox project path to continue safely. Provide an explicit path like X:\\xoduz-sandbox\\earthx-github-proof.",
+                candidate_paths,
+            )
 
         name_match = re.search(
             r"\bnamed\s+([A-Za-z0-9._-]+)",
@@ -1512,6 +1755,8 @@ class OperatorManager:
         project_name = name_match.group(1).strip() if name_match else ""
         if not project_name and project_path:
             project_name = Path(project_path).name
+        if not project_name:
+            project_name = "github-proof-project"
 
         commit_match = re.search(
             r'commit\s+with\s+message\s+["\']([^"\']+)["\']',
@@ -1533,6 +1778,16 @@ class OperatorManager:
             repo_name_match.group(1).strip() if repo_name_match else project_name
         )
 
+        write_project_files = not any(
+            token in lowered
+            for token in (
+                "initialize the new repository and push to github",
+                "finish the github push",
+                "existing proof project",
+                "commit and push this project",
+            )
+        )
+
         requested_files: list[str] = []
         for candidate in (
             "index.html",
@@ -1550,6 +1805,23 @@ class OperatorManager:
                 "README.md",
             ]
 
+        create_repo = (
+            "create a github repo" in lowered
+            or "create a new repository on github" in lowered
+            or lowered.startswith("/github create")
+            or lowered.startswith("/publish github")
+        )
+        push_requested = (
+            "push to github" in lowered
+            or "commit and push" in lowered
+            or "build and push" in lowered
+            or "real build and push" in lowered
+            or "finish the github push" in lowered
+            or lowered.startswith("/push")
+            or lowered.startswith("/github push")
+            or lowered.startswith("/publish github")
+        )
+
         payload: dict[str, Any] = {
             "prompt": source_text,
             "project_name": project_name,
@@ -1558,18 +1830,11 @@ class OperatorManager:
             "commit_message": commit_message,
             "github_repo_name": repo_name,
             "initialize_git": True,
-            "create_github_repo": (
-                "create a github repo" in lowered
-                or "create a new repository on github" in lowered
-            ),
-            "push": (
-                "push to github" in lowered
-                or "commit and push" in lowered
-                or "build and push" in lowered
-                or "real build and push" in lowered
-            ),
+            "create_github_repo": create_repo,
+            "push": push_requested,
+            "write_project_files": write_project_files,
         }
-        return json.dumps(payload)
+        return json.dumps(payload), None, candidate_paths
 
     def _natural_commit_payload(self, normalized: str) -> str:
         commit_requested = any(
@@ -2095,20 +2360,45 @@ class OperatorManager:
                 commit_sha = str(result.data.get("commit_sha") or "").strip() or "n/a"
                 pushed = bool(result.data.get("pushed", False))
                 project_path = str(result.data.get("project_path") or result.target)
+                branch = str(result.data.get("branch") or "").strip() or "unknown"
+                remotes = result.data.get("remotes", [])
+                remote_count = len(remotes) if isinstance(remotes, list) else 0
+                status_lines = result.data.get("status_lines", [])
+                status_count = (
+                    len(status_lines) if isinstance(status_lines, list) else 0
+                )
                 return (
                     f"Sandbox project workflow completed at {project_path}; "
-                    f"commit_sha={commit_sha}; pushed={str(pushed).lower()}."
+                    f"branch={branch}; commit_sha={commit_sha}; remotes={remote_count}; "
+                    f"status_entries={status_count}; pushed={str(pushed).lower()}."
+                )
+            if result.status == "pending":
+                return (
+                    "Operator GitHub workflow is staged pending confirmation. "
+                    f"Detail: {result.stderr_summary or 'confirmation is required.'}"
                 )
             failed_command = str(result.data.get("failed_command") or "").strip()
+            repo_before = (
+                result.data.get("repo_before", {})
+                if isinstance(result.data.get("repo_before", {}), dict)
+                else {}
+            )
+            branch = str(repo_before.get("branch") or "").strip() or "unknown"
+            remotes = repo_before.get("remotes", [])
+            remote_count = len(remotes) if isinstance(remotes, list) else 0
+            status_lines = repo_before.get("status_lines", [])
+            status_count = len(status_lines) if isinstance(status_lines, list) else 0
             if failed_command:
                 return (
                     "GitHub proof project workflow failed. "
                     f"Failed command: {failed_command}. "
-                    f"Detail: {result.stderr_summary or 'no stderr detail available.'}"
+                    f"Detail: {result.stderr_summary or 'no stderr detail available.'} "
+                    f"Repo state: branch={branch}; remotes={remote_count}; status_entries={status_count}."
                 )
             return (
                 "GitHub proof project workflow failed. "
-                f"Detail: {result.stderr_summary or 'no stderr detail available.'}"
+                f"Detail: {result.stderr_summary or 'no stderr detail available.'} "
+                f"Repo state: branch={branch}; remotes={remote_count}; status_entries={status_count}."
             )
         if result.status == "failed":
             return (
@@ -2273,24 +2563,29 @@ class OperatorManager:
         operator_mode_enabled: bool = False,
     ) -> OperatorExecution | None:
         metadata = session_metadata or {}
-        normalized = self._normalize(question)
+        translated_question = self._translate_first_class_slash(question)
+        normalized = self._normalize(translated_question)
 
         if self._is_github_proof_project_request(normalized):
-            if not operator_mode_enabled:
-                denied = self._denied_result(
-                    question,
-                    "Operator Mode is currently off. Turn Operator Mode on, then resend this command. No files were changed.",
+            payload, confirmation_reason, candidate_paths = (
+                self._natural_github_project_payload(
+                    translated_question,
+                    normalized,
+                    metadata,
                 )
-                return OperatorExecution(
-                    result=denied,
-                    answer=(
-                        "Operator Mode is currently off. Turn Operator Mode on, then resend this command. "
-                        "No files were changed."
-                    ),
-                    record_history=True,
+            )
+            if payload is None:
+                pending_target = (
+                    candidate_paths[0] if len(candidate_paths) == 1 else "sandbox"
+                )
+                return self._pending_operator_confirmation(
+                    question=translated_question,
+                    reason=confirmation_reason
+                    or "I need one explicit path confirmation before proceeding.",
+                    target=pending_target,
+                    candidates=candidate_paths,
                 )
 
-            payload = self._natural_github_project_payload(question, normalized)
             result = run_action(
                 "operator_github_proof_project",
                 action_id=self._next_action_id(),
@@ -2328,20 +2623,20 @@ class OperatorManager:
                 )
             denied = self._denied_result(
                 question,
-                "Mutation requires Operator Mode plus a staged slash command confirmation flow.",
+                "Mutation requires explicit command intent and may require staged confirmation.",
             )
             return OperatorExecution(
                 result=denied,
                 answer=(
                     "This is an implementation/repo mutation task. "
-                    "Only through Operator Mode using a specific slash command, staged slash command confirmation, and explicit approval. "
-                    "Repo mutations require Operator Mode with staged slash command confirmation and explicit approval. "
+                    "Provide an explicit operator command (verbal or slash). "
+                    "For risky or ambiguous mutations, staged confirmation is required before execution. "
                     "No files were changed. No tests were run. No commit or push occurred."
                 ),
                 record_history=True,
             )
 
-        matched = self._match_action(question, normalized)
+        matched = self._match_action(translated_question, normalized)
         if matched is None:
             return None
 

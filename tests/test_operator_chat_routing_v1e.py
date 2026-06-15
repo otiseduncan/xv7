@@ -398,10 +398,10 @@ def test_push_phrase_routes_to_operator_commit_report_with_separate_push_approva
     assert payload["push_approval"]["approved"] is False
 
 
-def test_operator_mode_github_proof_prompt_is_blocked_when_operator_mode_off(
+def test_operator_mode_github_proof_prompt_routes_even_when_toggle_is_off(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
-    called = {"count": 0}
+    forwarded: dict[str, Any] = {}
 
     def _run_action(
         action_name: str,
@@ -410,11 +410,18 @@ def test_operator_mode_github_proof_prompt_is_blocked_when_operator_mode_off(
         repo_root: Path,
         target: str | None = None,
     ) -> OperatorActionResult:
-        called["count"] += 1
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
         return _result(
             action_name=action_name,
             action_id=action_id,
             repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "earthx-github-proof"),
+                "commit_sha": "abc1234",
+                "pushed": False,
+            },
         )
 
     monkeypatch.setattr("core.operator.manager.run_action", _run_action)
@@ -425,9 +432,9 @@ def test_operator_mode_github_proof_prompt_is_blocked_when_operator_mode_off(
     )
 
     assert handled is not None
-    assert handled.result.status == "denied"
-    assert "operator mode is currently off" in handled.answer.lower()
-    assert called["count"] == 0
+    assert handled.result.status == "success"
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    assert "sandbox project workflow completed" in handled.answer.lower()
 
 
 def test_operator_mode_github_proof_prompt_routes_to_operator_project_action(
@@ -508,3 +515,128 @@ def test_create_new_repository_on_github_prompt_routes_to_operator_project_actio
     assert handled is not None
     assert forwarded["action_name"] == "operator_github_proof_project"
     assert "failed command" in handled.answer.lower()
+
+
+def test_finish_github_push_existing_project_routes_to_operator_project_action(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": r"X:\xoduz-sandbox\earthx-github-proof",
+                "branch": "main",
+                "commit_sha": "abc1234",
+                "remotes": [
+                    "origin\thttps://github.com/example/earthx-github-proof.git (push)"
+                ],
+                "status_lines": [],
+                "pushed": False,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        r"finish the github push for X:\xoduz-sandbox\earthx-github-proof"
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["write_project_files"] is False
+    assert payload["push"] is True
+
+
+def test_slash_push_github_routes_to_operator_project_action(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "earthx-github-proof"),
+                "pushed": False,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "/push github",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "earthx-github-proof"
+                        )
+                    }
+                }
+            ]
+        },
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+
+
+def test_slash_github_create_routes_to_operator_project_action(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "earthx-github-proof"),
+                "pushed": True,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "/github create earthx-github-proof"
+    )
+
+    assert handled is not None
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["create_github_repo"] is True

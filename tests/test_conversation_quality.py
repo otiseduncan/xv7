@@ -1886,9 +1886,8 @@ def test_can_you_delete_files_uses_operator_mode_boundary(
     assert response.status_code == 200
     payload = response.json()
     answer = payload["messages"][-1]["content"].lower()
-    assert "only through operator mode" in answer
-    assert "specific slash command" in answer
-    assert "explicit approval" in answer
+    assert "explicit operator command" in answer
+    assert "staged confirmation" in answer
     operator_receipts = (
         payload.get("metadata", {})
         .get("last_assistant_payload", {})

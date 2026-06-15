@@ -1869,7 +1869,7 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _is_patch_proposal_request(cls, normalized_question: str) -> bool:
-        if IntentRouter.is_operator_github_project_request(normalized_question):
+        if cls._is_first_class_operator_request(normalized_question):
             return False
         return bool(cls.ARTIFACT_PATCH_PROPOSAL_PATTERN.search(normalized_question))
 
@@ -1935,6 +1935,10 @@ if __name__ == \"__main__\":
     @classmethod
     def _is_operator_github_project_request(cls, normalized_question: str) -> bool:
         return IntentRouter.is_operator_github_project_request(normalized_question)
+
+    @classmethod
+    def _is_first_class_operator_request(cls, normalized_question: str) -> bool:
+        return IntentRouter.is_operator_project_command_request(normalized_question)
 
     @classmethod
     def _is_repo_mutation_build_prompt(cls, normalized_question: str) -> bool:

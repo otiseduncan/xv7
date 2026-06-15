@@ -692,7 +692,7 @@ class Xv7UI {
 
   async refreshSlashCommands() {
     try {
-      const payload = await this.fetchJson(`/api/operator/commands?operator_mode=${this.operatorModeActive ? 'true' : 'false'}`, {
+      const payload = await this.fetchJson('/api/operator/commands?operator_mode=true', {
         method: 'GET',
       });
       this.slashCommands = Array.isArray(payload?.commands) ? payload.commands : [];
@@ -1111,6 +1111,27 @@ class Xv7UI {
       await this.ensureSession(this.activeRequestController.signal);
 
       if (raw.startsWith('/')) {
+        const firstClassPrefix = raw.toLowerCase().trim().split(/\s+/)[0];
+        const firstClassSlash = new Set(['/build', '/export', '/write', '/commit', '/push', '/github', '/publish']);
+        if (firstClassSlash.has(firstClassPrefix)) {
+          const data = await this.fetchJson(
+            `/api/sessions/${this.currentSessionId}/messages`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ raw_text: raw }),
+            },
+            this.chatMessageTimeoutMs,
+            this.activeRequestController.signal,
+          );
+          this.setRuntimeStatus({
+            phase: 'streaming',
+            label: 'Streaming',
+            hint: 'Rendering the response.',
+          });
+          this.renderSessionResponse(data);
+          return;
+        }
+
         await this.sendSlashCommand(raw, this.activeRequestController.signal, pendingArticle);
         this.memoryLogCount += 1;
         this.updateSessionTelemetry();

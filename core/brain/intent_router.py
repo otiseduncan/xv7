@@ -124,6 +124,20 @@ class IntentRouter:
         r"initialize git|git init|commit and push|real github proof project|real build and push|"
         r"not a preview|not a patch)\b"
     )
+    OPERATOR_PROJECT_COMMAND_PATTERN = re.compile(
+        r"\b(build and push a real github proof project|"
+        r"initialize the new repository and push to github|"
+        r"create a new repository on github and push|"
+        r"create a new repository on github|"
+        r"finish the github push|"
+        r"commit and push this project|"
+        r"push to github|"
+        r"create a github repo|"
+        r"git init|initialize git)\b"
+    )
+    OPERATOR_PROJECT_SLASH_PATTERN = re.compile(
+        r"^/(build|export|write|commit|push|github|publish)\b"
+    )
 
     @staticmethod
     def normalize(text: str) -> str:
@@ -147,6 +161,16 @@ class IntentRouter:
             return False
         stripped = cls.strip_operator_mode_prefix(normalized_text)
         return bool(cls.OPERATOR_GITHUB_PROJECT_PATTERN.search(stripped))
+
+    @classmethod
+    def is_operator_project_command_request(cls, normalized_text: str) -> bool:
+        if not normalized_text:
+            return False
+        stripped = cls.strip_operator_mode_prefix(normalized_text)
+        return bool(
+            cls.OPERATOR_PROJECT_COMMAND_PATTERN.search(stripped)
+            or cls.OPERATOR_PROJECT_SLASH_PATTERN.search(stripped)
+        )
 
     @classmethod
     def has_explicit_artifact_intent(cls, normalized_text: str) -> bool:

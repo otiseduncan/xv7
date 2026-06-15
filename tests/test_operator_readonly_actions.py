@@ -107,7 +107,8 @@ def test_operator_manager_denies_mutation_request() -> None:
 
     assert handled is not None
     assert handled.result.status == "denied"
-    assert "operator mode" in handled.answer.lower()
+    assert "explicit operator command" in handled.answer.lower()
+    assert "staged confirmation" in handled.answer.lower()
 
 
 def test_operator_manager_allows_prompt_writing_requests() -> None:

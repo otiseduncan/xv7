@@ -203,12 +203,28 @@ def test_website_preview_corrections_save_as_learning_not_mutation_tasks(
     assert metadata.get("site_bundle", {}) == {}
 
 
-def test_operator_mode_github_proof_prompt_with_mode_off_returns_guard_not_patch(
+def test_operator_mode_github_proof_prompt_with_mode_off_routes_to_operator_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     client = _setup_client(monkeypatch, tmp_path)
     session_id = _new_session(client)
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "operator_github_proof_project"
+        return _result(
+            action_name=action_name,
+            status="success",
+            action_id=action_id,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
 
     response = client.post(
         f"/sessions/{session_id}/messages",
@@ -228,7 +244,7 @@ def test_operator_mode_github_proof_prompt_with_mode_off_returns_guard_not_patch
     answer = str(message["content"]).lower()
     metadata = message["metadata"]
 
-    assert "operator mode is currently off" in answer
+    assert "sandbox project workflow completed" in answer
     assert metadata.get("artifact_patch_proposal", {}) == {}
     assert (
         "artifact-patch-proposal"
@@ -282,6 +298,115 @@ def test_operator_mode_github_proof_prompt_with_mode_on_routes_to_operator_flow(
     receipts = metadata.get("operator_receipts") or []
     assert isinstance(receipts, list)
     assert receipts
+
+
+def test_initialize_repo_and_push_routes_to_operator_not_learning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "operator_github_proof_project"
+        return _result(
+            action_name=action_name,
+            status="pending",
+            action_id=action_id,
+            stderr_summary="I need the sandbox project path to continue safely.",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "initialize the new repository and push to github"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    metadata = message["metadata"]
+
+    assert "saved that as" not in str(message["content"]).lower()
+    assert metadata.get("policy_provenance", {}).get("intent_class") not in {
+        "communication_preference",
+        "workflow_habit_learning",
+    }
+    receipts = metadata.get("operator_receipts") or []
+    assert isinstance(receipts, list)
+    assert receipts
+
+
+def test_slash_push_github_routes_to_operator_not_patch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == "operator_github_proof_project"
+        return _result(
+            action_name=action_name,
+            status="pending",
+            action_id=action_id,
+            stderr_summary="I need the sandbox project path to continue safely.",
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "/push github"},
+    )
+
+    assert response.status_code == 200
+    message = response.json()["messages"][-1]
+    metadata = message["metadata"]
+    assert metadata.get("artifact_patch_proposal", {}) == {}
+    receipts = metadata.get("operator_receipts") or []
+    assert receipts
+
+
+def test_slash_export_sandbox_routes_to_build_flow_not_learning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": "/export sandbox"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    metadata = message["metadata"]
+    answer = str(message["content"]).lower()
+
+    assert "operator mode is currently off" not in answer
+    assert metadata.get("policy_provenance", {}).get("intent_class") not in {
+        "communication_preference",
+        "workflow_habit_learning",
+    }
 
 
 def test_repo_check_claim_requires_live_proof_and_flips_after_success(

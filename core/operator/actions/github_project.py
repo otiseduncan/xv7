@@ -53,6 +53,45 @@ def _extract_commit_sha(stdout_text: str) -> str:
     return match.group(1) if match else ""
 
 
+def _git_repo_exists(project_path: Path) -> bool:
+    probe = _run_command(project_path, ["git", "rev-parse", "--is-inside-work-tree"])
+    return probe.returncode == 0
+
+
+def _inspect_repo(project_path: Path) -> dict[str, Any]:
+    if not _git_repo_exists(project_path):
+        return {
+            "is_git_repo": False,
+            "branch": "",
+            "latest_commit": "",
+            "remotes": [],
+            "status_lines": [],
+        }
+
+    branch_proc = _run_command(
+        project_path, ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+    )
+    commit_proc = _run_command(project_path, ["git", "rev-parse", "--short", "HEAD"])
+    remotes_proc = _run_command(project_path, ["git", "remote", "-v"])
+    status_proc = _run_command(project_path, ["git", "status", "--porcelain"])
+
+    remote_lines = [
+        line.strip()
+        for line in (remotes_proc.stdout or "").splitlines()
+        if line.strip()
+    ]
+    status_lines = [
+        line.strip() for line in (status_proc.stdout or "").splitlines() if line.strip()
+    ]
+    return {
+        "is_git_repo": True,
+        "branch": (branch_proc.stdout or "").strip(),
+        "latest_commit": (commit_proc.stdout or "").strip(),
+        "remotes": remote_lines,
+        "status_lines": status_lines,
+    }
+
+
 def _default_file_content(path_text: str, project_name: str) -> str:
     normalized = path_text.replace("\\", "/").lower()
     if normalized == "index.html":
@@ -175,36 +214,40 @@ def operator_github_proof_project(
             },
         )
 
+    write_project_files = bool(request.get("write_project_files", True))
     files = request.get("requested_files")
     if not isinstance(files, list) or not files:
         files = ["index.html", "assets/site.css", "assets/app.js", "README.md"]
 
     changed_files: list[str] = []
-    for relative in [str(item).replace("\\", "/") for item in files]:
-        target = (project_path / relative).resolve()
-        if not _inside(project_path, target):
-            return _result(
-                action_id=action_id,
-                status="denied",
-                started_at=started_at,
-                project_path=project_path,
-                stdout_summary="",
-                stderr_summary=f"Blocked unsafe file target: {relative}",
-                exit_code=None,
-                data={
-                    "project_path": str(project_path),
-                    "sandbox_root": str(sandbox_root),
-                    "changed_files": changed_files,
-                    "commands": [],
-                    "commit_created": False,
-                    "push_performed": False,
-                },
+    if write_project_files:
+        for relative in [str(item).replace("\\", "/") for item in files]:
+            target = (project_path / relative).resolve()
+            if not _inside(project_path, target):
+                return _result(
+                    action_id=action_id,
+                    status="denied",
+                    started_at=started_at,
+                    project_path=project_path,
+                    stdout_summary="",
+                    stderr_summary=f"Blocked unsafe file target: {relative}",
+                    exit_code=None,
+                    data={
+                        "project_path": str(project_path),
+                        "sandbox_root": str(sandbox_root),
+                        "changed_files": changed_files,
+                        "commands": [],
+                        "commit_created": False,
+                        "push_performed": False,
+                    },
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(
+                _default_file_content(relative, project_name), encoding="utf-8"
             )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            _default_file_content(relative, project_name), encoding="utf-8"
-        )
-        changed_files.append(target.relative_to(project_path).as_posix())
+            changed_files.append(target.relative_to(project_path).as_posix())
+
+    inspect_before = _inspect_repo(project_path)
 
     commands: list[str] = []
 
@@ -216,7 +259,7 @@ def operator_github_proof_project(
         return proc.returncode == 0, proc
 
     initialize_git = bool(request.get("initialize_git", True))
-    if initialize_git:
+    if initialize_git and not bool(inspect_before.get("is_git_repo", False)):
         ok_init, proc_init = run_or_fail(["git", "init", "-b", "main"])
         if not ok_init:
             ok_fallback, proc_fallback = run_or_fail(["git", "init"])
@@ -246,58 +289,71 @@ def operator_github_proof_project(
                 )
             run_or_fail(["git", "branch", "-M", "main"])
 
-    ok_add, proc_add = run_or_fail(["git", "add", "."])
-    if not ok_add:
-        failed = _command_text(
-            proc_add.args if isinstance(proc_add.args, list) else ["git", "add", "."]
-        )
-        return _result(
-            action_id=action_id,
-            status="failed",
-            started_at=started_at,
-            project_path=project_path,
-            stdout_summary=proc_add.stdout[:500],
-            stderr_summary=proc_add.stderr[:500],
-            exit_code=proc_add.returncode,
-            data={
-                "project_path": str(project_path),
-                "sandbox_root": str(sandbox_root),
-                "changed_files": changed_files,
-                "commands": commands,
-                "failed_command": failed,
-                "commit_created": False,
-                "push_performed": False,
-            },
-        )
-
     commit_message = str(request.get("commit_message") or "build GitHub proof project")
-    ok_commit, proc_commit = run_or_fail(["git", "commit", "-m", commit_message])
-    if not ok_commit:
-        failed = _command_text(
-            proc_commit.args
-            if isinstance(proc_commit.args, list)
-            else ["git", "commit", "-m", commit_message]
-        )
-        return _result(
-            action_id=action_id,
-            status="failed",
-            started_at=started_at,
-            project_path=project_path,
-            stdout_summary=proc_commit.stdout[:500],
-            stderr_summary=proc_commit.stderr[:500],
-            exit_code=proc_commit.returncode,
-            data={
-                "project_path": str(project_path),
-                "sandbox_root": str(sandbox_root),
-                "changed_files": changed_files,
-                "commands": commands,
-                "failed_command": failed,
-                "commit_created": False,
-                "push_performed": False,
-            },
-        )
+    commit_created = False
+    commit_sha = str(inspect_before.get("latest_commit") or "")
+    if changed_files:
+        ok_add, proc_add = run_or_fail(["git", "add", "."])
+        if not ok_add:
+            failed = _command_text(
+                proc_add.args
+                if isinstance(proc_add.args, list)
+                else ["git", "add", "."]
+            )
+            return _result(
+                action_id=action_id,
+                status="failed",
+                started_at=started_at,
+                project_path=project_path,
+                stdout_summary=proc_add.stdout[:500],
+                stderr_summary=proc_add.stderr[:500],
+                exit_code=proc_add.returncode,
+                data={
+                    "project_path": str(project_path),
+                    "sandbox_root": str(sandbox_root),
+                    "changed_files": changed_files,
+                    "commands": commands,
+                    "failed_command": failed,
+                    "commit_created": False,
+                    "push_performed": False,
+                    "repo_before": inspect_before,
+                },
+            )
 
-    commit_sha = _extract_commit_sha(proc_commit.stdout)
+        ok_commit, proc_commit = run_or_fail(["git", "commit", "-m", commit_message])
+        if not ok_commit:
+            nothing_to_commit = (
+                "nothing to commit" in (proc_commit.stdout or "").lower()
+                or "nothing to commit" in (proc_commit.stderr or "").lower()
+            )
+            if not nothing_to_commit:
+                failed = _command_text(
+                    proc_commit.args
+                    if isinstance(proc_commit.args, list)
+                    else ["git", "commit", "-m", commit_message]
+                )
+                return _result(
+                    action_id=action_id,
+                    status="failed",
+                    started_at=started_at,
+                    project_path=project_path,
+                    stdout_summary=proc_commit.stdout[:500],
+                    stderr_summary=proc_commit.stderr[:500],
+                    exit_code=proc_commit.returncode,
+                    data={
+                        "project_path": str(project_path),
+                        "sandbox_root": str(sandbox_root),
+                        "changed_files": changed_files,
+                        "commands": commands,
+                        "failed_command": failed,
+                        "commit_created": False,
+                        "push_performed": False,
+                        "repo_before": inspect_before,
+                    },
+                )
+        else:
+            commit_created = True
+            commit_sha = _extract_commit_sha(proc_commit.stdout) or commit_sha
     create_repo = bool(request.get("create_github_repo", False))
     push = bool(request.get("push", False))
     pushed = False
@@ -339,9 +395,10 @@ def operator_github_proof_project(
                     "commands": commands,
                     "failed_command": failed,
                     "commit_sha": commit_sha,
-                    "commit_created": True,
+                    "commit_created": commit_created,
                     "push_performed": False,
                     "pushed": False,
+                    "repo_before": inspect_before,
                 },
             )
         pushed = push
@@ -368,12 +425,15 @@ def operator_github_proof_project(
                     "commands": commands,
                     "failed_command": failed,
                     "commit_sha": commit_sha,
-                    "commit_created": True,
+                    "commit_created": commit_created,
+                    "repo_before": inspect_before,
                     "push_performed": False,
                     "pushed": False,
                 },
             )
         pushed = True
+
+    inspect_after = _inspect_repo(project_path)
 
     return _result(
         action_id=action_id,
@@ -390,8 +450,13 @@ def operator_github_proof_project(
             "commands": commands,
             "failed_command": "",
             "commit_sha": commit_sha,
-            "commit_created": True,
+            "commit_created": commit_created,
             "push_performed": pushed,
             "pushed": pushed,
+            "repo_before": inspect_before,
+            "repo_after": inspect_after,
+            "branch": str(inspect_after.get("branch") or ""),
+            "remotes": inspect_after.get("remotes", []),
+            "status_lines": inspect_after.get("status_lines", []),
         },
     )

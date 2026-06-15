@@ -906,6 +906,22 @@ def test_github_proof_prompt_does_not_route_to_patch_proposal() -> None:
     assert contract._is_patch_proposal_request(normalized) is False
 
 
+def test_initialize_repo_push_prompt_is_first_class_operator_not_patch() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize("initialize the new repository and push to github")
+    assert contract._is_first_class_operator_request(normalized) is True
+    assert contract._is_patch_proposal_request(normalized) is False
+
+
+def test_slash_push_github_is_first_class_operator_not_patch() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize("/push github")
+    assert contract._is_first_class_operator_request(normalized) is True
+    assert contract._is_patch_proposal_request(normalized) is False
+
+
 def test_generate_patch_prompt_still_routes_to_patch_proposal() -> None:
     contract = AnswerContract()
 

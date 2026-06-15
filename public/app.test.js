@@ -3026,7 +3026,7 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('operatorModeBanner').classList.contains('hidden')).toBe(true);
   });
 
-  it('slash menu shows scan commands in normal mode and mutation commands in operator mode', async () => {
+  it('slash menu shows scan and mutation commands without requiring operator toggle', async () => {
     global.fetch = createRuntimeFetchMock();
 
     new Xv7UI();
@@ -3045,7 +3045,7 @@ describe('ModelProfileControl', () => {
     expect(menuTextNormal).toContain('/scan-disk');
     expect(menuTextNormal).toContain('/list-disks');
     expect(menuTextNormal).toContain('/list-drives');
-    expect(menuTextNormal).not.toContain('/delete-file');
+    expect(menuTextNormal).toContain('/delete-file');
 
     document.getElementById('operatorModeToggle').click();
     await flushAsync();

@@ -221,3 +221,32 @@ def test_saved_preview_preference_does_not_override_current_explicit_build_comma
     )
 
     assert IntentRouter.classify(prompt).kind == IntentKind.SANDBOX_BUILD
+
+
+def test_operator_project_command_detection_for_verbal_and_slash() -> None:
+    assert (
+        IntentRouter.is_operator_project_command_request(
+            IntentRouter.normalize("initialize the new repository and push to github")
+        )
+        is True
+    )
+    assert (
+        IntentRouter.is_operator_project_command_request(
+            IntentRouter.normalize(
+                "finish the github push for X:\\xoduz-sandbox\\earthx-github-proof"
+            )
+        )
+        is True
+    )
+    assert (
+        IntentRouter.is_operator_project_command_request(
+            IntentRouter.normalize("/push github")
+        )
+        is True
+    )
+    assert (
+        IntentRouter.is_operator_project_command_request(
+            IntentRouter.normalize("generate a website for Harry's Hot Dogs")
+        )
+        is False
+    )
