@@ -26,6 +26,7 @@ docker/core/.dockerignore
 
 # Data / databases (generated at runtime)
 core/data/
+generated-sites/
 *.db
 *.sqlite3
 data/*

@@ -154,6 +154,7 @@ services:
     volumes:
       - ./core:/app/core                 # Live-reload: source changes apply instantly
       - ./config:/app/config             # Persona and system configuration files
+      - ${XV7_HOST_SANDBOX:-./generated-sites}:/app/generated-sites
       - ./:/workspace:ro                 # Full repo mount for read-only operator git/file checks
       - core_data:/app/data:rw           # Persistent DB, vectors, memory logs
       - ./data/brain/records:/app/data/brain/records:ro
