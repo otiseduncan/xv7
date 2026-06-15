@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import html
+import json
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from core.brain.website_business_type_manager import WebsiteBusinessTypeManager
 from core.brain.website_design_renderer import (
+    build_site_design_spec,
     page_label as render_page_label,
     render_site_bundle_files,
 )
@@ -332,6 +335,26 @@ def build_bundle_files(
         style_hints=style_hints,
         question=question,
     )
+
+
+def build_design_spec_payload(
+    *,
+    business_name: str,
+    slug: str,
+    pages: list[str],
+    style_hints: dict[str, list[str]],
+    question: str,
+) -> dict[str, Any]:
+    """Build the JSON-safe design model used for a site bundle render."""
+
+    spec = build_site_design_spec(
+        business_name=business_name,
+        slug=slug,
+        pages=pages,
+        style_hints=style_hints,
+        question=question,
+    )
+    return json.loads(json.dumps(asdict(spec)))
 
 
 def refine_bundle_files(

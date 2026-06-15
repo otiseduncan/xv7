@@ -5028,6 +5028,13 @@ if __name__ == \"__main__\":
                     style_hints=_style,
                     question=question,
                 )
+                _design_spec = sb.build_design_spec_payload(
+                    business_name=_biz,
+                    slug=_slug,
+                    pages=_pages,
+                    style_hints=_style,
+                    question=question,
+                )
                 _passed, _failures = sb.validate_bundle(
                     bundle_files=_files,
                     entry=_entry,
@@ -5063,6 +5070,7 @@ if __name__ == \"__main__\":
                     "slug": _slug,
                     "entry": _entry,
                     "source_prompt": question.strip(),
+                    "design_spec": _design_spec,
                     "site_bundle": {"files": _files},
                 }
 
@@ -5122,6 +5130,13 @@ if __name__ == \"__main__\":
                 style_hints=_style,
                 question=question,
             )
+            _design_spec = sb.build_design_spec_payload(
+                business_name=_biz,
+                slug=_slug,
+                pages=_pages,
+                style_hints=_style,
+                question=question,
+            )
             _passed, _failures = sb.validate_bundle(
                 bundle_files=_files,
                 entry="index.html",
@@ -5157,6 +5172,7 @@ if __name__ == \"__main__\":
                 "slug": _slug,
                 "entry": "index.html",
                 "source_prompt": question.strip(),
+                "design_spec": _design_spec,
                 "site_bundle": {"files": _files},
             }
             _html_pages = [p for p in _pages if p.endswith(".html")]
@@ -5222,7 +5238,19 @@ if __name__ == \"__main__\":
                 question,
             )
 
-            _style = self._extract_style_hints(question)
+            _base_style = self._extract_style_hints(source_prompt)
+            _follow_style = self._extract_style_hints(question)
+            _style = {
+                "colors": _follow_style.get("colors") or _base_style.get("colors", []),
+                "styles": list(
+                    dict.fromkeys(
+                        [
+                            *(_base_style.get("styles") or []),
+                            *(_follow_style.get("styles") or []),
+                        ]
+                    )
+                ),
+            }
             if not _style.get("colors"):
                 css_text = ""
                 for item in latest_files:
@@ -5242,12 +5270,20 @@ if __name__ == \"__main__\":
             if typo_style and typo_style not in _style.get("styles", []):
                 _style.setdefault("styles", []).append(typo_style)
 
+            _render_prompt = f"{source_prompt}\nRevision request: {question}"
             _files = sb.build_bundle_files(
                 business_name=_biz,
                 slug=_slug,
                 pages=_pages,
                 style_hints=_style,
-                question=question,
+                question=_render_prompt,
+            )
+            _design_spec = sb.build_design_spec_payload(
+                business_name=_biz,
+                slug=_slug,
+                pages=_pages,
+                style_hints=_style,
+                question=_render_prompt,
             )
             _passed, _failures = sb.validate_bundle(
                 bundle_files=_files,
@@ -5288,6 +5324,8 @@ if __name__ == \"__main__\":
                 "slug": _slug,
                 "entry": str(latest_artifact.get("entry") or "index.html"),
                 "source_prompt": source_prompt,
+                "latest_prompt": question.strip(),
+                "design_spec": _design_spec,
                 "site_bundle": {"files": _files},
             }
 

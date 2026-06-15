@@ -2780,6 +2780,102 @@ def test_site_bundle_revision_adds_requested_page_and_less_generic_detail(
     assert "Security assessment" in by_path["services.html"]
 
 
+def test_site_bundle_preview_revision_export_preserves_active_design_parity(
+    monkeypatch, tmp_path
+) -> None:
+    sandbox_root = tmp_path / "sandbox"
+    monkeypatch.setenv("XV7_SANDBOX_ROOT", str(sandbox_root))
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path / "patches"))
+    contract = AnswerContract()
+
+    initial = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate a website for Harry's Hot Dog Cart, bright red and yellow, fun street-food style",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+    assert initial is not None
+    assert initial["provenance"]["artifact_generation"] == "site_bundle"
+    assert not sandbox_root.exists()
+    initial_bundle = initial["site_bundle"]
+    initial_spec = initial_bundle["design_spec"]
+    assert initial_spec["business_name"] == "Harry's Hot Dog Cart"
+    assert initial_spec["business_type"] == "food"
+    assert initial_spec["tone"] == "fun street-food"
+    assert initial_spec["cta_strategy"]["primary"] == "Order catering"
+    assert initial_spec["visual_direction"]
+    assert initial_spec["palette"]["requested_colors"] == ["red", "yellow"]
+
+    revised = asyncio.run(
+        contract.build_code_artifact_response(
+            "make it look less generic and add a menu page",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": initial["visible_text"],
+                    "metadata": {"site_bundle": initial_bundle},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+    assert revised is not None
+    assert revised["provenance"]["artifact_generation"] == "site_bundle_refinement"
+    assert not sandbox_root.exists()
+    revised_bundle = revised["site_bundle"]
+    revised_spec = revised_bundle["design_spec"]
+    assert revised_spec["business_name"] == initial_spec["business_name"]
+    assert revised_spec["business_type"] == initial_spec["business_type"]
+    assert revised_spec["tone"] == initial_spec["tone"]
+    assert revised_spec["cta_strategy"] == initial_spec["cta_strategy"]
+    assert revised_spec["visual_direction"] == initial_spec["visual_direction"]
+    assert revised_spec["palette"]["requested_colors"] == ["red", "yellow"]
+
+    revised_files = revised_bundle["site_bundle"]["files"]
+    revised_by_path = {item["path"]: item["content"] for item in revised_files}
+    assert "menu.html" in revised_by_path
+    assert "Not a blank template" in revised_by_path["index.html"]
+    assert "Classic Street Dog" in revised_by_path["menu.html"]
+
+    exported = asyncio.run(
+        contract.build_code_artifact_response(
+            "build the approved website to sandbox",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": initial["visible_text"],
+                    "metadata": {"site_bundle": initial_bundle},
+                },
+                {
+                    "role": "assistant",
+                    "content": revised["visible_text"],
+                    "metadata": {"site_bundle": revised_bundle},
+                },
+            ],
+            session_metadata={},
+        )
+    )
+    assert exported is not None
+    assert exported["provenance"]["artifact_generation"] == "sandbox_build"
+    exported_bundle = exported["site_bundle"]
+    assert exported_bundle["design_spec"] == revised_spec
+    assert exported_bundle["site_bundle"]["files"] == revised_files
+
+    written = exported["provenance"]["files_written"]
+    assert "harry-s-hot-dog-cart/index.html" in written
+    assert "harry-s-hot-dog-cart/menu.html" in written
+    exported_index = sandbox_root / "harry-s-hot-dog-cart" / "index.html"
+    exported_menu = sandbox_root / "harry-s-hot-dog-cart" / "menu.html"
+    assert exported_index.read_text(encoding="utf-8") == revised_by_path["index.html"]
+    assert exported_menu.read_text(encoding="utf-8") == revised_by_path["menu.html"]
+    assert "Local Business Website" not in exported_index.read_text(encoding="utf-8")
+    assert all(
+        (sandbox_root / rel).resolve().is_relative_to(sandbox_root.resolve())
+        for rel in written
+    )
+
+
 def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
     contract = AnswerContract()
