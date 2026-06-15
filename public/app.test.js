@@ -1704,11 +1704,11 @@ describe('ModelProfileControl', () => {
     sendButton.click();
     await flushAsync();
 
-    const pendingCard = document.querySelector('.pending-assistant');
     expect(sendButton.textContent).toBe('Send');
     expect(sendButton.classList.contains('is-stop')).toBe(false);
-    expect(pendingCard?.textContent).toContain('Stopped');
-    expect(pendingCard?.textContent).toContain('Request cancelled.');
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
+    expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('Stopped. Request cancelled.');
   });
 
   it('shows failed status in the pending assistant card when a request errors and restores send mode', async () => {
@@ -1729,11 +1729,12 @@ describe('ModelProfileControl', () => {
     await flushAsync();
 
     const sendButton = document.getElementById('sendButton');
-    const pendingCard = document.querySelector('.pending-assistant');
     expect(sendButton.textContent).toBe('Send');
     expect(sendButton.disabled).toBe(false);
-    expect(pendingCard?.getAttribute('data-runtime-phase')).toBe('failed');
-    expect(pendingCard?.textContent).toContain('Failed');
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    const assistantCard = document.querySelector('.chat-card-assistant');
+    expect(assistantCard?.getAttribute('data-runtime-phase')).toBe('failed');
+    expect(assistantCard?.textContent).toContain('Failed: server exploded');
   });
 
   it('shows approval-required operator receipts without exposing hidden reasoning', async () => {
@@ -1997,7 +1998,8 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('sendButton').textContent).toBe('Send');
     expect(document.getElementById('alertBox').textContent).toContain('The request timed out or stayed pending too long. The UI recovered so you can retry.');
     expect(document.querySelectorAll('.chat-card-assistant')).toHaveLength(1);
-    expect(document.querySelector('.pending-assistant')?.textContent).toContain('Failed');
+    expect(document.querySelector('.pending-assistant')).toBeNull();
+    expect(document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent).toContain('The request timed out or stayed pending too long. The UI recovered so you can retry.');
   });
 
   it('renders an inline code artifact card inside the assistant chat flow', async () => {

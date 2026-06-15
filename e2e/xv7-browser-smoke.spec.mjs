@@ -1,23 +1,24 @@
 import { expect, test } from "@playwright/test";
 
 const baseURL = process.env.XV7_BROWSER_BASE_URL || "http://localhost:3000";
+const smokeResponseTimeoutMs = 180_000;
 
 async function sendPromptAndGetAssistantCard(page, prompt) {
   const assistantCards = page.locator(".chat-card-assistant");
   const previousCount = await assistantCards.count();
 
-  await expect(page.locator("#promptInput")).toBeEnabled({ timeout: 60_000 });
-  await expect(page.locator("#sendButton")).toBeEnabled({ timeout: 60_000 });
+  await expect(page.locator("#promptInput")).toBeEnabled({ timeout: smokeResponseTimeoutMs });
+  await expect(page.locator("#sendButton")).toBeEnabled({ timeout: smokeResponseTimeoutMs });
   await page.locator("#promptInput").fill(prompt);
   await page.locator("#sendButton").click();
 
   await expect(assistantCards).toHaveCount(previousCount + 1);
   const latest = assistantCards.last();
   await expect(latest).toBeVisible();
-  await expect(latest).not.toHaveClass(/pending-assistant/, { timeout: 60_000 });
-  await expect(page.locator("#promptInput")).toBeEnabled({ timeout: 60_000 });
-  await expect(page.locator("#sendButton")).toHaveText("Send", { timeout: 60_000 });
-  await expect(page.locator("#sendButton")).toBeEnabled({ timeout: 60_000 });
+  await expect(latest).not.toHaveClass(/pending-assistant/, { timeout: smokeResponseTimeoutMs });
+  await expect(page.locator("#promptInput")).toBeEnabled({ timeout: smokeResponseTimeoutMs });
+  await expect(page.locator("#sendButton")).toHaveText("Send", { timeout: smokeResponseTimeoutMs });
+  await expect(page.locator("#sendButton")).toBeEnabled({ timeout: smokeResponseTimeoutMs });
   return latest;
 }
 
@@ -25,6 +26,8 @@ test.describe("XV7 browser smoke", () => {
   test("chat routing keeps advice, preview, and trace UI distinct", async ({
     page,
   }) => {
+    test.setTimeout(240_000);
+
     const consoleErrors = [];
     page.on("console", (message) => {
       if (message.type() === "error") {

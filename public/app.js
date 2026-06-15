@@ -1175,11 +1175,20 @@ class Xv7UI {
           label: 'Stopped',
           hint: 'Request cancelled.',
         });
+        this.finalizePendingAssistantCard(
+          {
+            phase: 'blocked',
+            label: 'Stopped',
+            hint: 'Request cancelled.',
+          },
+          'Stopped. Request cancelled.',
+        );
         return;
       }
 
+      const failureMessage = this.humanizeError(error);
       this.setHardwareLoad('Recovery', 24);
-      this.showAlert(this.humanizeError(error), true);
+      this.showAlert(failureMessage, true);
       this.setAvatarState('error', 'message-error');
       this.scheduleAvatarReset('idle', 1800);
       this.setRuntimeStatus({
@@ -1187,10 +1196,28 @@ class Xv7UI {
         label: 'Failed',
         hint: 'Action failed. Review the result card.',
       });
+      this.finalizePendingAssistantCard(
+        {
+          phase: 'failed',
+          label: 'Failed',
+          hint: 'Action failed. Review the result card.',
+        },
+        `Failed: ${failureMessage}`,
+      );
     } finally {
       this.activeRequestController = null;
       this.requestStopRequested = false;
       this.setSendBusy(false);
+      if (this.pendingAssistantArticle) {
+        this.finalizePendingAssistantCard(
+          {
+            phase: 'failed',
+            label: 'Failed',
+            hint: 'Action failed. Review the result card.',
+          },
+          'Failed: Response did not complete. Please retry.',
+        );
+      }
       this.els.promptInput.focus();
     }
   }
@@ -5192,6 +5219,31 @@ class Xv7UI {
       : null;
     this.pendingAssistantArticle = null;
     this.pendingAssistantStatusElement = null;
+    return article;
+  }
+
+  finalizePendingAssistantCard(model, fallbackText = '') {
+    const replaceArticle = this.consumePendingAssistantCard();
+    if (!replaceArticle) return null;
+
+    const status = createRuntimeStatusModel(model || {});
+    const text = String(fallbackText || status.hint || status.label || 'Action failed.').trim();
+    const article = this.appendMessageCard(
+      'assistant',
+      text,
+      null,
+      null,
+      this.nowIso(),
+      replaceArticle,
+    );
+
+    if (article) {
+      article.dataset.runtimePhase = status.phase;
+      article.classList.toggle('is-failed', status.phase === 'failed');
+      article.classList.toggle('is-blocked', status.phase === 'blocked');
+      article.classList.remove('is-busy');
+    }
+
     return article;
   }
 
