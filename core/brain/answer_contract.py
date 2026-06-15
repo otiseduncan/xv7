@@ -5217,8 +5217,9 @@ if __name__ == \"__main__\":
             _slug = self._safe_slug(
                 str(latest_artifact.get("slug") or _biz), fallback="site-bundle"
             )
-            _pages = existing_pages or sb.default_pages_for_business(
-                _biz, source_prompt
+            _pages = sb.merge_requested_pages(
+                existing_pages or sb.default_pages_for_business(_biz, source_prompt),
+                question,
             )
 
             _style = self._extract_style_hints(question)

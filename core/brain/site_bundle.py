@@ -164,14 +164,6 @@ def is_site_bundle_request(normalized_question: str) -> bool:
 def default_pages_for_business(business_name: str, question: str) -> list[str]:
     """Return the default file list for the detected business category."""
 
-    requested_pages = extract_requested_page_paths(question)
-    if requested_pages:
-        pages = [
-            "index.html",
-            *[page for page in requested_pages if page != "index.html"],
-        ]
-        return [*pages, "assets/site.css", "assets/site.js"]
-
     prompt_context = f"{business_name} {question}"
     business_type = WebsiteBusinessTypeManager.infer_business_type(prompt_context)
     lowered_question = question.lower()
@@ -180,7 +172,7 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
         term in lowered_question or term in lowered_business for term in _FOOD_TERMS
     )
     if business_type.kind in _FOOD_BUSINESS_TYPES or has_legacy_food_term:
-        return [
+        pages = [
             "index.html",
             "menu.html",
             "specials.html",
@@ -192,7 +184,8 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
             "assets/site.css",
             "assets/site.js",
         ]
-    return [
+        return merge_requested_pages(pages, question)
+    pages = [
         "index.html",
         "about.html",
         "services.html",
@@ -201,6 +194,38 @@ def default_pages_for_business(business_name: str, question: str) -> list[str]:
         "assets/site.css",
         "assets/site.js",
     ]
+    return merge_requested_pages(pages, question)
+
+
+def merge_requested_pages(existing_pages: list[str], follow_up: str) -> list[str]:
+    """Return existing bundle paths plus any pages explicitly requested later."""
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for page in existing_pages:
+        normalized = str(page or "").replace("\\", "/")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            merged.append(normalized)
+
+    for page in extract_requested_page_paths(follow_up):
+        if page not in seen:
+            seen.add(page)
+            insert_at = next(
+                (
+                    index
+                    for index, existing in enumerate(merged)
+                    if existing.startswith("assets/")
+                ),
+                len(merged),
+            )
+            merged.insert(insert_at, page)
+
+    if "assets/site.css" not in seen:
+        merged.append("assets/site.css")
+    if "assets/site.js" not in seen:
+        merged.append("assets/site.js")
+    return merged
 
 
 def page_label(path: str) -> str:
@@ -267,7 +292,7 @@ def extract_requested_page_paths(question: str) -> list[str]:
         pattern = re.compile(rf"\b{re.escape(token)}\b", re.IGNORECASE)
         hits.extend((match.start(), canonical) for match in pattern.finditer(lowered))
 
-    if len(hits) < 2:
+    if not hits:
         return []
     hits.sort(key=lambda item: item[0])
 
@@ -281,7 +306,7 @@ def extract_requested_page_paths(question: str) -> list[str]:
 
     normalized = [normalize_page_path(label) for label in ordered]
     html_only = [path for path in normalized if path.endswith(".html")]
-    return html_only if len(html_only) >= 2 else []
+    return html_only
 
 
 def build_nav_html(pages: list[str]) -> str:

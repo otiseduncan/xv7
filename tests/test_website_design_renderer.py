@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.brain import site_bundle as sb
+from core.brain.website_design_renderer import build_site_design_spec
 
 
 def _bundle_by_path(
@@ -131,3 +132,77 @@ def test_site_bundle_quality_gate_rejects_generic_duplicate_templates() -> None:
     assert "html pages must not be duplicate template copies" in joined
     assert "css quality marker missing" in joined
     assert "requested color missing from css" in joined
+
+
+def test_hot_dog_cart_design_spec_is_business_specific_and_color_compliant() -> None:
+    spec = build_site_design_spec(
+        business_name="Harry's Hot Dog Cart",
+        slug="harrys-hot-dog-cart",
+        pages=[
+            "index.html",
+            "menu.html",
+            "specials.html",
+            "contact.html",
+            "assets/site.css",
+        ],
+        style_hints={"colors": ["red", "yellow"], "styles": ["fun"]},
+        question="generate a website for Harry's Hot Dog Cart, bright red and yellow, fun street-food style",
+    )
+
+    assert spec.business_type == "food"
+    assert spec.tone == "fun street-food"
+    assert spec.layout_variant == "street-poster"
+    assert spec.cta_strategy.primary == "Order catering"
+    assert "Classic Street Dog" in [item.title for item in spec.content_blocks]
+    assert spec.palette.requested_colors == ("red", "yellow")
+
+
+def test_representative_business_prompts_have_distinct_copy_and_sections() -> None:
+    cases = [
+        (
+            "Smoky Joe's Vape and CBD",
+            "generate a website for Smoky Joe's Vape and CBD, dark smoky premium retail style",
+            "retail",
+            ("Age-aware shopping", "Visit the shop"),
+        ),
+        (
+            "The Ville Nutrition",
+            "generate a website for The Ville Nutrition, bright healthy smoothie nutrition shop style",
+            "nutrition",
+            ("Smoothie menu", "View smoothie menu"),
+        ),
+        (
+            "Syfernetics",
+            "generate a website for Syfernetics, cybersecurity AI professional style",
+            "cyber",
+            ("Security assessment", "Request assessment"),
+        ),
+    ]
+
+    rendered_home_pages: list[str] = []
+    for business_name, prompt, expected_type, expected_copy in cases:
+        files = sb.build_bundle_files(
+            business_name=business_name,
+            slug=business_name.lower().replace(" ", "-"),
+            pages=["index.html", "services.html", "products.html", "assets/site.css"],
+            style_hints={"colors": [], "styles": []},
+            question=prompt,
+        )
+        home = next(item["content"] for item in files if item["path"] == "index.html")
+        joined = "\n".join(item["content"] for item in files)
+        spec = build_site_design_spec(
+            business_name=business_name,
+            slug=business_name.lower().replace(" ", "-"),
+            pages=["index.html", "services.html", "products.html", "assets/site.css"],
+            style_hints={"colors": [], "styles": []},
+            question=prompt,
+        )
+
+        assert spec.business_type == expected_type
+        for phrase in expected_copy:
+            assert phrase in joined
+        assert "Your Business" not in joined
+        assert "Lorem ipsum" not in joined
+        rendered_home_pages.append(home)
+
+    assert len(set(rendered_home_pages)) == len(rendered_home_pages)

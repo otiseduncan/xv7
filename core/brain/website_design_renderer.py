@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import re
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -54,19 +55,20 @@ COLOR_HEX = {
 }
 
 PROFILE_HINTS = {
+    "cyber": ("syfernetics", "cybersecurity", "cyber security", "ai professional", "it service", "network security", "automation", "managed monitoring"),
+    "nutrition": ("nutrition", "smoothie", "smoothies", "protein", "wellness", "juice bar", "healthy"),
     "food": ("hot dog", "hotdog", "food cart", "food truck", "menu", "catering", "restaurant", "cafe"),
     "retail": ("vape", "cbd", "smoke shop", "shop", "store", "products", "retail", "inventory"),
     "auto": ("adas", "calibration", "diagnostic", "diagnostics", "auto repair", "body shop", "vehicle", "automotive"),
     "ministry": ("church", "ministry", "bible", "sermon", "fellowship", "worship"),
-    "cyber": ("cybersecurity", "cyber security", "it service", "network security", "automation", "managed monitoring"),
 }
 
 PROFILE_COPY: dict[str, dict[str, Any]] = {
     "food": {
         "eyebrow": "Fresh local flavor",
-        "tagline": "A bold, street-ready food experience with menu highlights, specials, catering, and a clear path to visit or book.",
+        "tagline": "A bold, street-ready food experience with menu highlights, specials, location cues, catering, and a clear path to order.",
         "proof": ["Menu-first layout", "Specials built in", "Catering ready"],
-        "primary": "Book catering",
+        "primary": "Order catering",
         "secondary": ("View menu", "menu.html"),
         "hero": ("Menu. Specials. Catering.", "Fast choices and a clear next step."),
         "features": [("Signature menu blocks", "Featured items feel like an active cart."), ("Weekly specials", "Promotional sections give customers urgency."), ("Booking path", "Catering and contact calls-to-action are built in.")],
@@ -78,7 +80,16 @@ PROFILE_COPY: dict[str, dict[str, Any]] = {
         "primary": "Visit the shop",
         "secondary": ("See products", "products.html"),
         "hero": ("Products with polish.", "Products and offers feel organized."),
-        "features": [("Product categories", "Products are grouped by customer intent."), ("Premium visual system", "Dark panels and cards add retail polish."), ("Trust signals", "FAQ and guidance make the shop feel professional.")],
+        "features": [("Age-aware shopping", "Product copy stays responsible while still feeling premium."), ("Product categories", "Products are grouped by customer intent."), ("Trust signals", "FAQ and guidance make the shop feel professional.")],
+    },
+    "nutrition": {
+        "eyebrow": "Fresh nutrition and smoothies",
+        "tagline": "A bright, energizing nutrition shop site with smoothie menu highlights, wellness benefits, local community warmth, and a fast order path.",
+        "proof": ["Smoothie menu", "Wellness benefits", "Community energy"],
+        "primary": "Order a smoothie",
+        "secondary": ("View smoothie menu", "menu.html"),
+        "hero": ("Bright fuel for the day.", "Menu, wellness, and neighborhood energy are visible immediately."),
+        "features": [("Smoothie menu", "Flavor-forward cards make ordering feel simple."), ("Wellness boosts", "Benefits are framed as energy, recovery, and everyday nutrition."), ("Local vibe", "Copy feels like a neighborhood stop instead of a generic cafe.")],
     },
     "auto": {
         "eyebrow": "Precision automotive service",
@@ -119,10 +130,86 @@ PROFILE_COPY: dict[str, dict[str, Any]] = {
 }
 
 
-def render_site_bundle_files(*, business_name: str, slug: str, pages: list[str], style_hints: dict[str, list[str]], question: str) -> list[dict[str, str]]:
+@dataclass(frozen=True)
+class SitePaletteSpec:
+    requested_colors: tuple[str, ...]
+    bg: str
+    panel: str
+    text: str
+    muted: str
+    accent: str
+    accent_2: str
+
+
+@dataclass(frozen=True)
+class SiteCtaSpec:
+    primary: str
+    secondary_label: str
+    secondary_href: str
+
+
+@dataclass(frozen=True)
+class SiteContentBlock:
+    title: str
+    copy: str
+
+
+@dataclass(frozen=True)
+class SiteDesignSpec:
+    business_name: str
+    business_type: str
+    tone: str
+    palette: SitePaletteSpec
+    typography_direction: str
+    layout_variant: str
+    pages: tuple[str, ...]
+    content_blocks: tuple[SiteContentBlock, ...]
+    cta_strategy: SiteCtaSpec
+    visual_direction: str
+    revision_notes: tuple[str, ...]
+
+
+def build_site_design_spec(*, business_name: str, slug: str, pages: list[str], style_hints: dict[str, list[str]], question: str) -> SiteDesignSpec:
     colors = _clean_list(style_hints.get("colors"))
     styles = [item.lower() for item in _clean_list(style_hints.get("styles"))]
     profile = _profile(f"{business_name} {question}")
+    signals = _signals(question, styles)
+    palette = _palette(colors, styles, signals)
+    secondary_label, secondary_href = _copy(profile, "secondary")
+    return SiteDesignSpec(
+        business_name=business_name,
+        business_type=profile,
+        tone=_tone(profile, signals),
+        palette=SitePaletteSpec(
+            requested_colors=tuple(colors),
+            bg=palette["bg"],
+            panel=palette["panel"],
+            text=palette["text"],
+            muted=palette["muted"],
+            accent=palette["accent"],
+            accent_2=palette["accent_2"],
+        ),
+        typography_direction=_typography(styles, signals),
+        layout_variant=_layout_variant(profile, signals),
+        pages=tuple(path for path in pages if path.endswith(".html")),
+        content_blocks=tuple(SiteContentBlock(str(title), str(copy)) for title, copy in _spec_content_blocks(profile)),
+        cta_strategy=SiteCtaSpec(str(_copy(profile, "primary")), str(secondary_label), str(secondary_href)),
+        visual_direction=_visual_direction(profile, signals),
+        revision_notes=tuple(_revision_notes(signals)),
+    )
+
+
+def render_site_bundle_files(*, business_name: str, slug: str, pages: list[str], style_hints: dict[str, list[str]], question: str) -> list[dict[str, str]]:
+    colors = _clean_list(style_hints.get("colors"))
+    styles = [item.lower() for item in _clean_list(style_hints.get("styles"))]
+    spec = build_site_design_spec(
+        business_name=business_name,
+        slug=slug,
+        pages=pages,
+        style_hints=style_hints,
+        question=question,
+    )
+    profile = spec.business_type
     signals = _signals(question, styles)
     palette = _palette(colors, styles, signals)
     css_path = next((path for path in pages if path.endswith(".css")), None)
@@ -232,6 +319,8 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         extra.append(_premium_band(business_name))
     if signals["less_template"]:
         extra.append(_customization_band(business_name))
+    visual = _visual_direction(profile, signals)
+    layout_variant = _layout_variant(profile, signals)
     return "\n".join([
         '<main class="page-content home-layout">',
         '  <section class="hero-section">',
@@ -239,6 +328,7 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         f'      <p class="eyebrow">{html.escape(str(_copy(profile, "eyebrow")))}</p>',
         f"      <h1>{_text(business_name)}</h1>",
         f'      <p class="hero-lede">{html.escape(str(_copy(profile, "tagline")))}</p>',
+        f'      <p class="visual-direction">{html.escape(visual)}</p>',
         '      <div class="hero-actions">',
         f'        <a class="button button-primary" href="contact.html">{html.escape(str(_copy(profile, "primary")))}</a>',
         f'        <a class="button button-ghost" href="{html.escape(str(secondary_href))}">{html.escape(str(secondary_label))}</a>',
@@ -248,6 +338,7 @@ def _home(business_name: str, profile: str, question: str, signals: dict[str, bo
         f"      <span>Built for {_text(business_name)}</span>",
         f"      <strong>{html.escape(str(card_title))}</strong>",
         f"      <p>{html.escape(str(card_copy))}</p>",
+        f"      <em>{html.escape(layout_variant)}</em>",
         "    </aside>",
         "  </section>",
         '  <section class="proof-strip" aria-label="Highlights">',
@@ -383,6 +474,8 @@ def _services_blocks(profile: str) -> list[tuple[str, str]]:
         return [("ADAS calibration", "Camera, radar, and driver-assistance calibration workflows are presented clearly."), ("OEM diagnostics", "Diagnostic capability and scan-based proof are front and center."), ("Repair support", "Body shops and drivers can understand the next step quickly.")]
     if profile == "cyber":
         return [("Security assessment", "Network and system risk checks are explained in business language."), ("Monitoring", "Ongoing visibility and alerting are positioned as core value."), ("Automation", "Repeatable scripts and workflows reduce manual busywork.")]
+    if profile == "nutrition":
+        return [("Smoothie menu", "Bowls, shakes, and boosts are organized for quick ordering."), ("Wellness benefits", "Energy, recovery, and everyday nutrition are explained without medical claims."), ("Community routine", "The shop feels like a bright local stop for regulars.")]
     if profile == "ministry":
         return [("Worship gatherings", "Service and meeting information is clear for visitors."), ("Bible teaching", "Teaching, study, and discipleship are easy to find."), ("Community care", "Fellowship and support are presented warmly.")]
     return [("Core service", "The primary offer is clear and specific."), ("Process", "Visitors understand what happens next."), ("Support", "The contact path stays visible.")]
@@ -391,6 +484,8 @@ def _services_blocks(profile: str) -> list[tuple[str, str]]:
 def _menu_blocks(profile: str) -> list[tuple[str, str]]:
     if profile == "food":
         return [("Classic Street Dog", "Signature items, combos, and quick choices stand out."), ("Loaded options", "Specialty builds feel exciting without clutter."), ("Catering trays", "Group and event orders have their own path.")]
+    if profile == "nutrition":
+        return [("Berry Energy Smoothie", "Bright fruit, protein add-ons, and quick morning fuel."), ("Green Reset Blend", "A fresh wellness-focused option with spinach, citrus, and clean energy."), ("Post-Workout Bowl", "Recovery-friendly menu copy with toppings and boosts.")]
     return _services_blocks(profile)
 
 
@@ -399,6 +494,8 @@ def _special_blocks(profile: str) -> list[tuple[str, str]]:
         return [("Classic Dog Combo", "A fast lunch offer with drink and side."), ("Loaded Chili Dog Special", "A bold limited-time cart favorite."), ("Family Pack Deal", "A group-friendly special for easy ordering.")]
     if profile == "retail":
         return [("Featured bundle", "Pair popular products into a clear offer."), ("Weekly deal", "Give customers a reason to come back."), ("New arrival spotlight", "Make new inventory feel premium.")]
+    if profile == "nutrition":
+        return [("Morning Smoothie Combo", "A smoothie and boost pairing for regular weekday routines."), ("Protein Bowl Feature", "A filling option framed around energy and recovery."), ("Local Favorite", "A community-flavored feature that makes the shop feel specific.")]
     return [("Featured offer", "A focused promotion that feels current."), ("Limited availability", "Urgency without sounding fake."), ("Contact for details", "Move visitors toward the next step.")]
 
 
@@ -475,6 +572,7 @@ a {{ color: inherit; }}
 .hero-section {{ display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: clamp(1.25rem, 4vw, 3rem); align-items: center; min-height: 65vh; }}
 .hero-copy h1, .page-hero h1 {{ margin: 0; font-size: clamp(3rem, 9vw, 7rem); line-height: .88; letter-spacing: -.08em; }}
 .hero-lede {{ max-width: 64ch; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.35rem); line-height: 1.7; }}
+.visual-direction {{ max-width: 58ch; color: var(--text); border-left: 4px solid var(--accent); padding-left: 1rem; line-height: 1.6; }}
 .eyebrow {{ color: var(--accent); text-transform: uppercase; font-weight: 900; letter-spacing: .16em; font-size: .8rem; }}
 .hero-actions {{ display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.5rem; }}
 .button {{ display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; padding: .9rem 1.15rem; border-radius: 999px; text-decoration: none; font-weight: 900; border: 1px solid var(--ring); }}
@@ -483,6 +581,7 @@ a {{ color: inherit; }}
 .hero-card, .info-card, .split-band, .premium-band, .custom-band, .spotlight-section, .cta-band {{ border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 92%, transparent), color-mix(in srgb, var(--bg) 84%, transparent)); box-shadow: 0 30px 90px rgba(0,0,0,.28); }}
 .hero-card {{ border-radius: 2rem; padding: clamp(1.25rem, 4vw, 2rem); }}
 .hero-card strong {{ display: block; margin: .75rem 0; font-size: clamp(1.8rem, 4vw, 3.35rem); line-height: .95; letter-spacing: -.05em; }}
+.hero-card em {{ display: inline-flex; margin-top: 1rem; color: var(--accent); font-style: normal; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; font-size: .72rem; }}
 .proof-strip {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; margin: 1.5rem 0; }}
 .proof-strip span {{ padding: 1rem; border-radius: 1.2rem; background: color-mix(in srgb, var(--panel) 75%, transparent); color: var(--muted); border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent); }}
 .card-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }}
@@ -523,7 +622,7 @@ def _signals(question: str, styles: list[str]) -> dict[str, bool]:
         "playful": any(term in lowered for term in ("fun", "playful", "friendly", "bright")),
         "bold": any(term in lowered for term in ("bold", "pop", "stronger hero", "hero stronger", "bigger buttons", "buttons pop", "make the buttons")),
         "specials": "special" in lowered or "deal" in lowered or "offer" in lowered,
-        "less_template": any(term in lowered for term in ("less template", "not template", "template-looking", "less basic", "more custom", "customize")),
+        "less_template": any(term in lowered for term in ("less generic", "less template", "not generic", "not template", "template-looking", "less basic", "more custom", "customize")),
     }
 
 
@@ -579,14 +678,88 @@ def _copy(profile: str, key: str) -> Any:
     return PROFILE_COPY.get(profile, PROFILE_COPY["general"])[key]
 
 
+def _spec_content_blocks(profile: str) -> list[tuple[str, str]]:
+    if profile in {"food", "nutrition"}:
+        return _menu_blocks(profile)
+    if profile == "retail":
+        return _special_blocks(profile)
+    if profile == "cyber":
+        return _services_blocks(profile)
+    return [(str(title), str(copy)) for title, copy in _copy(profile, "features")]
+
+
 def _why(profile: str) -> str:
     return {
         "food": "Food businesses need speed, appetite, specials, and a clear catering/contact path.",
         "retail": "Retail sites need product clarity, trust, and polished offers that make inventory feel intentional.",
+        "nutrition": "Nutrition shops need energy, menu clarity, wellness benefits, and a friendly local ordering path.",
         "auto": "Automotive service sites need technical trust, a clear process, and proof that the shop is in capable hands.",
         "ministry": "Church and ministry sites need warmth, clarity, visitor guidance, and visible community connection.",
         "cyber": "Cybersecurity sites need credibility, clear services, risk language, and a strong assessment path.",
     }.get(profile, "The layout gives every page a role so edits can improve the site without starting over.")
+
+
+def _tone(profile: str, signals: dict[str, bool]) -> str:
+    if signals["premium"]:
+        return "premium polished"
+    if profile == "food" and signals["playful"]:
+        return "fun street-food"
+    if profile == "nutrition":
+        return "bright healthy"
+    if profile == "cyber":
+        return "professional technical"
+    if profile == "retail":
+        return "dark premium retail"
+    return "business-specific"
+
+
+def _typography(styles: list[str], signals: dict[str, bool]) -> str:
+    if "futuristic" in styles or "cyberpunk" in styles:
+        return "technical geometric"
+    if signals["premium"]:
+        return "high contrast editorial"
+    if signals["playful"]:
+        return "bold rounded display"
+    return "modern readable"
+
+
+def _layout_variant(profile: str, signals: dict[str, bool]) -> str:
+    if profile == "food" and signals["playful"]:
+        return "street-poster"
+    if profile == "retail":
+        return "premium-product-grid"
+    if profile == "nutrition":
+        return "bright-menu-board"
+    if profile == "cyber":
+        return "security-dashboard"
+    if signals["premium"]:
+        return "editorial-cards"
+    return "split-hero-card-grid"
+
+
+def _visual_direction(profile: str, signals: dict[str, bool]) -> str:
+    if profile == "food":
+        return "appetite-forward menu cards, cart-location cues, and punchy special offers"
+    if profile == "retail":
+        return "smoky dark panels, product category cards, and responsible retail trust copy"
+    if profile == "nutrition":
+        return "bright smoothie colors, wellness benefit cards, and community-friendly ordering"
+    if profile == "cyber":
+        return "dark technical dashboard energy with assessment, monitoring, and automation proof"
+    return "custom hero, proof strip, feature cards, and persistent call to action"
+
+
+def _revision_notes(signals: dict[str, bool]) -> list[str]:
+    notes: list[str] = []
+    if signals["less_template"]:
+        notes.append("increase business-specific detail")
+    if signals["premium"]:
+        notes.append("increase premium hierarchy")
+    if signals["bold"]:
+        notes.append("make hero and buttons stronger")
+    if signals["specials"]:
+        notes.append("include current special")
+    return notes
 
 
 def _short_brand(name: str) -> str:

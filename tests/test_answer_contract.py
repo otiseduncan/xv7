@@ -2500,6 +2500,24 @@ def test_site_bundle_default_pages_service_business() -> None:
     assert "assets/site.css" in pages
 
 
+def test_site_bundle_default_pages_keep_rich_defaults_with_single_requested_page() -> (
+    None
+):
+    from core.brain import site_bundle as sb
+
+    pages = sb.default_pages_for_business(
+        "Syfernetics",
+        "generate a website for Syfernetics and include a faq page",
+    )
+
+    assert "index.html" in pages
+    assert "services.html" in pages
+    assert "gallery.html" in pages
+    assert "contact.html" in pages
+    assert "faq.html" in pages
+    assert pages.index("faq.html") < pages.index("assets/site.css")
+
+
 def test_site_bundle_nav_links_on_every_html_page() -> None:
     from core.brain import site_bundle as sb
 
@@ -2723,6 +2741,43 @@ def test_export_approved_website_writes_latest_bundle_to_sandbox(
     provenance = response.get("provenance", {})
     assert provenance.get("artifact_generation") == "sandbox_build"
     assert (tmp_path / "sandbox" / "harrys-hot-dog-cart" / "index.html").exists()
+
+
+def test_site_bundle_revision_adds_requested_page_and_less_generic_detail(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("XV7_ARTIFACT_PATCH_ROOT", str(tmp_path))
+    contract = AnswerContract()
+    initial = asyncio.run(
+        contract.build_code_artifact_response(
+            "generate a website for Syfernetics, cybersecurity AI professional style",
+            session_messages=[],
+            session_metadata={},
+        )
+    )
+    assert initial is not None
+    initial_bundle = initial["site_bundle"]
+
+    revised = asyncio.run(
+        contract.build_code_artifact_response(
+            "make it look less generic and add a menu page",
+            session_messages=[
+                {
+                    "role": "assistant",
+                    "content": initial["visible_text"],
+                    "metadata": {"site_bundle": initial_bundle},
+                }
+            ],
+            session_metadata={},
+        )
+    )
+
+    assert revised is not None
+    files = revised["site_bundle"]["site_bundle"]["files"]
+    by_path = {item["path"]: item["content"] for item in files}
+    assert "menu.html" in by_path
+    assert "Not a blank template" in by_path["index.html"]
+    assert "Security assessment" in by_path["services.html"]
 
 
 def test_site_bundle_patch_proposal_covers_all_files(monkeypatch, tmp_path) -> None:
