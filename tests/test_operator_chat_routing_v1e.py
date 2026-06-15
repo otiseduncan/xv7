@@ -561,6 +561,84 @@ def test_finish_github_push_existing_project_routes_to_operator_project_action(
     assert payload["push"] is True
 
 
+def test_github_workflow_missing_remote_returns_clear_repo_target_message(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="failed",
+            stderr="origin remote is not configured",
+            mutates_files=True,
+            data={
+                "missing_remote": True,
+                "suggested_repo_name": "harry-s-hot-dog-cart",
+                "repo_before": {
+                    "branch": "main",
+                    "remotes": [],
+                    "status_lines": ["## main"],
+                },
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "push to github"
+    )
+
+    assert handled is not None
+    assert "has no github remote" in handled.answer.lower()
+    assert "create a new github repo named harry-s-hot-dog-cart" in handled.answer.lower()
+
+
+def test_github_workflow_missing_gh_returns_clear_install_guidance(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="failed",
+            stderr="command not found: gh",
+            mutates_files=True,
+            data={
+                "gh_missing": True,
+                "gh_required_for_repo_creation": True,
+                "repo_before": {
+                    "branch": "main",
+                    "remotes": [],
+                    "status_lines": ["## main"],
+                },
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "create a new repository on github and push"
+    )
+
+    assert handled is not None
+    assert "github cli is not installed" in handled.answer.lower()
+    assert "existing git remote/ssh" in handled.answer.lower()
+
+
 def test_slash_push_github_routes_to_operator_project_action(
     monkeypatch: Any, tmp_path: Path
 ) -> None:

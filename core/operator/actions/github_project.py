@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -107,6 +108,76 @@ def _inspect_repo(
         "status_short_branch": status_short_branch,
         "status_lines": status_lines,
     }
+
+
+def _read_git_config(
+    run_command: Callable[[list[str]], subprocess.CompletedProcess[str]],
+    key: str,
+    *,
+    use_global: bool = False,
+) -> str:
+    command = ["git", "config"]
+    if use_global:
+        command.append("--global")
+    command.extend(["--get", key])
+    proc = run_command(command)
+    if proc.returncode != 0:
+        return ""
+    return (proc.stdout or "").strip()
+
+
+def _configured_identity_from_env() -> tuple[str, str]:
+    name = (
+        str(os.getenv("XV7_GIT_USER_NAME", "")).strip()
+        or str(os.getenv("GIT_AUTHOR_NAME", "")).strip()
+        or str(os.getenv("GIT_COMMITTER_NAME", "")).strip()
+    )
+    email = (
+        str(os.getenv("XV7_GIT_USER_EMAIL", "")).strip()
+        or str(os.getenv("GIT_AUTHOR_EMAIL", "")).strip()
+        or str(os.getenv("GIT_COMMITTER_EMAIL", "")).strip()
+    )
+    return name, email
+
+
+def _ensure_git_identity(
+    run_command: Callable[[list[str]], subprocess.CompletedProcess[str]],
+) -> tuple[bool, str, str, str]:
+    local_name = _read_git_config(run_command, "user.name", use_global=False)
+    local_email = _read_git_config(run_command, "user.email", use_global=False)
+    if local_name and local_email:
+        return True, local_name, local_email, ""
+
+    global_name = _read_git_config(run_command, "user.name", use_global=True)
+    global_email = _read_git_config(run_command, "user.email", use_global=True)
+    if global_name and global_email:
+        return True, global_name, global_email, ""
+
+    env_name, env_email = _configured_identity_from_env()
+    if env_name and env_email:
+        set_name = run_command(["git", "config", "user.name", env_name])
+        if set_name.returncode != 0:
+            return False, "", "", (set_name.stderr or "").strip() or "failed to set git user.name"
+        set_email = run_command(["git", "config", "user.email", env_email])
+        if set_email.returncode != 0:
+            return False, "", "", (set_email.stderr or "").strip() or "failed to set git user.email"
+        return True, env_name, env_email, ""
+
+    return (
+        False,
+        "",
+        "",
+        "Git author identity is not configured for this sandbox project. "
+        "Set XV7_GIT_USER_NAME and XV7_GIT_USER_EMAIL (or git user.name/user.email) and retry.",
+    )
+
+
+def _command_exists(
+    run_command: Callable[[list[str]], subprocess.CompletedProcess[str]],
+    command: str,
+) -> bool:
+    proc = run_command([command, "--version"])
+    return proc.returncode == 0
 
 
 def _default_file_content(path_text: str, project_name: str) -> str:
@@ -354,6 +425,28 @@ def operator_github_proof_project(
     github_repo_url = ""
     remote_url = str(inspect_before.get("origin_url") or "")
     if changed_files:
+        identity_ok, _, _, identity_error = _ensure_git_identity(run_command)
+        if not identity_ok:
+            proc_identity = subprocess.CompletedProcess(
+                args=["git", "config", "user.name/user.email"],
+                returncode=2,
+                stdout="",
+                stderr=identity_error,
+            )
+            result = fail_result(
+                proc=proc_identity,
+                failed_command="git config user.name/user.email",
+                commit_created=False,
+                commit_sha=commit_sha,
+                push_performed=False,
+                pushed=False,
+                repo_before=inspect_before,
+                github_repo_url=github_repo_url,
+                remote_url=remote_url,
+            )
+            result.data["git_identity_missing"] = True
+            return result
+
         ok_add, proc_add = run_or_fail(["git", "add", "."])
         if not ok_add:
             failed = _command_text(
@@ -410,6 +503,56 @@ def operator_github_proof_project(
 
     needs_origin = bool(push or create_repo) and not remote_url
     if needs_origin:
+        if push and not create_repo:
+            proc_missing_remote = subprocess.CompletedProcess(
+                args=["git", "remote", "-v"],
+                returncode=2,
+                stdout="",
+                stderr=(
+                    "The sandbox project is ready locally, but it has no GitHub remote. "
+                    f"Tell me the repo target or say create a new GitHub repo named {repo_name}."
+                ),
+            )
+            result = fail_result(
+                proc=proc_missing_remote,
+                failed_command="git remote -v",
+                commit_created=commit_created,
+                commit_sha=commit_sha,
+                push_performed=False,
+                pushed=False,
+                repo_before=inspect_before,
+                github_repo_url=github_repo_url,
+                remote_url=remote_url,
+            )
+            result.data["missing_remote"] = True
+            result.data["suggested_repo_name"] = repo_name
+            return result
+
+        if create_repo and not _command_exists(run_command, "gh"):
+            proc_gh_missing = subprocess.CompletedProcess(
+                args=["gh", "--version"],
+                returncode=127,
+                stdout="",
+                stderr=(
+                    "GitHub CLI is not installed in the runtime. "
+                    "I can still push using an existing git remote/SSH, or you need to install/configure gh for repo creation."
+                ),
+            )
+            result = fail_result(
+                proc=proc_gh_missing,
+                failed_command="gh --version",
+                commit_created=commit_created,
+                commit_sha=commit_sha,
+                push_performed=False,
+                pushed=False,
+                repo_before=inspect_before,
+                github_repo_url=github_repo_url,
+                remote_url=remote_url,
+            )
+            result.data["gh_missing"] = True
+            result.data["gh_required_for_repo_creation"] = True
+            return result
+
         ok_auth, proc_auth = run_or_fail(["gh", "auth", "status"])
         if not ok_auth:
             failed = _command_text(

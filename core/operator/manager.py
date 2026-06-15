@@ -2388,6 +2388,25 @@ class OperatorManager:
             remote_count = len(remotes) if isinstance(remotes, list) else 0
             status_lines = repo_before.get("status_lines", [])
             status_count = len(status_lines) if isinstance(status_lines, list) else 0
+            if bool(result.data.get("missing_remote")):
+                suggested_name = (
+                    str(result.data.get("suggested_repo_name") or "").strip()
+                    or "github-proof-project"
+                )
+                return (
+                    "The sandbox project is ready locally, but it has no GitHub remote. "
+                    f"Tell me the repo target or say create a new GitHub repo named {suggested_name}."
+                )
+            if bool(result.data.get("gh_missing")):
+                return (
+                    "GitHub CLI is not installed in the runtime. "
+                    "I can still push using an existing git remote/SSH, or you need to install/configure gh for repo creation."
+                )
+            if bool(result.data.get("git_identity_missing")):
+                return (
+                    "Git author identity is not configured for this sandbox project. "
+                    "Set XV7_GIT_USER_NAME and XV7_GIT_USER_EMAIL (or git user.name/user.email) and retry."
+                )
             if failed_command:
                 return (
                     "GitHub proof project workflow failed. "
