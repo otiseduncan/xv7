@@ -10,6 +10,18 @@ This register captures the items that can be handled from GitHub-only access whi
 - Updated `README.md` clone instructions to use `otiseduncan/xv7` instead of the placeholder organization.
 - Updated `README.md` test instructions to include frontend unit/build commands and local browser smoke notes.
 - Documented the host-visible sandbox export variable in `README.md`.
+- Added `docs/LOCAL_NEXT.md` as the small-screen local runbook for committing the pending assistant-card browser smoke fix.
+
+## Local fix reported but not yet verified from GitHub
+
+Codex reported a local fix for the browser smoke timeout:
+
+- pending assistant placeholders are settled on failed, aborted, or timed-out send paths,
+- frontend regression expectations were updated,
+- browser smoke wait budget was increased for local inference latency,
+- local validation reportedly passed: frontend unit tests, build command, and browser smoke.
+
+This still needs to be committed and pushed from the local machine before GitHub-side verification can confirm it.
 
 ## Still local-only and not claimable from GitHub-only access
 
@@ -18,7 +30,7 @@ This register captures the items that can be handled from GitHub-only access whi
 - Prove the live stack starts locally.
 - Prove the host sandbox folder exists and is writable.
 - Prove generated website exports appear on the Windows host.
-- Prove browser smoke against the live local stack.
+- Prove browser smoke against the live local stack unless local output is provided.
 - Prove a generated sandbox project can be committed and pushed from the local operator path.
 
 ## Remaining remote-safe candidates
