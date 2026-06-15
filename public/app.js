@@ -1124,11 +1124,16 @@ class Xv7UI {
         return;
       }
 
+      const messagePayload = { raw_text: raw };
+      if (this.operatorModeActive) {
+        messagePayload.operator_mode = true;
+      }
+
       const data = await this.fetchJson(
         `/api/sessions/${this.currentSessionId}/messages`,
         {
           method: 'POST',
-          body: JSON.stringify({ raw_text: raw }),
+          body: JSON.stringify(messagePayload),
         },
         this.chatMessageTimeoutMs,
         this.activeRequestController.signal,

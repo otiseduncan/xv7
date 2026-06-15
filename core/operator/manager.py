@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -1468,6 +1469,108 @@ class OperatorManager:
             )
         )
 
+    @staticmethod
+    def _strip_operator_mode_prefix(normalized: str) -> str:
+        return re.sub(r"^operator\s+mode\s*:\s*", "", normalized, flags=re.IGNORECASE)
+
+    @classmethod
+    def _is_github_proof_project_request(cls, normalized: str) -> bool:
+        stripped = cls._strip_operator_mode_prefix(normalized)
+        return any(
+            token in stripped
+            for token in (
+                "build and push",
+                "push to github",
+                "create a github repo",
+                "create a new repository on github",
+                "initialize git",
+                "git init",
+                "commit and push",
+                "real github proof project",
+                "real build and push",
+                "not a preview",
+                "not a patch",
+            )
+        )
+
+    def _natural_github_project_payload(self, question: str, normalized: str) -> str:
+        source_text = self._strip_operator_mode_prefix(question).strip()
+        lowered = self._strip_operator_mode_prefix(normalized)
+
+        path_match = re.search(
+            r"\bunder\s+([A-Za-z]:\\[^\s,.;\"]+)",
+            source_text,
+            flags=re.IGNORECASE,
+        )
+        project_path = path_match.group(1).strip() if path_match else ""
+
+        name_match = re.search(
+            r"\bnamed\s+([A-Za-z0-9._-]+)",
+            source_text,
+            flags=re.IGNORECASE,
+        )
+        project_name = name_match.group(1).strip() if name_match else ""
+        if not project_name and project_path:
+            project_name = Path(project_path).name
+
+        commit_match = re.search(
+            r'commit\s+with\s+message\s+["\']([^"\']+)["\']',
+            source_text,
+            flags=re.IGNORECASE,
+        )
+        commit_message = (
+            commit_match.group(1).strip()
+            if commit_match
+            else "build GitHub proof project"
+        )
+
+        repo_name_match = re.search(
+            r"github\s+repo\s+([A-Za-z0-9._-]+)",
+            source_text,
+            flags=re.IGNORECASE,
+        )
+        repo_name = (
+            repo_name_match.group(1).strip() if repo_name_match else project_name
+        )
+
+        requested_files: list[str] = []
+        for candidate in (
+            "index.html",
+            "assets/site.css",
+            "assets/app.js",
+            "README.md",
+        ):
+            if candidate.lower() in lowered:
+                requested_files.append(candidate)
+        if not requested_files:
+            requested_files = [
+                "index.html",
+                "assets/site.css",
+                "assets/app.js",
+                "README.md",
+            ]
+
+        payload: dict[str, Any] = {
+            "prompt": source_text,
+            "project_name": project_name,
+            "project_path": project_path,
+            "requested_files": requested_files,
+            "commit_message": commit_message,
+            "github_repo_name": repo_name,
+            "initialize_git": True,
+            "create_github_repo": (
+                "create a github repo" in lowered
+                or "create a new repository on github" in lowered
+            ),
+            "push": (
+                "push to github" in lowered
+                or "commit and push" in lowered
+                or "build and push" in lowered
+                or "real build and push" in lowered
+            ),
+        }
+        return json.dumps(payload)
+
     def _natural_commit_payload(self, normalized: str) -> str:
         commit_requested = any(
             token in normalized
@@ -1987,6 +2090,26 @@ class OperatorManager:
                 "Repair cycle completed. "
                 "No commit or push occurred; commit/push still require separate approval."
             )
+        if action_name == "operator_github_proof_project":
+            if result.status == "success":
+                commit_sha = str(result.data.get("commit_sha") or "").strip() or "n/a"
+                pushed = bool(result.data.get("pushed", False))
+                project_path = str(result.data.get("project_path") or result.target)
+                return (
+                    f"Sandbox project workflow completed at {project_path}; "
+                    f"commit_sha={commit_sha}; pushed={str(pushed).lower()}."
+                )
+            failed_command = str(result.data.get("failed_command") or "").strip()
+            if failed_command:
+                return (
+                    "GitHub proof project workflow failed. "
+                    f"Failed command: {failed_command}. "
+                    f"Detail: {result.stderr_summary or 'no stderr detail available.'}"
+                )
+            return (
+                "GitHub proof project workflow failed. "
+                f"Detail: {result.stderr_summary or 'no stderr detail available.'}"
+            )
         if result.status == "failed":
             return (
                 f"Operator action {result.action_name} failed. "
@@ -2147,9 +2270,38 @@ class OperatorManager:
         question: str,
         *,
         session_metadata: dict[str, Any] | None = None,
+        operator_mode_enabled: bool = False,
     ) -> OperatorExecution | None:
         metadata = session_metadata or {}
         normalized = self._normalize(question)
+
+        if self._is_github_proof_project_request(normalized):
+            if not operator_mode_enabled:
+                denied = self._denied_result(
+                    question,
+                    "Operator Mode is currently off. Turn Operator Mode on, then resend this command. No files were changed.",
+                )
+                return OperatorExecution(
+                    result=denied,
+                    answer=(
+                        "Operator Mode is currently off. Turn Operator Mode on, then resend this command. "
+                        "No files were changed."
+                    ),
+                    record_history=True,
+                )
+
+            payload = self._natural_github_project_payload(question, normalized)
+            result = run_action(
+                "operator_github_proof_project",
+                action_id=self._next_action_id(),
+                repo_root=self.repo_root,
+                target=payload,
+            )
+            return OperatorExecution(
+                result=result,
+                answer=self._build_answer("operator_github_proof_project", result),
+                record_history=True,
+            )
 
         history_answer = self._history_answer(normalized, metadata)
         if history_answer is not None:

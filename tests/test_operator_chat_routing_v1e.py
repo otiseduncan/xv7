@@ -396,3 +396,115 @@ def test_push_phrase_routes_to_operator_commit_report_with_separate_push_approva
     assert payload["mode"] == "apply"
     assert payload["push"] is True
     assert payload["push_approval"]["approved"] is False
+
+
+def test_operator_mode_github_proof_prompt_is_blocked_when_operator_mode_off(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    called = {"count": 0}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        called["count"] += 1
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "Operator Mode: Build and push a real GitHub proof project",
+        operator_mode_enabled=False,
+    )
+
+    assert handled is not None
+    assert handled.result.status == "denied"
+    assert "operator mode is currently off" in handled.answer.lower()
+    assert called["count"] == 0
+
+
+def test_operator_mode_github_proof_prompt_routes_to_operator_project_action(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="success",
+            data={
+                "project_path": str(tmp_path / "earthx-github-proof"),
+                "commit_sha": "abc1234",
+                "pushed": True,
+            },
+            mutates_files=True,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "Operator Mode: Build and push a real GitHub proof project named earthx-github-proof under X:\\xoduz-sandbox\\earthx-github-proof",
+        operator_mode_enabled=True,
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["project_name"] == "earthx-github-proof"
+    assert "xoduz-sandbox" in payload["project_path"].lower()
+    assert "sandbox project workflow completed" in handled.answer.lower()
+
+
+def test_create_new_repository_on_github_prompt_routes_to_operator_project_action(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="failed",
+            stderr="authentication required",
+            data={
+                "failed_command": "gh repo create earthx-github-proof --source . --remote origin --public --push"
+            },
+            mutates_files=True,
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "Operator Mode: create a new repository on GitHub for this and push",
+        operator_mode_enabled=True,
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    assert "failed command" in handled.answer.lower()

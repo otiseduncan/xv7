@@ -9,6 +9,7 @@ from core.operator.actions.apply_patch import apply_approved_patch
 from core.operator.actions.diff_report import diff_report
 from core.operator.actions.environment import operator_environment
 from core.operator.actions.files import list_project_files, read_project_file
+from core.operator.actions.github_project import operator_github_proof_project
 from core.operator.actions.host_scan import (
     scan_cpu,
     scan_disk,
@@ -70,6 +71,9 @@ def build_operator_registry() -> dict[str, OperatorActionSpec]:
         ),
         "operator_repair_report": OperatorActionSpec(
             "operator_repair_report", "operator", operator_repair_report
+        ),
+        "operator_github_proof_project": OperatorActionSpec(
+            "operator_github_proof_project", "operator", operator_github_proof_project
         ),
         "apply_approved_patch": OperatorActionSpec(
             "apply_approved_patch", "operator", apply_approved_patch
@@ -175,6 +179,9 @@ def run_action(
         payload = _target_json(target, action_name)
         return spec.handler(action_id=action_id, repo_root=repo_root, request=payload)
     if action_name == "operator_repair_report":
+        payload = _target_json(target, action_name)
+        return spec.handler(action_id=action_id, repo_root=repo_root, request=payload)
+    if action_name == "operator_github_proof_project":
         payload = _target_json(target, action_name)
         return spec.handler(action_id=action_id, repo_root=repo_root, request=payload)
     if action_name == "test_runner":

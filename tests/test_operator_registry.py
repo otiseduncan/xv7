@@ -17,6 +17,7 @@ EXPECTED_ACTIONS = {
     "operator_patch_report",
     "operator_commit_report",
     "operator_repair_report",
+    "operator_github_proof_project",
     "workspace_map",
     "patch_plan",
     "apply_approved_patch",
@@ -59,6 +60,7 @@ def test_operator_registry_contains_expected_actions() -> None:
         "operator_patch_report",
         "operator_commit_report",
         "operator_repair_report",
+        "operator_github_proof_project",
     }
     assert all(
         spec.mode == "read_only"

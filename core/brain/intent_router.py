@@ -118,10 +118,35 @@ class IntentRouter:
     CONCEPTUAL_WEBSITE_QUESTION_PATTERN = re.compile(
         r"^(what|how|why|which)\b.*\b(website|site|preview|builder|generated websites?)\b"
     )
+    OPERATOR_MODE_PREFIX_PATTERN = re.compile(r"^operator\s+mode\s*:\s*", re.IGNORECASE)
+    OPERATOR_GITHUB_PROJECT_PATTERN = re.compile(
+        r"\b(build and push|push to github|create a github repo|create a new repository on github|"
+        r"initialize git|git init|commit and push|real github proof project|real build and push|"
+        r"not a preview|not a patch)\b"
+    )
 
     @staticmethod
     def normalize(text: str) -> str:
         return re.sub(r"\s+", " ", text.strip().lower())
+
+    @classmethod
+    def strip_operator_mode_prefix(cls, normalized_text: str) -> str:
+        if not normalized_text:
+            return ""
+        return cls.OPERATOR_MODE_PREFIX_PATTERN.sub(
+            "", normalized_text, count=1
+        ).strip()
+
+    @classmethod
+    def is_operator_mode_prefixed(cls, normalized_text: str) -> bool:
+        return bool(cls.OPERATOR_MODE_PREFIX_PATTERN.match(normalized_text or ""))
+
+    @classmethod
+    def is_operator_github_project_request(cls, normalized_text: str) -> bool:
+        if not normalized_text:
+            return False
+        stripped = cls.strip_operator_mode_prefix(normalized_text)
+        return bool(cls.OPERATOR_GITHUB_PROJECT_PATTERN.search(stripped))
 
     @classmethod
     def has_explicit_artifact_intent(cls, normalized_text: str) -> bool:

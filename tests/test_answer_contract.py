@@ -896,6 +896,30 @@ def test_natural_language_website_build_routes_to_sandbox_build() -> None:
     assert contract._is_sandbox_build_request(normalized) is True
 
 
+def test_github_proof_prompt_does_not_route_to_patch_proposal() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize(
+        "Operator Mode: Build and push a real GitHub proof project named earthx-github-proof under X:\\xoduz-sandbox\\earthx-github-proof. not a preview. not a patch."
+    )
+    assert contract._is_operator_github_project_request(normalized) is True
+    assert contract._is_patch_proposal_request(normalized) is False
+
+
+def test_generate_patch_prompt_still_routes_to_patch_proposal() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize("generate a patch for this artifact")
+    assert contract._is_patch_proposal_request(normalized) is True
+
+
+def test_build_website_to_sandbox_still_routes_to_sandbox_build() -> None:
+    contract = AnswerContract()
+
+    normalized = contract._normalize("build a website to sandbox")
+    assert contract._is_sandbox_build_request(normalized) is True
+
+
 def test_prompt_fidelity_validation_rejects_stale_palette_and_name() -> None:
     contract = AnswerContract()
     prompt = "generate a small HTML artifact for tony tavern grooming using black yellow and green"

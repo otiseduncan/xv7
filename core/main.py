@@ -56,6 +56,7 @@ class AddMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     raw_text: str = Field(min_length=1)
+    operator_mode: bool = False
 
 
 class OperatorStageRequest(BaseModel):
@@ -2284,6 +2285,7 @@ async def add_session_message(
     user_role = user_state.messages[-1].role
 
     session_state = await memory_manager.get_session(session_id)
+    session_state.metadata["operator_mode_enabled"] = bool(payload.operator_mode)
     inference_state = session_state.model_copy(deep=True)
     resolved_focus = _resolve_effective_active_focus(session_state.metadata)
     if isinstance(resolved_focus, dict):
@@ -2388,6 +2390,10 @@ async def add_session_message(
         return updated_state
 
     early_operator_text = _normalize_intent_text(payload.raw_text)
+    operator_mode_enabled = bool(
+        payload.operator_mode
+        or session_state.metadata.get("operator_mode_enabled", False)
+    )
     latest_applied_patch = (
         brain_context_manager.answer_contract._latest_applied_patch_proposal(
             session_state.messages,
@@ -2425,10 +2431,77 @@ async def add_session_message(
         or "apply this approved patch" in early_operator_text
         or "apply approved patch" in early_operator_text
     )
+
+    is_operator_github_project_prompt = (
+        brain_context_manager.answer_contract._is_operator_github_project_request(
+            early_operator_text
+        )
+    )
+
+    if is_operator_github_project_prompt:
+        if not operator_mode_enabled:
+            visible_text = (
+                "Operator Mode is currently off. Turn Operator Mode on, then resend this command. "
+                "No files were changed."
+            )
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=_merge_focus_context_receipt(
+                    {}, session_state.metadata
+                ),
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "operator_guard",
+                    "brain_answer_source": "operator_mode_off_guard",
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=action_history_refs,
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+        github_operator_action = operator_manager.try_handle_chat(
+            payload.raw_text,
+            session_metadata=session_state.metadata,
+            operator_mode_enabled=operator_mode_enabled,
+        )
+        if github_operator_action is not None:
+            return await _store_operator_response(github_operator_action)
+
     if is_v1e_operator_prompt and not is_post_apply_targeted_validation_prompt:
         early_operator_action = operator_manager.try_handle_chat(
             payload.raw_text,
             session_metadata=session_state.metadata,
+            operator_mode_enabled=operator_mode_enabled,
         )
         if early_operator_action is not None:
             return await _store_operator_response(early_operator_action)
@@ -3403,6 +3476,7 @@ async def add_session_message(
     operator_action = operator_manager.try_handle_chat(
         payload.raw_text,
         session_metadata=session_state.metadata,
+        operator_mode_enabled=operator_mode_enabled,
     )
     if operator_action is not None:
         visible_text = sanitize_visible_answer_text(operator_action.answer.strip())
