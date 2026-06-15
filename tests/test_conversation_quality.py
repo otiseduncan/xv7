@@ -2589,6 +2589,18 @@ def test_website_preview_requests_create_visible_bundle_without_writing_files(
     assert site_bundle.get("artifact_type") == "site_bundle"
     assert site_bundle.get("artifact_id")
     assert site_bundle.get("entry") == "index.html"
+    bundle_payload = site_bundle.get("site_bundle", {})
+    assert isinstance(bundle_payload, dict)
+    files = bundle_payload.get("files", [])
+    assert isinstance(files, list)
+    assert files
+    html_files = [item for item in files if str(item.get("path", "")).endswith(".html")]
+    css_files = [item for item in files if str(item.get("path", "")).endswith(".css")]
+    assert html_files
+    assert css_files
+    assert all(str(item.get("content", "")).strip() for item in html_files)
+    assert all(str(item.get("content", "")).strip() for item in css_files)
+    assert metadata.get("code_artifact", {}) == {}
     assert not (tmp_path / "generated-sites").exists()
 
 

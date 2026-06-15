@@ -4826,6 +4826,107 @@ describe('ModelProfileControl', () => {
     expect(document.getElementById('sendButton').textContent).toBe('Send');
   });
 
+  it('renders a site bundle card when operator_result is an empty object', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {
+            last_assistant_payload: {
+              visible_text: 'Here is a site bundle preview.',
+              operator_result: {},
+              operator_receipts: [],
+              site_bundle: {
+                artifact_type: 'site_bundle',
+                artifact_id: 'preview-bundle',
+                title: 'Preview Bundle',
+                slug: 'preview-bundle',
+                entry: 'index.html',
+                site_bundle: {
+                  files: [
+                    { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+                    { path: 'assets/site.css', language: 'css', content: 'body { color: #fff; }' },
+                  ],
+                },
+              },
+            },
+          },
+          messages: [
+            { role: 'assistant', content: 'Here is a site bundle preview.', metadata: {
+              visible_text: 'Here is a site bundle preview.',
+              operator_result: {},
+              operator_receipts: [],
+              site_bundle: {
+                artifact_type: 'site_bundle',
+                artifact_id: 'preview-bundle',
+                title: 'Preview Bundle',
+                slug: 'preview-bundle',
+                entry: 'index.html',
+                site_bundle: {
+                  files: [
+                    { path: 'index.html', language: 'html', content: '<!doctype html><html><body>home</body></html>' },
+                    { path: 'assets/site.css', language: 'css', content: 'body { color: #fff; }' },
+                  ],
+                },
+              },
+            } },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Generate a website preview';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.querySelector('.site-bundle-card')).toBeTruthy();
+  });
+
+  it('does not render preview/code artifact cards for text-only website responses without structured metadata', async () => {
+    const fetchMock = createRuntimeFetchMock();
+    global.fetch = vi.fn(async (input, init = {}) => {
+      const path = new URL(input, 'http://localhost').pathname;
+      if (path === '/api/sessions/session-1/messages' && (init.method || '').toUpperCase() === 'POST') {
+        return okJson({
+          session_id: 'session-1',
+          current_persona: 'default',
+          metadata: {},
+          messages: [
+            {
+              role: 'assistant',
+              content: 'Here is a 4-page site bundle for Demo Site. Files: index.html, about.html, services.html, contact.html.',
+              metadata: {
+                visible_text: 'Here is a 4-page site bundle for Demo Site. Files: index.html, about.html, services.html, contact.html.',
+                site_bundle: {},
+                code_artifact: {},
+                code_artifacts: [],
+              },
+            },
+          ],
+        });
+      }
+      return fetchMock(input, init);
+    });
+
+    new Xv7UI();
+    await flushAsync();
+
+    document.getElementById('promptInput').value = 'Generate a website preview';
+    document.getElementById('sendButton').click();
+    await flushAsync();
+
+    expect(document.querySelector('.site-bundle-card')).toBeNull();
+    expect(document.querySelector('.code-artifact-card')).toBeNull();
+    expect((document.querySelector('.chat-card-assistant .chat-visible-text')?.textContent || '').toLowerCase()).toContain('site bundle');
+  });
+
   it('does not break single-file artifact card when site_bundle absent', async () => {
     const fetchMock = createRuntimeFetchMock();
     global.fetch = vi.fn(async (input, init = {}) => {

@@ -1768,7 +1768,7 @@ class Xv7UI {
     const meta = metadata && typeof metadata === 'object' ? metadata : null;
     if (!meta) return false;
 
-    const operatorResult = this.resolveOperatorResult(meta);
+    const operatorResult = this.getMessageOperatorResult(meta);
     const receipts = Array.isArray(meta.operator_receipts) ? meta.operator_receipts : [];
     const hasOperatorPayload = Boolean(operatorResult) || receipts.length > 0;
     if (!hasOperatorPayload) return false;
