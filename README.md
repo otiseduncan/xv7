@@ -36,6 +36,7 @@ xv7
 | Docker Compose        | 2.20+       | Bundled with Docker Desktop     |
 | NVIDIA Container Toolkit | latest   | **GPU only** — skip for CPU     |
 | Python                | 3.12+       | Local dev / testing only        |
+| Node.js               | 22+         | Frontend unit/browser tests     |
 
 ---
 
@@ -44,7 +45,7 @@ xv7
 ### 1. Clone & configure
 
 ```bash
-git clone https://github.com/your-org/xv7.git
+git clone https://github.com/otiseduncan/xv7.git
 cd xv7
 cp .env.example .env
 ```
@@ -54,6 +55,12 @@ Open `.env` and set **at minimum**:
 ```env
 WEBUI_SECRET_KEY=<run: python -c "import secrets; print(secrets.token_hex(32))">
 CORE_API_KEY=<run: python -c "import secrets; print(secrets.token_hex(32))">
+```
+
+For host-visible website exports on Windows, set:
+
+```env
+XV7_HOST_SANDBOX=X:/xoduz-sandbox
 ```
 
 ### 2. Start all services
@@ -110,7 +117,18 @@ uvicorn core.main:app --reload --port 8000
 
 ```bash
 pytest tests/ -v --asyncio-mode=auto
+npm test
+npm run build
 ```
+
+### Run browser smoke locally
+
+```bash
+npx playwright install chromium
+npm run gauntlet:browser
+```
+
+Browser smoke requires the local app stack to be reachable. GitHub-only access can verify tracked tests and workflows, but cannot prove local Docker, host sandbox mounts, or Windows file visibility.
 
 ### Linting
 
