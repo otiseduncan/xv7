@@ -1601,8 +1601,15 @@ class OperatorManager:
             flags=re.IGNORECASE,
         )
         project_name = name_match.group(1).strip() if name_match else ""
+        if not project_name:
+            active_export = session_metadata.get("active_exported_artifact")
+            if isinstance(active_export, dict):
+                project_slug = active_export.get("project_slug")
+                if isinstance(project_slug, str) and project_slug.strip():
+                    project_name = project_slug.strip()
         if not project_name and project_path:
-            project_name = Path(project_path).name
+            normalized_project_path = str(project_path).replace("\\", "/")
+            project_name = normalized_project_path.rstrip("/").rsplit("/", 1)[-1]
         if project_name:
             project_name = self._slugify_repo_name(project_name)
         if not project_name:

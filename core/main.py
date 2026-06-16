@@ -1199,7 +1199,7 @@ def _learning_protected_boundary(text: str) -> bool:
 
 
 def _learning_rule_tags(speech_act: str, proof_required: bool) -> list[str]:
-    tags = ["learning", speech_act.replace("_", "-")]
+    tags = ["learning", "learned-rule", speech_act.replace("_", "-")]
     if speech_act in {"answer_style_preference", "communication_preference"}:
         tags.append("communication")
     if speech_act in {"workflow_habit_learning", "diagnostic_rule"}:
