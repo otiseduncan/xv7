@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 from contextlib import asynccontextmanager
@@ -11,7 +10,6 @@ from typing import Any, AsyncIterator, Literal
 from uuid import UUID
 from uuid import uuid4
 
-import aiosqlite
 import httpx
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,6 +97,12 @@ from core.api.schemas import (
 from core.api.session_metadata import (
     is_communication_workflow_focus as _is_communication_workflow_focus_from_api,
     lacks_verified_operator_success as _lacks_verified_operator_success_from_api,
+)
+from core.api.session_facts import (
+    ensure_session_facts_table as _ensure_session_facts_table_from_api,
+    get_session_facts as _get_session_facts_from_api,
+    persist_session_focus_fact as _persist_session_focus_fact_from_api,
+    upsert_session_facts as _upsert_session_facts_from_api,
 )
 
 from core.agents.base_agent import BaseAgent
@@ -607,13 +611,11 @@ async def _persist_session_focus_fact(
     session_id: UUID,
     focus_payload: dict[str, Any],
 ) -> bool:
-    try:
-        existing = await get_session_facts(str(session_id))
-        existing["xv7_active_focus"] = focus_payload
-        await upsert_session_facts(str(session_id), existing)
-        return True
-    except Exception:
-        return False
+    return await _persist_session_focus_fact_from_api(
+        facts_db_path,
+        session_id=session_id,
+        focus_payload=focus_payload,
+    )
 
 
 def _is_focus_status_question(question: str) -> bool:
@@ -686,54 +688,15 @@ def _active_focus_guided_context_receipt(focus_id: str) -> dict[str, Any]:
 
 
 async def ensure_session_facts_table() -> None:
-    async with aiosqlite.connect(facts_db_path) as conn:
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS session_facts (
-                session_id TEXT PRIMARY KEY,
-                facts_json TEXT NOT NULL
-            );
-            """
-        )
-        await conn.commit()
+    await _ensure_session_facts_table_from_api(facts_db_path)
 
 
 async def get_session_facts(session_id: str) -> dict[str, Any]:
-    async with aiosqlite.connect(facts_db_path) as conn:
-        conn.row_factory = aiosqlite.Row
-        cursor = await conn.execute(
-            """
-            SELECT facts_json
-            FROM session_facts
-            WHERE session_id = ?
-            """,
-            (session_id,),
-        )
-        row = await cursor.fetchone()
-
-    if row is None:
-        return {}
-
-    try:
-        data = json.loads(row["facts_json"])
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
+    return await _get_session_facts_from_api(facts_db_path, session_id)
 
 
 async def upsert_session_facts(session_id: str, facts: dict[str, Any]) -> None:
-    payload = json.dumps(facts, ensure_ascii=False)
-    async with aiosqlite.connect(facts_db_path) as conn:
-        await conn.execute(
-            """
-            INSERT INTO session_facts (session_id, facts_json)
-            VALUES (?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-                facts_json = excluded.facts_json
-            """,
-            (session_id, payload),
-        )
-        await conn.commit()
+    await _upsert_session_facts_from_api(facts_db_path, session_id, facts)
 
 
 @asynccontextmanager
