@@ -17,6 +17,7 @@ from core.brain import site_bundle as sb
 from core.brain.artifact_fidelity_manager import ArtifactFidelityManager
 from core.brain.code_artifact_builder import CodeArtifactBuilder
 from core.brain.intent_router import IntentRouter
+from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
 from core.operator.slash_commands import get_tool_capability_summary
@@ -1975,9 +1976,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _workspace_root() -> Path:
-        configured = str(os.getenv("XV7_ARTIFACT_PATCH_ROOT", "")).strip()
-        root = Path(configured) if configured else Path.cwd()
-        return root.resolve()
+        return RepoSafetyPolicy.workspace_root()
 
     @staticmethod
     def _sandbox_root() -> Path:
@@ -2115,47 +2114,11 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _is_blocked_patch_target(path_text: str) -> bool:
-        lowered = path_text.lower().replace("\\", "/")
-        blocked_segments = (
-            "/.git",
-            "/.env",
-            "node_modules",
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "yarn.lock",
-            "runtime/logs",
-            "data/memory",
-            "data/vectors",
-            "data/brain",
-            "memories/",
-        )
-        return any(segment in lowered for segment in blocked_segments)
+        return RepoSafetyPolicy.is_blocked_patch_target(path_text)
 
     @staticmethod
     def _is_blocked_commit_target(path_text: str) -> bool:
-        lowered = path_text.lower().replace("\\", "/")
-        path_parts = [part for part in Path(lowered).parts if part not in {"/", "\\"}]
-        blocked_top_level = {
-            ".git",
-            ".env",
-            ".pytest_cache",
-            "__pycache__",
-            "brain_runtime_records",
-            "brain_seed_records",
-            "data",
-            "memories",
-            "memory_records",
-            "node_modules",
-            "runtime",
-        }
-        blocked_segments = (
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "yarn.lock",
-        )
-        if path_parts and path_parts[0] in blocked_top_level:
-            return True
-        return any(segment in lowered for segment in blocked_segments)
+        return RepoSafetyPolicy.is_blocked_commit_target(path_text)
 
     @classmethod
     def _validate_patch_proposal(
@@ -2168,6 +2131,14 @@ if __name__ == \"__main__\":
         business_name: str,
         operation: str,
     ) -> tuple[str, list[dict[str, str]], list[str]]:
+        return RepoSafetyPolicy.validate_patch_proposal(
+            root=root,
+            target_path=target_path,
+            content=content,
+            language=language,
+            business_name=business_name,
+            operation=operation,
+        )
         checks: list[dict[str, str]] = []
         failures: list[str] = []
 
@@ -2322,22 +2293,9 @@ if __name__ == \"__main__\":
         root: Path,
         target_path: str,
     ) -> tuple[Path | None, str | None]:
-        target_rel = Path(str(target_path or "").replace("\\", "/"))
-        if not str(target_path or "").strip():
-            return None, "target path is empty"
-        if target_rel.is_absolute() or ".." in target_rel.parts:
-            return None, "target path is unsafe"
-        normalized_target = str(target_rel).replace("\\", "/")
-        if not normalized_target.startswith("generated-sites/"):
-            return None, "target path must stay under generated-sites/"
-        if cls._is_blocked_patch_target(normalized_target):
-            return None, "target path is blocked by safety policy"
-
-        resolved = (root / target_rel).resolve()
-        root_resolved = root.resolve()
-        if not str(resolved).startswith(str(root_resolved)):
-            return None, "target path escapes repo root"
-        return resolved, None
+        return RepoSafetyPolicy.resolve_safe_patch_target(
+            root=root, target_path=target_path
+        )
 
     @classmethod
     def _verify_applied_patch_content(
