@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import re
@@ -12,6 +11,34 @@ from typing import Any
 
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.operator.history import get_history, latest_action, latest_action_by_name
+from core.operator.operator_intent import (
+    FIRST_CLASS_SLASH_COMMANDS,
+    MUTATION_PATTERNS,
+    dedup_paths,
+    extract_json_object,
+    extract_repo_name_from_prompt,
+    extract_windows_paths,
+    is_commit_proposal_request,
+    is_commit_push_operator_request,
+    is_first_class_operator_request,
+    is_github_proof_project_request,
+    is_natural_repair_request,
+    is_natural_validation_request,
+    is_non_mutation_writing_request,
+    looks_like_natural_language_request,
+    missing_project_path_message,
+    normalize_text,
+    slugify_repo_name,
+    strip_operator_mode_prefix,
+    translate_first_class_slash,
+)
+from core.operator.operator_paths import (
+    extract_read_target,
+    path_allowed,
+    resolve_target_path,
+)
+from core.operator.operator_receipts import build_operator_answer
+from core.operator.operator_types import OperatorExecution
 from core.operator.registry import build_operator_registry, run_action
 from core.operator.schema import (
     OperatorActionResult,
@@ -23,63 +50,6 @@ from core.operator.slash_commands import (
     SlashCommandSpec,
     build_slash_command_registry,
 )
-
-
-MUTATION_PATTERNS = (
-    "write",
-    "edit",
-    "delete",
-    "remove",
-    "commit",
-    "push",
-    "pull",
-    "checkout",
-    "reset",
-    "git clean",
-    "docker compose down",
-    "docker compose up",
-    "restart",
-    "install",
-    "create file",
-)
-
-NON_MUTATION_WRITING_PATTERNS = (
-    "implementation prompt",
-    "implementation prompts",
-    "vs code prompt",
-    "copilot prompt",
-    "write a prompt",
-    "write prompt",
-    "app planning",
-    "design architecture",
-    "test planning",
-    "debugging guidance",
-    "documentation help",
-    # Sandbox export/write intent: writing the active artifact to the approved sandbox
-    # is allowed without Operator Mode — it is not repo mutation.
-    "to the sandbox",
-    "to sandbox",
-    "export to sandbox",
-    "save to sandbox",
-    "write to sandbox",
-)
-
-FIRST_CLASS_SLASH_COMMANDS = {
-    "/build",
-    "/export",
-    "/write",
-    "/commit",
-    "/push",
-    "/github",
-    "/publish",
-}
-
-
-@dataclass
-class OperatorExecution:
-    result: OperatorActionResult
-    answer: str
-    record_history: bool = True
 
 
 class OperatorManager:
@@ -131,14 +101,10 @@ class OperatorManager:
         session_metadata.pop(self._pending_key(), None)
 
     def _resolve_target_path(self, raw: str) -> Path:
-        candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = self.repo_root / candidate
-        return candidate.resolve()
+        return resolve_target_path(raw, self.repo_root)
 
     def _path_allowed(self, path: Path) -> bool:
-        allowed_roots = [self.repo_root, self.repo_root.parent]
-        return any(root == path or root in path.parents for root in allowed_roots)
+        return path_allowed(path, self.repo_root)
 
     def _parse_slash_command(self, command_text: str) -> tuple[str, list[str]]:
         if not command_text.strip().startswith("/"):
@@ -150,21 +116,7 @@ class OperatorManager:
 
     @staticmethod
     def _looks_like_natural_language_request(text: str) -> bool:
-        lowered = text.lower().strip()
-        return any(
-            token in lowered
-            for token in (
-                "we are in",
-                "build this feature",
-                "code 9",
-                "code builder",
-                "add tests",
-                "pytest",
-                "git commit",
-                "git push",
-                "feature request",
-            )
-        )
+        return looks_like_natural_language_request(text)
 
     def _validate_apply_patch_stage_payload(
         self, command_preview: str, args: list[str]
@@ -1045,7 +997,7 @@ class OperatorManager:
 
     @staticmethod
     def _normalize(text: str) -> str:
-        return " ".join(text.lower().strip().split())
+        return normalize_text(text)
 
     def _denied_result(self, question: str, reason: str) -> OperatorActionResult:
         now = datetime.now(UTC)
@@ -1067,10 +1019,7 @@ class OperatorManager:
         )
 
     def _extract_read_target(self, question: str) -> str:
-        original = question.strip()
-        if len(original) <= 5:
-            return ""
-        return original[5:].strip().strip(".")
+        return extract_read_target(question)
 
     def _history_lookup_result(self) -> OperatorActionResult:
         now = datetime.now(UTC)
@@ -1183,66 +1132,27 @@ class OperatorManager:
 
     @staticmethod
     def _is_non_mutation_writing_request(normalized: str) -> bool:
-        return any(token in normalized for token in NON_MUTATION_WRITING_PATTERNS)
+        return is_non_mutation_writing_request(normalized)
 
     @staticmethod
     def _is_commit_proposal_request(normalized: str) -> bool:
-        return any(
-            token in normalized
-            for token in (
-                "prepare commit",
-                "prepare a commit",
-                "propose commit",
-                "propose a commit",
-                "commit proposal",
-                "create commit proposal",
-                "draft commit",
-                "show commit proposal",
-                "what would the commit be",
-                "what should i commit",
-                "commit it",
-            )
-        )
+        return is_commit_proposal_request(normalized)
 
     @staticmethod
     def _is_commit_push_operator_request(normalized: str) -> bool:
-        return any(
-            token in normalized
-            for token in (
-                "commit the approved changes",
-                "commit these changes",
-                "commit the proposal",
-                "approve commit",
-                "confirm commit",
-                "make the commit",
-                "create the commit",
-                "go ahead and commit",
-                "push the branch",
-                "push branch",
-                "git push",
-                "commit and push",
-            )
-        )
+        return is_commit_push_operator_request(normalized)
 
     @staticmethod
     def _strip_operator_mode_prefix(normalized: str) -> str:
-        return re.sub(r"^operator\s+mode\s*:\s*", "", normalized, flags=re.IGNORECASE)
+        return strip_operator_mode_prefix(normalized)
 
     @staticmethod
     def _extract_windows_paths(text: str) -> list[str]:
-        return [
-            match.strip().rstrip(".,;:)\"'")
-            for match in re.findall(r"[A-Za-z]:\\[^\n\r\"']+", text or "")
-        ]
+        return extract_windows_paths(text)
 
     @classmethod
     def _is_first_class_operator_request(cls, normalized: str) -> bool:
-        stripped = cls._strip_operator_mode_prefix(normalized)
-        if any(stripped.startswith(prefix) for prefix in FIRST_CLASS_SLASH_COMMANDS):
-            return True
-        return cls._is_github_proof_project_request(
-            stripped
-        ) or cls._is_commit_push_operator_request(stripped)
+        return is_first_class_operator_request(normalized)
 
     def is_first_class_operator_prompt(self, question: str) -> bool:
         normalized = self._normalize(self._translate_first_class_slash(question))
@@ -1250,18 +1160,7 @@ class OperatorManager:
 
     @staticmethod
     def _dedup_paths(paths: list[str]) -> list[str]:
-        seen: set[str] = set()
-        ordered: list[str] = []
-        for raw in paths:
-            text = str(raw or "").strip()
-            if not text:
-                continue
-            key = text.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            ordered.append(text)
-        return ordered
+        return dedup_paths(paths)
 
     @classmethod
     def _candidate_project_paths(cls, session_metadata: dict[str, Any]) -> list[str]:
@@ -1431,26 +1330,11 @@ class OperatorManager:
 
     @staticmethod
     def _slugify_repo_name(value: str) -> str:
-        slug = re.sub(r"[^a-z0-9._-]+", "-", str(value or "").lower()).strip("-.")
-        slug = re.sub(r"-{2,}", "-", slug)
-        return slug or "github-proof-project"
+        return slugify_repo_name(value)
 
     @classmethod
     def _extract_repo_name_from_prompt(cls, source_text: str) -> str:
-        for pattern in (
-            r"\bpush\s+to\s+github\s+new\s+repo\s+(.+)$",
-            r"\bcreate\s+(?:a\s+)?new\s+repo(?:sitory)?(?:\s+on\s+github)?\s+named\s+(.+)$",
-            r"\bgithub\s+repo\s+(.+)$",
-        ):
-            match = re.search(pattern, source_text, flags=re.IGNORECASE)
-            if not match:
-                continue
-            raw = match.group(1).strip()
-            raw = re.sub(r"\s+and\s+push\b.*$", "", raw, flags=re.IGNORECASE)
-            raw = raw.strip().strip(".,;:!?")
-            if raw:
-                return cls._slugify_repo_name(raw)
-        return ""
+        return extract_repo_name_from_prompt(source_text)
 
     @classmethod
     def _missing_project_path_message(
@@ -1459,14 +1343,9 @@ class OperatorManager:
         candidate_paths: list[str],
         project_name_hint: str,
     ) -> str:
-        if candidate_paths:
-            example = candidate_paths[0]
-        else:
-            slug = cls._slugify_repo_name(project_name_hint or "sandbox-project")
-            example = f"X:\\xoduz-sandbox\\{slug}"
-        return (
-            "I need the sandbox project path to continue GitHub repo creation/push safely. "
-            f"Provide an explicit path like {example}."
+        return missing_project_path_message(
+            candidate_paths=candidate_paths,
+            project_name_hint=project_name_hint,
         )
 
     def _pending_operator_confirmation(
@@ -1514,64 +1393,11 @@ class OperatorManager:
         return OperatorExecution(result=result, answer=answer, record_history=True)
 
     def _translate_first_class_slash(self, question: str) -> str:
-        stripped = question.strip()
-        if not stripped.startswith("/"):
-            return stripped
-        slash, args = self._parse_slash_command(stripped)
-        lower_args = [arg.lower() for arg in args]
-
-        if slash in {"/build", "/export", "/write"}:
-            if "sandbox" in lower_args or not args:
-                return "build the approved website to sandbox"
-        if slash == "/commit":
-            return "commit and push this project"
-        if slash == "/push":
-            if lower_args and lower_args[0] == "github":
-                return "initialize the new repository and push to github"
-            return "push to github"
-        if slash == "/github":
-            if lower_args and lower_args[0] == "create":
-                repo_name = args[1] if len(args) > 1 else ""
-                if repo_name:
-                    return (
-                        f"create a new repository on github named {repo_name} and push"
-                    )
-                return "create a new repository on github and push"
-            if lower_args and lower_args[0] == "push":
-                return "finish the github push for the existing proof project"
-        if slash == "/publish" and lower_args and lower_args[0] == "github":
-            return "create a new repository on github and push"
-        return stripped
+        return translate_first_class_slash(question, self._parse_slash_command)
 
     @classmethod
     def _is_github_proof_project_request(cls, normalized: str) -> bool:
-        stripped = cls._strip_operator_mode_prefix(normalized)
-        return any(
-            token in stripped
-            for token in (
-                "build and push",
-                "push to github",
-                "create a github repo",
-                "create a new repo",
-                "create new repo",
-                "create a new repository",
-                "new repo",
-                "create a new repository on github",
-                "create a new repo named",
-                "push to github new repo",
-                "initialize the new repository and push to github",
-                "initialize git",
-                "git init",
-                "commit and push",
-                "commit and push this project",
-                "finish the github push",
-                "existing proof project",
-                "real github proof project",
-                "real build and push",
-                "not a preview",
-                "not a patch",
-            )
-        )
+        return is_github_proof_project_request(normalized)
 
     def _natural_github_project_payload(
         self,
@@ -1995,15 +1821,7 @@ class OperatorManager:
 
     @staticmethod
     def _extract_json_object(text: str) -> dict[str, Any] | None:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            parsed = json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            return None
-        return parsed if isinstance(parsed, dict) else None
+        return extract_json_object(text)
 
     def _natural_patch_payload(self, question: str, normalized: str) -> str | None:
         is_preview = any(
@@ -2039,418 +1857,14 @@ class OperatorManager:
 
     @staticmethod
     def _is_natural_validation_request(normalized: str) -> bool:
-        return normalized in {
-            "run validation.",
-            "run validation",
-            "run the checks.",
-            "run the checks",
-            "run checks.",
-            "run checks",
-            "what's failing?",
-            "what's failing",
-            "what is failing?",
-            "what is failing",
-        }
+        return is_natural_validation_request(normalized)
 
     @staticmethod
     def _is_natural_repair_request(normalized: str) -> bool:
-        return normalized in {
-            "fix the first failure.",
-            "fix the first failure",
-            "fix first failure.",
-            "fix first failure",
-            "fix it.",
-            "fix it",
-        }
+        return is_natural_repair_request(normalized)
 
     def _build_answer(self, action_name: str, result: OperatorActionResult) -> str:
-        if action_name in {"build_task", "patch_plan"}:
-            data = result.data if isinstance(result.data, dict) else {}
-            goal = str(data.get("goal", "")).strip() or "(missing goal)"
-            reason = str(data.get("reason", "")).strip()
-            likely_files = data.get("likely_files", [])
-            if not isinstance(likely_files, list):
-                likely_files = []
-            likely_files = [str(item) for item in likely_files if str(item).strip()]
-            tests_to_run = data.get("tests_to_run", [])
-            if not isinstance(tests_to_run, list):
-                tests_to_run = []
-            tests_to_run = [str(item) for item in tests_to_run if str(item).strip()]
-            risk = str(data.get("risk", "unknown")).strip() or "unknown"
-            risk_reason = (
-                str(data.get("risk_reason", "No risk notes available.")).strip()
-                or "No risk notes available."
-            )
-            workspace_summary = (
-                data.get("workspace_summary", {})
-                if isinstance(data.get("workspace_summary", {}), dict)
-                else {}
-            )
-            branch = (
-                str(workspace_summary.get("branch", "unknown")).strip() or "unknown"
-            )
-            dirty_count = int(workspace_summary.get("dirty_file_count", 0) or 0)
-
-            inspect_text = ", ".join(likely_files[:10]) if likely_files else "(none)"
-            change_text = ", ".join(likely_files[:10]) if likely_files else "(none)"
-            tests_text = ", ".join(tests_to_run[:8]) if tests_to_run else "(none)"
-            validation_text = tests_text
-            next_step = (
-                "prepare a patch payload"
-                if bool(data.get("mutation_required", False))
-                else "use VS Code/Copilot to implement the plan"
-            )
-
-            return (
-                "Build Plan\n"
-                f"Task summary: {goal}\n"
-                f"Reason: {reason or 'No specific scope reason was available.'}\n"
-                f"Files/directories inspected or recommended for inspection: {inspect_text}\n"
-                f"Likely files to change: {change_text}\n"
-                f"Tests to add/update: {tests_text}\n"
-                f"Validation commands: {validation_text}\n"
-                f"Risk notes: risk={risk}; {risk_reason}; branch={branch}; dirty_file_count={dirty_count}.\n"
-                "No files were changed. No tests were run. No commit or push occurred.\n"
-                f"Next valid operator step: {next_step} or use VS Code/Copilot to implement the plan."
-            )
-
-        if action_name == "docker_compose_ps" and result.status == "failed":
-            return (
-                "Container status cannot be proven from inside xv7-core because Docker CLI/socket is unavailable. "
-                "No action was run beyond the read-only availability check."
-            )
-        if action_name.startswith("scan_") and result.status == "failed":
-            limitation = str(result.data.get("limitation") or "").strip()
-            limitation_lower = limitation.lower()
-            if (
-                "bridge is not running" in limitation_lower
-                or "local host scan bridge" in limitation_lower
-            ):
-                return "I can check that through the local host scan bridge, but the bridge is not running yet."
-            if limitation:
-                return f"Host scan failed: {limitation}"
-            return (
-                "Host scan failed. "
-                f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
-            )
-        if action_name == "operator_validation_report":
-            passed = bool(result.data.get("passed", False))
-            commands = result.data.get("selected_commands", [])
-            command_count = len(commands) if isinstance(commands, list) else 0
-            if passed:
-                return (
-                    f"Validation passed for {command_count} allowlisted command(s). "
-                    "No files were changed. No commit or push occurred."
-                )
-            first_failure = str(result.data.get("first_failure_command") or "unknown")
-            return (
-                f"Validation failed. First failing command: {first_failure}. "
-                "No files were changed. No commit or push occurred."
-            )
-        if action_name == "operator_patch_report":
-            changed_files = result.data.get("changed_files", [])
-            changed_count = len(changed_files) if isinstance(changed_files, list) else 0
-            if result.status == "denied":
-                return (
-                    "Patch request was denied by safety policy. "
-                    f"Safe detail: {result.stderr_summary or 'no detail available.'} "
-                    "No commit or push occurred."
-                )
-            mode = str(result.data.get("mode") or "preview")
-            if mode == "preview":
-                return (
-                    f"Patch preview completed for {changed_count} changed file(s). "
-                    "No files were changed. No commit or push occurred."
-                )
-            return (
-                f"Patch apply completed for {changed_count} changed file(s). "
-                "No commit or push occurred."
-            )
-        if action_name == "operator_commit_report":
-            candidate_files = result.data.get("candidate_files", [])
-            committed_files = result.data.get("committed_files", [])
-            skipped_files = result.data.get("skipped_files", [])
-            commit_message = str(result.data.get("commit_message") or "").strip()
-            commit_sha = str(result.data.get("commit_sha") or "").strip()
-            pushed = bool(result.data.get("pushed", False))
-            mode = str(result.data.get("mode") or "preview")
-            if result.status == "denied" and result.safety.requires_approval:
-                return (
-                    "Commit/push request requires explicit approval before mutation. "
-                    "No merge was performed."
-                )
-            if result.status == "denied":
-                return (
-                    "Commit/push request was blocked by safety policy. "
-                    f"Safe detail: {result.stderr_summary or 'no detail available.'}"
-                )
-            if mode == "preview" and result.status == "success":
-                return (
-                    f"Commit/push preview prepared with {len(candidate_files)} candidate file(s), "
-                    f"{len(skipped_files)} skipped file(s), and commit message '{commit_message}'. "
-                    "Approval is required before commit or push."
-                )
-            if result.status == "success":
-                return (
-                    f"Commit workflow completed for {len(committed_files)} file(s); "
-                    f"commit_sha={commit_sha or 'n/a'}; pushed={str(pushed).lower()}. "
-                    "No merge was performed."
-                )
-            return (
-                "Commit/push workflow failed. "
-                f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
-            )
-        if action_name == "operator_repair_report":
-            if result.status == "denied":
-                return (
-                    "Repair cycle was denied by safety policy. "
-                    f"Safe detail: {result.stderr_summary or 'no detail available.'} "
-                    "No commit or push occurred."
-                )
-            if result.status == "failed":
-                first_failure = str(
-                    result.data.get("first_failure_command") or "unknown"
-                )
-                return (
-                    f"Repair cycle did not complete successfully. First failure: {first_failure}. "
-                    "A concrete approved patch is required when no safe patch is supplied. "
-                    "No commit or push occurred."
-                )
-            return (
-                "Repair cycle completed. "
-                "No commit or push occurred; commit/push still require separate approval."
-            )
-        if action_name == "operator_github_proof_project":
-            if result.status == "success":
-                commit_sha = str(result.data.get("commit_sha") or "").strip() or "n/a"
-                pushed = bool(result.data.get("pushed", False))
-                project_path = str(result.data.get("project_path") or result.target)
-                branch = str(result.data.get("branch") or "").strip() or "unknown"
-                publish_profile = (
-                    result.data.get("publish_profile", {})
-                    if isinstance(result.data.get("publish_profile", {}), dict)
-                    else {}
-                )
-                profile_owner = (
-                    str(publish_profile.get("github_owner") or "").strip() or "unknown"
-                )
-                profile_source = (
-                    str(result.data.get("publish_profile_source") or "").strip()
-                    or "unknown"
-                )
-                remotes = result.data.get("remotes", [])
-                remote_count = len(remotes) if isinstance(remotes, list) else 0
-                status_lines = result.data.get("status_lines", [])
-                status_count = (
-                    len(status_lines) if isinstance(status_lines, list) else 0
-                )
-                return (
-                    f"Sandbox project workflow completed at {project_path}; "
-                    f"branch={branch}; commit_sha={commit_sha}; remotes={remote_count}; "
-                    f"status_entries={status_count}; pushed={str(pushed).lower()}; "
-                    f"publish_profile_owner={profile_owner}; publish_profile_source={profile_source}."
-                )
-            if result.status == "pending":
-                return (
-                    "Operator GitHub workflow is staged pending confirmation. "
-                    f"Detail: {result.stderr_summary or 'confirmation is required.'}"
-                )
-            failed_command = str(result.data.get("failed_command") or "").strip()
-            repo_before = (
-                result.data.get("repo_before", {})
-                if isinstance(result.data.get("repo_before", {}), dict)
-                else {}
-            )
-            branch = str(repo_before.get("branch") or "").strip() or "unknown"
-            remotes = repo_before.get("remotes", [])
-            remote_count = len(remotes) if isinstance(remotes, list) else 0
-            status_lines = repo_before.get("status_lines", [])
-            status_count = len(status_lines) if isinstance(status_lines, list) else 0
-            if bool(result.data.get("missing_remote")):
-                suggested_name = (
-                    str(result.data.get("suggested_repo_name") or "").strip()
-                    or "github-proof-project"
-                )
-                return (
-                    "The sandbox project is ready locally, but it has no GitHub remote. "
-                    f"Tell me the repo target or say create a new GitHub repo named {suggested_name}."
-                )
-            if bool(result.data.get("gh_missing")):
-                return (
-                    "GitHub CLI is not installed in the runtime. "
-                    "I can still push using an existing git remote/SSH, or you need to install/configure gh for repo creation."
-                )
-            if bool(result.data.get("git_identity_missing")):
-                return (
-                    "Git author identity is not configured for this sandbox project. "
-                    "Set XV7_GIT_USER_NAME and XV7_GIT_USER_EMAIL (or git user.name/user.email) and retry."
-                )
-            if failed_command:
-                return (
-                    "GitHub proof project workflow failed. "
-                    f"Failed command: {failed_command}. "
-                    f"Detail: {result.stderr_summary or 'no stderr detail available.'} "
-                    f"Repo state: branch={branch}; remotes={remote_count}; status_entries={status_count}."
-                )
-            return (
-                "GitHub proof project workflow failed. "
-                f"Detail: {result.stderr_summary or 'no stderr detail available.'} "
-                f"Repo state: branch={branch}; remotes={remote_count}; status_entries={status_count}."
-            )
-        if result.status == "failed":
-            return (
-                f"Operator action {result.action_name} failed. "
-                f"Safe detail: {result.stderr_summary or 'no stderr detail available.'}"
-            )
-        if result.status == "denied":
-            return (
-                "The requested operator action was denied by read-only safety policy."
-            )
-
-        if action_name in {"repo_status", "operator_status_report"}:
-            branch = str(result.data.get("branch", "unknown"))
-            clean = bool(result.data.get("clean", False))
-            clean_text = "clean" if clean else "not clean"
-            sync = str(result.data.get("sync", "unknown"))
-            upstream = result.data.get("upstream")
-            if upstream:
-                return (
-                    f"Repo is on {branch} tracking {upstream}; "
-                    f"working tree is {clean_text}; sync={sync}."
-                )
-            return f"Repo is on {branch}; working tree is {clean_text}; sync={sync}."
-        if action_name == "repo_recent_commits":
-            commits = result.data.get("commits", [])
-            if not commits:
-                return "No recent commit lines were returned."
-            return "Recent commits:\n" + "\n".join(f"- {item}" for item in commits)
-        if action_name == "list_project_files":
-            files = result.data.get("files", [])
-            listed = files[:20]
-            return "Project files (first 20):\n" + "\n".join(
-                f"- {item}" for item in listed
-            )
-        if action_name == "read_project_file":
-            if result.status == "denied":
-                return "Read denied: requested path is outside repo root."
-            if result.status == "failed":
-                return "File read failed: target file was not found."
-            path = str(result.data.get("path", "unknown"))
-            content = str(result.data.get("content", "")).strip()
-            return f"Read {path}:\n{content}"
-        if action_name == "runtime_health":
-            health = (
-                result.data.get("health", {}) if isinstance(result.data, dict) else {}
-            )
-            runtime_ok = (
-                bool(result.data.get("runtime_status"))
-                if isinstance(result.data, dict)
-                else False
-            )
-            checked_from = (
-                result.data.get("checked_from", "unknown")
-                if isinstance(result.data, dict)
-                else "unknown"
-            )
-            return (
-                f"Runtime health check: checked_from={checked_from}; "
-                f"health={health.get('status', 'unknown')}; runtime_status_loaded={runtime_ok}."
-            )
-        if action_name == "docker_compose_ps":
-            containers = result.data.get("containers", [])
-            if not containers:
-                return "No running containers were reported by docker compose ps."
-            names = []
-            for item in containers[:10]:
-                if isinstance(item, dict):
-                    names.append(str(item.get("Name", "unknown")))
-            return "Containers reported by compose: " + ", ".join(names)
-        if action_name == "operator_environment":
-            git_available = bool(result.data.get("git_available", False))
-            docker_cli_available = bool(result.data.get("docker_cli_available", False))
-            docker_socket_available = bool(
-                result.data.get("docker_socket_available", False)
-            )
-            return (
-                "Operator environment (read-only): "
-                f"git_available={git_available}, "
-                f"docker_cli_available={docker_cli_available}, "
-                f"docker_socket_available={docker_socket_available}."
-            )
-        if action_name == "scan_system":
-            scan = result.data.get("result", {})
-            if isinstance(scan, dict):
-                os_name = str(scan.get("os_name") or "unknown")
-                hostname = str(scan.get("hostname") or "unknown")
-                uptime = scan.get("uptime_seconds")
-                return f"System info: host={hostname}; os={os_name}; uptime_seconds={uptime}."
-            return "Host system scan completed."
-        if action_name == "scan_cpu":
-            scan = result.data.get("result", {})
-            if isinstance(scan, dict):
-                name = str(scan.get("name") or "unknown")
-                load = scan.get("load_percent")
-                speed = scan.get("current_clock_mhz")
-                return f"CPU status: {name}; load_percent={load}; current_clock_mhz={speed}."
-            return "CPU scan completed."
-        if action_name == "scan_gpu":
-            scan = result.data.get("result", {})
-            if isinstance(scan, dict):
-                gpus = scan.get("gpus")
-                if isinstance(gpus, list) and gpus:
-                    first = gpus[0] if isinstance(gpus[0], dict) else {}
-                    name = str(first.get("name") or "unknown")
-                    temp = first.get("temperature_c")
-                    util = first.get("utilization_percent")
-                    return f"GPU status: {name}; temperature_c={temp}; utilization_percent={util}; gpu_count={len(gpus)}."
-            return "GPU scan completed."
-        if action_name == "scan_disk":
-            scan = result.data.get("result", {})
-            if isinstance(scan, dict):
-                drives = scan.get("drives")
-                if isinstance(drives, list):
-                    count = len(drives)
-                    preview = []
-                    for item in drives[:4]:
-                        if isinstance(item, dict):
-                            drive = str(item.get("drive") or "?")
-                            free_bytes = item.get("free_bytes")
-                            preview.append(f"{drive} free_bytes={free_bytes}")
-                    preview_text = "; ".join(preview)
-                    return f"Disk status: drives={count}. {preview_text}".strip()
-            return "Disk scan completed."
-        if action_name == "scan_network":
-            return "Network scan completed."
-        if action_name == "scan_ports":
-            return "Port scan completed."
-        if action_name == "scan_processes":
-            return "Process scan completed."
-        if action_name == "scan_services":
-            return "Service scan completed."
-        if action_name == "scan_docker":
-            return "Docker host scan completed."
-        if action_name == "scan_vscode":
-            return "VS Code host scan completed."
-        if action_name == "logs_summary":
-            logs = result.data.get("logs", [])
-            if not logs:
-                return "No log files found to summarize."
-            parts = []
-            for item in logs:
-                if isinstance(item, dict):
-                    parts.append(
-                        f"{item.get('file', 'unknown')} (lines={item.get('line_count', 0)})"
-                    )
-            return "Log summary: " + "; ".join(parts)
-        if action_name == "memory_audit":
-            counts = result.data.get("status_counts", {})
-            return (
-                "Memory audit: "
-                f"active={counts.get('active', 0)}, "
-                f"deleted={counts.get('deleted', 0)}, "
-                f"superseded={counts.get('superseded', 0)}."
-            )
-        return "Operator action completed."
+        return build_operator_answer(action_name, result)
 
     def try_handle_chat(
         self,
