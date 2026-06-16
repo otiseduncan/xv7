@@ -2866,6 +2866,70 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
+    learned_rule_answer, learned_rule_record = _applies_learned_rule(
+        payload.raw_text,
+        brain_context_manager.loader.load_records(),
+    )
+    if learned_rule_answer is not None and learned_rule_record is not None:
+        visible_text = sanitize_visible_answer_text(learned_rule_answer.strip())
+        record_id = learned_rule_record.record_id
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "learned_rule",
+            "brain_answer_source": "learned_rule_applied",
+            "intent_class": "learned_rule_applied",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt(
+                _intent_context_receipt(
+                    intent_class="learned_rule_applied",
+                    record_id=record_id,
+                    source="learned_rule",
+                    persistence="durable",
+                    status="active",
+                ),
+                session_state.metadata,
+            ),
+            operator_receipts=[],
+            memory_receipts=[f"{learned_rule_record.layer.value}: {record_id}"],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        assistant_payload.update(
+            {
+                "speech_act": "learned_rule_applied",
+                "learned_record_id": record_id,
+                "source_record_ids": [record_id],
+            }
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = policy_provenance
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     if intent_class in {
         "user_correction",
         "communication_preference",
