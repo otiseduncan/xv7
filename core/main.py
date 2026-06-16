@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer, BrainRecord
+from core.memory.auto_pilot import MemoryAutoPilotService, MemoryDecisionState
 from core.memory.manager import PersistentMemoryManager
 from core.operator.history import append_history, get_history
 from core.operator.manager import OperatorExecution, OperatorManager
@@ -251,6 +252,23 @@ def build_facts_system_prompt(facts: dict[str, Any]) -> str:
         f"{pretty}\n"
         "----------------------------------\n"
     )
+
+
+def _auto_memory_prompt_from_metadata(metadata: dict[str, Any]) -> str:
+    prompt = metadata.get("auto_memory_context_prompt")
+    return prompt.strip() if isinstance(prompt, str) else ""
+
+
+def _auto_memory_receipt_from_metadata(metadata: dict[str, Any]) -> str | None:
+    receipt = metadata.get("auto_memory_context_receipt")
+    if isinstance(receipt, str) and receipt.strip():
+        return receipt.strip()
+    return None
+
+
+def _auto_memory_hints_from_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    hints = metadata.get("auto_memory_hints")
+    return hints if isinstance(hints, dict) else {}
 
 
 def build_assistant_payload(
@@ -1644,6 +1662,7 @@ base_agent = BaseAgent()
 vector_store = VectorMemoryEngine()
 brain_context_manager = BrainContextManager()
 persistent_memory_manager = PersistentMemoryManager()
+memory_auto_pilot = MemoryAutoPilotService()
 _operator_repo_root = _resolve_operator_repo_root()
 operator_manager = OperatorManager(repo_root=_operator_repo_root)
 
@@ -2405,11 +2424,225 @@ async def add_session_message(
 
     session_state = await memory_manager.get_session(session_id)
     session_state.metadata["operator_mode_enabled"] = bool(payload.operator_mode)
-    inference_state = session_state.model_copy(deep=True)
     resolved_focus = _resolve_effective_active_focus(session_state.metadata)
     if isinstance(resolved_focus, dict):
         session_state.metadata["active_focus"] = resolved_focus
-        inference_state.metadata["active_focus"] = resolved_focus
+
+    auto_decision = memory_auto_pilot.intake(
+        payload.raw_text,
+        session_metadata=session_state.metadata,
+        active_records=persistent_memory_manager.list_active_memories(),
+    )
+    for key, value in auto_decision.metadata_updates.items():
+        session_state.metadata[key] = value
+
+    if auto_decision.state in {
+        MemoryDecisionState.save_active,
+        MemoryDecisionState.save_pending_review,
+        MemoryDecisionState.ask_clarification,
+        MemoryDecisionState.reject_protected,
+    }:
+        if auto_decision.state == MemoryDecisionState.save_active and auto_decision.candidate is not None:
+            saved_record = persistent_memory_manager.upsert_active_memory(
+                content=auto_decision.candidate.content,
+                source="user_explicit",
+                memory_type=auto_decision.candidate.memory_type,
+                tags=auto_decision.candidate.tags,
+                confidence=auto_decision.candidate.confidence,
+            )
+            if auto_decision.visible_text:
+                visible_text = auto_decision.visible_text
+            else:
+                visible_text = "Got it — I’ll keep that preference going forward."
+            auto_receipt = persistent_memory_manager.compact_receipt([saved_record])
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                operator_receipts=[],
+                memory_receipts=[auto_receipt],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "auto_memory",
+                    "brain_answer_source": "auto_memory_saved",
+                    "intent_class": auto_decision.signal.value,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=[],
+            )
+            assistant_payload.update(
+                {
+                    "speech_act": auto_decision.signal.value,
+                    "learned_record_id": saved_record.id,
+                    "learning_layer": saved_record.layer,
+                    "learning_status": saved_record.status,
+                    "source_user_message": payload.raw_text,
+                    "confidence": saved_record.confidence,
+                    "requires_confirmation": False,
+                    "protected_boundary": False,
+                    "source_record_ids": [saved_record.id],
+                }
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            updated_state.metadata["auto_memory_last_record_id"] = saved_record.id
+            updated_state.metadata["auto_memory_receipt"] = auto_receipt
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+        if auto_decision.state == MemoryDecisionState.save_pending_review and auto_decision.candidate is not None:
+            pending_record = persistent_memory_manager.create_pending_memory(
+                content=auto_decision.candidate.content,
+                source="user_explicit",
+                memory_type=auto_decision.candidate.memory_type,
+                tags=auto_decision.candidate.tags,
+            )
+            visible_text = (
+                auto_decision.visible_text
+                or "Got it — I’ll keep that as an unverified memory candidate until proof is available."
+            )
+            auto_receipt = persistent_memory_manager.compact_receipt([pending_record])
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                operator_receipts=[],
+                memory_receipts=[auto_receipt],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "auto_memory",
+                    "brain_answer_source": "auto_memory_pending_review",
+                    "intent_class": auto_decision.signal.value,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=[],
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            updated_state.metadata["auto_memory_last_record_id"] = pending_record.id
+            updated_state.metadata["auto_memory_receipt"] = auto_receipt
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+        if auto_decision.state in {
+            MemoryDecisionState.ask_clarification,
+            MemoryDecisionState.reject_protected,
+        }:
+            visible_text = auto_decision.visible_text or "I need more detail before I can save that."
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "auto_memory",
+                    "brain_answer_source": auto_decision.state.value,
+                    "intent_class": auto_decision.signal.value,
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                },
+                warnings=[],
+                action_history_refs=[],
+            )
+            assistant_payload.update(
+                {
+                    "speech_act": auto_decision.signal.value,
+                    "learning_status": "pending_clarification",
+                    "learning_layer": "memory",
+                    "source_user_message": payload.raw_text,
+                    "confidence": 0.0,
+                    "requires_confirmation": True,
+                    "protected_boundary": False,
+                    "source_record_ids": [],
+                }
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload[
+                "context_receipt"
+            ]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+
+    inference_state = session_state.model_copy(deep=True)
+    inference_state.metadata["active_focus"] = session_state.metadata.get(
+        "active_focus", {}
+    )
+    auto_memory_prompt = _auto_memory_prompt_from_metadata(session_state.metadata)
+    if auto_memory_prompt:
+        inference_state.messages.insert(
+            0,
+            ConversationMessage(role="system", content=auto_memory_prompt),
+        )
     intent_class = _classify_speech_act(payload.raw_text)
     active_focus_instruction = _extract_active_focus_instruction(payload.raw_text)
 

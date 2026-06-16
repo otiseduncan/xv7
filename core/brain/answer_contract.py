@@ -198,6 +198,11 @@ class AnswerContract:
         return None
 
     @staticmethod
+    def _session_memory_hints(session_metadata: dict[str, Any]) -> dict[str, Any]:
+        hints = session_metadata.get("auto_memory_hints")
+        return hints if isinstance(hints, dict) else {}
+
+    @staticmethod
     def _normalize_reminder_request(question: str) -> str:
         text = re.sub(r"\s+", " ", question.strip())
         text = re.sub(
@@ -4249,6 +4254,7 @@ if __name__ == \"__main__\":
         session_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         normalized = self._normalize(question)
+        memory_hints = self._session_memory_hints(session_metadata or {})
         artifact_history = self._artifact_history(
             session_messages,
             session_metadata,
@@ -4282,6 +4288,9 @@ if __name__ == \"__main__\":
         is_post_apply_full_test_guard_request = (
             self._is_post_apply_full_test_guard_request(normalized)
         )
+        if memory_hints.get("preview_first") and is_site_bundle_generation:
+            is_sandbox_build = True
+            is_site_bundle_generation = False
         refinement_mode = (
             self._artifact_refinement_mode(normalized)
             if (not is_patch_proposal_request and has_artifact_edit_intent)
@@ -6240,6 +6249,15 @@ if __name__ == \"__main__\":
             if not facts:
                 return "Verified status record is present but has no facts."
             return "Verified facts: " + " ".join(f"- {item}" for item in facts)
+
+        if normalized in {"is ci green?", "is ci green", "is the ci green?", "is the ci green"}:
+            if self._has_live_repo_check_proof(session_metadata):
+                return (
+                    "I have proof of a live repo check in this session, but I still cannot claim CI is green unless that proof explicitly says so."
+                )
+            return (
+                "I do not have proof that CI is green. I can only claim that from verified records or a live repo check."
+            )
 
         if normalized in {"what repo/status are we on?", "what repo/status are we on"}:
             if verified is None:

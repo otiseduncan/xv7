@@ -29,6 +29,20 @@ class PersistentMemoryManager:
     def _normalize(text: str) -> str:
         return " ".join(text.lower().strip().split())
 
+    def _find_active_memory_by_content(
+        self,
+        *,
+        content: str,
+        memory_type: MemoryType,
+    ) -> MemoryRecord | None:
+        normalized_content = self._normalize(content)
+        for record in self.list_active_memories():
+            if record.memory_type != memory_type:
+                continue
+            if self._normalize(record.content) == normalized_content:
+                return record
+        return None
+
     @staticmethod
     def _metadata_string_list(metadata: dict[str, object], key: str) -> list[str]:
         raw = metadata.get(key)
@@ -176,6 +190,41 @@ class PersistentMemoryManager:
             pending_approval=False,
         )
         return self.store.save_record(record)
+
+    def upsert_active_memory(
+        self,
+        *,
+        content: str,
+        source: MemorySource = "user_explicit",
+        memory_type: MemoryType | None = None,
+        tags: list[str] | None = None,
+        confidence: float = 0.95,
+    ) -> MemoryRecord:
+        chosen_type = memory_type or self._infer_memory_type(content)
+        existing = self._find_active_memory_by_content(
+            content=content,
+            memory_type=chosen_type,
+        )
+        if existing is not None:
+            existing.content = content.strip()
+            existing.source = source
+            existing.confidence = max(existing.confidence, confidence)
+            existing.updated_at = self._now()
+            existing.tags = sorted(
+                set(existing.tags + (tags or []) + self._simple_tags(content))
+            )
+            existing.pending_approval = False
+            if not existing.receipt_label.lower().startswith("memory "):
+                existing.receipt_label = f"Memory {existing.id}"
+            return self.store.save_record(existing)
+
+        return self.create_active_memory(
+            content=content,
+            source=source,
+            memory_type=chosen_type,
+            tags=tags,
+            confidence=confidence,
+        )
 
     def approve_memory(self, memory_id: str) -> MemoryRecord:
         record = self.store.get_record(memory_id)
@@ -339,6 +388,7 @@ class PersistentMemoryManager:
         session_metadata: dict[str, object] | None = None,
     ) -> MemoryActionResult | None:
         metadata = session_metadata or {}
+
         normalized = self._normalize(question)
         normalized_core = normalized.strip(" .!?")
 
