@@ -167,7 +167,7 @@ class MemoryAutoPilotService:
             active_records=active_records,
             signal=signal,
         )
-        metadata_updates = {
+        metadata_updates: dict[str, object] = {
             "auto_memory_context_prompt": self.build_context_prompt(
                 message, retrieved_records, session_metadata=metadata
             ),
