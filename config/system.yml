@@ -1,5 +1,5 @@
-﻿# =============================================================================
-# xv7 â€” System Configuration
+# =============================================================================
+# xv7 — System Configuration
 # =============================================================================
 # Loaded by the Core service at startup via pydantic-settings.
 # Values here are defaults; override via environment variables or .env.
