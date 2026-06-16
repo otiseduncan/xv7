@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -4116,4 +4116,3 @@ async def add_session_message(
     await memory_manager.update_session(updated_state)
 
     return updated_state
-
