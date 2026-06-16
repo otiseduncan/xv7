@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from core.brain.sandbox_writer import SandboxWriteManager
 from core.operator.history import get_history, latest_action, latest_action_by_name
 from core.operator.registry import build_operator_registry, run_action
 from core.operator.schema import (
@@ -1581,6 +1582,42 @@ class OperatorManager:
 
     @classmethod
     def _candidate_project_paths(cls, session_metadata: dict[str, Any]) -> list[str]:
+        def _normalized_candidate_path(value: str) -> str | None:
+            raw = str(value or "").strip().strip("\"'")
+            if not raw:
+                return None
+
+            normalized = raw.replace("\\", "/")
+            generated_match = re.search(
+                r"(?:^|/)generated-sites/([^/]+)",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+            if generated_match:
+                slug = generated_match.group(1).strip("/\\ ")
+                if slug:
+                    return str((SandboxWriteManager.sandbox_root() / slug).resolve())
+
+            if re.match(r"^[A-Za-z]:[\\/]", raw):
+                candidate = Path(raw)
+                if candidate.suffix:
+                    return str(candidate.parent)
+                return raw
+
+            if normalized.startswith("/app/generated-sites/"):
+                tail = normalized.removeprefix("/app/generated-sites/")
+                slug = tail.split("/", 1)[0].strip()
+                if slug:
+                    return f"/app/generated-sites/{slug}"
+
+            if normalized.startswith("/generated-sites/"):
+                tail = normalized.removeprefix("/generated-sites/")
+                slug = tail.split("/", 1)[0].strip()
+                if slug:
+                    return str((SandboxWriteManager.sandbox_root() / slug).resolve())
+
+            return None
+
         candidates: list[str] = []
         artifact_history = session_metadata.get("artifact_history")
         if isinstance(artifact_history, list):
@@ -1598,18 +1635,137 @@ class OperatorManager:
                     "sandbox_project_path",
                     "sandbox_target_path",
                     "project_path",
+                    "target_path",
+                    "preview_path",
+                    "sandbox_relative_path",
                 ):
                     value = artifact.get(key)
                     if isinstance(value, str):
-                        candidates.append(value)
+                        normalized_candidate = _normalized_candidate_path(value)
+                        if normalized_candidate:
+                            candidates.append(normalized_candidate)
+                written_paths = artifact.get("sandbox_written_paths")
+                if isinstance(written_paths, list):
+                    for entry in written_paths:
+                        if isinstance(entry, str):
+                            normalized_candidate = _normalized_candidate_path(entry)
+                            if normalized_candidate:
+                                candidates.append(normalized_candidate)
+                project_slug = artifact.get("project_slug") or artifact.get(
+                    "sandbox_project_slug"
+                )
+                if isinstance(project_slug, str) and project_slug.strip():
+                    candidates.append(
+                        str(
+                            (
+                                SandboxWriteManager.sandbox_root()
+                                / project_slug.strip()
+                            ).resolve()
+                        )
+                    )
 
         last_action = session_metadata.get("operator_last_action")
         if isinstance(last_action, dict):
             data = last_action.get("data")
             if isinstance(data, dict) and isinstance(data.get("project_path"), str):
-                candidates.append(str(data["project_path"]))
+                normalized_candidate = _normalized_candidate_path(
+                    str(data["project_path"])
+                )
+                if normalized_candidate:
+                    candidates.append(normalized_candidate)
+
+        active_export = session_metadata.get("active_exported_artifact")
+        if isinstance(active_export, dict):
+            for key in (
+                "host_project_path",
+                "container_project_path",
+                "relative_project_path",
+                "entry_file",
+                "project_slug",
+            ):
+                value = active_export.get(key)
+                if isinstance(value, str):
+                    normalized_candidate = _normalized_candidate_path(value)
+                    if normalized_candidate:
+                        candidates.append(normalized_candidate)
+
+        last_payload = session_metadata.get("last_assistant_payload")
+        if isinstance(last_payload, dict):
+            artifact_patch = last_payload.get("artifact_patch_proposal")
+            if isinstance(artifact_patch, dict):
+                for key in ("target_path", "preview_path", "project_slug"):
+                    value = artifact_patch.get(key)
+                    if isinstance(value, str):
+                        normalized_candidate = _normalized_candidate_path(value)
+                        if normalized_candidate:
+                            candidates.append(normalized_candidate)
+
+            bundle = last_payload.get("site_bundle")
+            if isinstance(bundle, dict):
+                for key in (
+                    "sandbox_project_path",
+                    "sandbox_target_path",
+                    "project_slug",
+                ):
+                    value = bundle.get(key)
+                    if isinstance(value, str):
+                        normalized_candidate = _normalized_candidate_path(value)
+                        if normalized_candidate:
+                            candidates.append(normalized_candidate)
+
+            bundle_patches = last_payload.get("site_bundle_patch_proposals")
+            if isinstance(bundle_patches, list):
+                for patch in bundle_patches:
+                    if not isinstance(patch, dict):
+                        continue
+                    for key in ("target_path", "preview_path", "project_slug"):
+                        value = patch.get(key)
+                        if isinstance(value, str):
+                            normalized_candidate = _normalized_candidate_path(value)
+                            if normalized_candidate:
+                                candidates.append(normalized_candidate)
 
         return cls._dedup_paths(candidates)
+
+    @staticmethod
+    def _slugify_repo_name(value: str) -> str:
+        slug = re.sub(r"[^a-z0-9._-]+", "-", str(value or "").lower()).strip("-.")
+        slug = re.sub(r"-{2,}", "-", slug)
+        return slug or "github-proof-project"
+
+    @classmethod
+    def _extract_repo_name_from_prompt(cls, source_text: str) -> str:
+        for pattern in (
+            r"\bpush\s+to\s+github\s+new\s+repo\s+(.+)$",
+            r"\bcreate\s+(?:a\s+)?new\s+repo(?:sitory)?(?:\s+on\s+github)?\s+named\s+(.+)$",
+            r"\bgithub\s+repo\s+(.+)$",
+        ):
+            match = re.search(pattern, source_text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            raw = match.group(1).strip()
+            raw = re.sub(r"\s+and\s+push\b.*$", "", raw, flags=re.IGNORECASE)
+            raw = raw.strip().strip(".,;:!?")
+            if raw:
+                return cls._slugify_repo_name(raw)
+        return ""
+
+    @classmethod
+    def _missing_project_path_message(
+        cls,
+        *,
+        candidate_paths: list[str],
+        project_name_hint: str,
+    ) -> str:
+        if candidate_paths:
+            example = candidate_paths[0]
+        else:
+            slug = cls._slugify_repo_name(project_name_hint or "sandbox-project")
+            example = f"X:\\xoduz-sandbox\\{slug}"
+        return (
+            "I need the sandbox project path to continue GitHub repo creation/push safely. "
+            f"Provide an explicit path like {example}."
+        )
 
     def _pending_operator_confirmation(
         self,
@@ -1694,7 +1850,13 @@ class OperatorManager:
                 "build and push",
                 "push to github",
                 "create a github repo",
+                "create a new repo",
+                "create new repo",
+                "create a new repository",
+                "new repo",
                 "create a new repository on github",
+                "create a new repo named",
+                "push to github new repo",
                 "initialize the new repository and push to github",
                 "initialize git",
                 "git init",
@@ -1731,30 +1893,16 @@ class OperatorManager:
                 candidate_paths,
             )
 
-        needs_existing_project = any(
-            token in lowered
-            for token in (
-                "initialize the new repository and push to github",
-                "finish the github push",
-                "existing proof project",
-                "commit and push this project",
-            )
-        )
-        if needs_existing_project and not project_path:
-            return (
-                None,
-                "I need the sandbox project path to continue safely. Provide an explicit path like X:\\xoduz-sandbox\\earthx-github-proof.",
-                candidate_paths,
-            )
-
         name_match = re.search(
-            r"\bnamed\s+([A-Za-z0-9._-]+)",
+            r"\bnamed\s+(.+?)(?:\s+under\b|\s+and\s+push\b|$)",
             source_text,
             flags=re.IGNORECASE,
         )
         project_name = name_match.group(1).strip() if name_match else ""
         if not project_name and project_path:
             project_name = Path(project_path).name
+        if project_name:
+            project_name = self._slugify_repo_name(project_name)
         if not project_name:
             project_name = "github-proof-project"
 
@@ -1769,24 +1917,35 @@ class OperatorManager:
             else "build GitHub proof project"
         )
 
-        repo_name_match = re.search(
-            r"github\s+repo\s+([A-Za-z0-9._-]+)",
-            source_text,
-            flags=re.IGNORECASE,
-        )
-        repo_name = (
-            repo_name_match.group(1).strip() if repo_name_match else project_name
-        )
+        repo_name = self._extract_repo_name_from_prompt(source_text) or project_name
 
-        write_project_files = not any(
+        create_repo = (
+            "create a github repo" in lowered
+            or "create a new repository on github" in lowered
+            or "create a new repo" in lowered
+            or "new repo" in lowered
+            or lowered.startswith("/github create")
+            or lowered.startswith("/publish github")
+        )
+        push_requested = (
+            "push to github" in lowered
+            or "commit and push" in lowered
+            or "build and push" in lowered
+            or "real build and push" in lowered
+            or "finish the github push" in lowered
+            or lowered.startswith("/push")
+            or lowered.startswith("/github push")
+            or lowered.startswith("/publish github")
+        )
+        explicit_build_and_push = any(
             token in lowered
             for token in (
-                "initialize the new repository and push to github",
-                "finish the github push",
-                "existing proof project",
-                "commit and push this project",
+                "build and push",
+                "real build and push",
+                "build and push a real github proof project",
             )
         )
+        write_project_files = explicit_build_and_push
 
         requested_files: list[str] = []
         for candidate in (
@@ -1805,27 +1964,24 @@ class OperatorManager:
                 "README.md",
             ]
 
-        create_repo = (
-            "create a github repo" in lowered
-            or "create a new repository on github" in lowered
-            or lowered.startswith("/github create")
-            or lowered.startswith("/publish github")
-        )
-        push_requested = (
-            "push to github" in lowered
-            or "commit and push" in lowered
-            or "build and push" in lowered
-            or "real build and push" in lowered
-            or "finish the github push" in lowered
-            or lowered.startswith("/push")
-            or lowered.startswith("/github push")
-            or lowered.startswith("/publish github")
-        )
+        needs_existing_project = (
+            create_repo or push_requested
+        ) and not write_project_files
+        if needs_existing_project and not project_path:
+            return (
+                None,
+                self._missing_project_path_message(
+                    candidate_paths=candidate_paths,
+                    project_name_hint=project_name,
+                ),
+                candidate_paths,
+            )
 
         payload: dict[str, Any] = {
             "prompt": source_text,
             "project_name": project_name,
             "project_path": project_path,
+            "sandbox_project_path": project_path,
             "requested_files": requested_files,
             "commit_message": commit_message,
             "github_repo_name": repo_name,
@@ -2361,6 +2517,18 @@ class OperatorManager:
                 pushed = bool(result.data.get("pushed", False))
                 project_path = str(result.data.get("project_path") or result.target)
                 branch = str(result.data.get("branch") or "").strip() or "unknown"
+                publish_profile = (
+                    result.data.get("publish_profile", {})
+                    if isinstance(result.data.get("publish_profile", {}), dict)
+                    else {}
+                )
+                profile_owner = (
+                    str(publish_profile.get("github_owner") or "").strip() or "unknown"
+                )
+                profile_source = (
+                    str(result.data.get("publish_profile_source") or "").strip()
+                    or "unknown"
+                )
                 remotes = result.data.get("remotes", [])
                 remote_count = len(remotes) if isinstance(remotes, list) else 0
                 status_lines = result.data.get("status_lines", [])
@@ -2370,7 +2538,8 @@ class OperatorManager:
                 return (
                     f"Sandbox project workflow completed at {project_path}; "
                     f"branch={branch}; commit_sha={commit_sha}; remotes={remote_count}; "
-                    f"status_entries={status_count}; pushed={str(pushed).lower()}."
+                    f"status_entries={status_count}; pushed={str(pushed).lower()}; "
+                    f"publish_profile_owner={profile_owner}; publish_profile_source={profile_source}."
                 )
             if result.status == "pending":
                 return (

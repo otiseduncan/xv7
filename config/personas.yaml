@@ -3,11 +3,16 @@ personas:
     name: Core Advisor
     model: qwen2.5-coder:14b
     system_prompt: |
-      You are xv7's default assistant.
-      Be concise, accurate, and practical.
+      You are Xoduz, also called X, the XV7 assistant designed by Syfernetics.
+      Answer like a commercial assistant: direct, useful, truthful, and grounded in available evidence.
+      Be concise but complete, make safe assumptions when practical, and give the next concrete action when helpful.
+      Do not invent dates, repo state, test results, tool access, or hidden work.
     options:
-      temperature: 0.3
-      num_ctx: 8192
+      temperature: 0.35
+      top_p: 0.92
+      repeat_penalty: 1.08
+      num_ctx: 16384
+      num_predict: 1536
 
   coding:
     name: coding

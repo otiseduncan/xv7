@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 
@@ -186,6 +187,7 @@ def test_existing_repo_without_remote_returns_clear_missing_remote_message(
     )
 
     calls: list[list[str]] = []
+
     def _fake_run_command(
         _cwd: Path, args: list[str]
     ) -> subprocess.CompletedProcess[str]:
@@ -421,7 +423,7 @@ def test_missing_gh_reports_clear_repo_creation_requirement(
     assert "GitHub CLI is not installed" in result.stderr_summary
 
 
-def test_missing_git_identity_reports_clear_configuration_message(
+def test_missing_git_identity_uses_durable_profile_fallback(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -440,9 +442,12 @@ def test_missing_git_identity_reports_clear_configuration_message(
     monkeypatch.delenv("GIT_COMMITTER_NAME", raising=False)
     monkeypatch.delenv("GIT_COMMITTER_EMAIL", raising=False)
 
+    calls: list[list[str]] = []
+
     def _fake_run_command(
         _cwd: Path, args: list[str]
     ) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
         if args[:3] == ["git", "rev-parse", "--is-inside-work-tree"]:
             return _Proc(args, 1, stderr="not a git repo")  # type: ignore[return-value]
         if args[:3] == ["git", "init", "-b"]:
@@ -469,9 +474,21 @@ def test_missing_git_identity_reports_clear_configuration_message(
         },
     )
 
-    assert result.status == "failed"
-    assert result.data.get("git_identity_missing") is True
-    assert "Git author identity is not configured" in result.stderr_summary
+    assert result.status == "success"
+    configured_name = [
+        cmd
+        for cmd in calls
+        if len(cmd) >= 4 and cmd[:3] == ["git", "config", "user.name"]
+    ]
+    configured_email = [
+        cmd
+        for cmd in calls
+        if len(cmd) >= 4 and cmd[:3] == ["git", "config", "user.email"]
+    ]
+    assert configured_name
+    assert configured_name[-1][3].strip()
+    assert configured_email
+    assert configured_email[-1][3].strip()
 
 
 def test_git_identity_from_env_is_applied_before_commit(
@@ -564,7 +581,11 @@ def test_github_workflow_runs_only_in_sandbox_project_path(
         if args[:3] == ["git", "rev-parse", "--short"]:
             return _Proc(args, 0, stdout="abc1234\n")  # type: ignore[return-value]
         if args[:3] == ["git", "remote", "-v"]:
-            return _Proc(args, 0, stdout="origin\thttps://github.com/example/earthx-github-proof.git (fetch)\n")  # type: ignore[return-value]
+            return _Proc(
+                args,
+                0,
+                stdout="origin\thttps://github.com/example/earthx-github-proof.git (fetch)\n",
+            )  # type: ignore[return-value]
         if args[:4] == ["git", "status", "--short", "--branch"]:
             return _Proc(args, 0, stdout="## main\n")  # type: ignore[return-value]
         return _Proc(args, 0, stdout="")  # type: ignore[return-value]
@@ -591,3 +612,131 @@ def test_github_workflow_runs_only_in_sandbox_project_path(
     assert seen_cwds
     assert all(cwd.resolve() == project_path.resolve() for cwd in seen_cwds)
     assert all(cwd.resolve() != tmp_path.resolve() for cwd in seen_cwds)
+
+
+def test_github_workflow_persists_durable_publish_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sandbox_root = tmp_path / "sandbox"
+    project_path = sandbox_root / "earthx-github-proof"
+    project_path.mkdir(parents=True, exist_ok=True)
+    profile_path = tmp_path / "github_publish_profile.json"
+
+    monkeypatch.setattr(
+        "core.operator.actions.github_project.SandboxWriteManager.sandbox_root",
+        staticmethod(lambda: sandbox_root),
+    )
+    monkeypatch.setenv("XV7_GITHUB_PUBLISH_PROFILE_PATH", str(profile_path))
+
+    def _fake_run_command(
+        _cwd: Path, args: list[str]
+    ) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return _Proc(args, 0, stdout="true\n")  # type: ignore[return-value]
+        if args[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return _Proc(args, 0, stdout="main\n")  # type: ignore[return-value]
+        if args[:3] == ["git", "rev-parse", "--short"]:
+            return _Proc(args, 0, stdout="abc1234\n")  # type: ignore[return-value]
+        if args[:3] == ["git", "remote", "-v"]:
+            return _Proc(args, 0, stdout="")  # type: ignore[return-value]
+        if args[:4] == ["git", "status", "--short", "--branch"]:
+            return _Proc(args, 0, stdout="## main\n")  # type: ignore[return-value]
+        return _Proc(args, 0, stdout="")  # type: ignore[return-value]
+
+    monkeypatch.setattr(
+        "core.operator.actions.github_project._run_command",
+        _fake_run_command,
+    )
+
+    result = operator_github_proof_project(
+        action_id="OP-TEST-0011",
+        repo_root=tmp_path,
+        request={
+            "project_name": "earthx-github-proof",
+            "project_path": str(project_path),
+            "write_project_files": False,
+            "initialize_git": True,
+            "create_github_repo": False,
+            "push": False,
+        },
+    )
+
+    assert result.status == "success"
+    assert profile_path.exists()
+    payload = json.loads(profile_path.read_text(encoding="utf-8"))
+    assert payload.get("github_owner") == "otiseduncan"
+    assert payload.get("proof_repo_url") == (
+        "https://github.com/otiseduncan/xv7-sandbox-export-proof-20260614"
+    )
+    assert result.data.get("publish_profile_source")
+
+
+def test_git_identity_falls_back_to_durable_publish_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sandbox_root = tmp_path / "sandbox"
+    project_path = sandbox_root / "earthx-github-proof"
+    project_path.mkdir(parents=True, exist_ok=True)
+    profile_path = tmp_path / "github_publish_profile.json"
+
+    monkeypatch.setattr(
+        "core.operator.actions.github_project.SandboxWriteManager.sandbox_root",
+        staticmethod(lambda: sandbox_root),
+    )
+    monkeypatch.setenv("XV7_GITHUB_PUBLISH_PROFILE_PATH", str(profile_path))
+    monkeypatch.delenv("XV7_GIT_USER_NAME", raising=False)
+    monkeypatch.delenv("XV7_GIT_USER_EMAIL", raising=False)
+    monkeypatch.delenv("GIT_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("GIT_AUTHOR_EMAIL", raising=False)
+    monkeypatch.delenv("GIT_COMMITTER_NAME", raising=False)
+    monkeypatch.delenv("GIT_COMMITTER_EMAIL", raising=False)
+
+    calls: list[list[str]] = []
+
+    def _fake_run_command(
+        _cwd: Path, args: list[str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args[:3] == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return _Proc(args, 0, stdout="true\n")  # type: ignore[return-value]
+        if args[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return _Proc(args, 0, stdout="main\n")  # type: ignore[return-value]
+        if args[:3] == ["git", "rev-parse", "--short"]:
+            return _Proc(args, 0, stdout="abc1234\n")  # type: ignore[return-value]
+        if args[:3] == ["git", "remote", "-v"]:
+            return _Proc(args, 0, stdout="")  # type: ignore[return-value]
+        if args[:4] == ["git", "status", "--short", "--branch"]:
+            return _Proc(args, 0, stdout="## main\n")  # type: ignore[return-value]
+        if args[:2] == ["git", "config"] and "--get" in args:
+            return _Proc(args, 1, stderr="")  # type: ignore[return-value]
+        if args[:2] == ["git", "config"] and len(args) >= 4:
+            return _Proc(args, 0, stdout="")  # type: ignore[return-value]
+        if args == ["git", "add", "."]:
+            return _Proc(args, 0, stdout="")  # type: ignore[return-value]
+        if args[:2] == ["git", "commit"]:
+            return _Proc(args, 0, stdout="[main def5678] build GitHub proof project")  # type: ignore[return-value]
+        return _Proc(args, 0, stdout="")  # type: ignore[return-value]
+
+    monkeypatch.setattr(
+        "core.operator.actions.github_project._run_command",
+        _fake_run_command,
+    )
+
+    result = operator_github_proof_project(
+        action_id="OP-TEST-0012",
+        repo_root=tmp_path,
+        request={
+            "project_name": "earthx-github-proof",
+            "project_path": str(project_path),
+            "requested_files": ["index.html"],
+            "initialize_git": True,
+            "create_github_repo": False,
+            "push": False,
+        },
+    )
+
+    assert result.status == "success"
+    assert ["git", "config", "user.name", "Otis Duncan"] in calls
+    assert ["git", "config", "user.email", "otiseduncan@gmail.com"] in calls

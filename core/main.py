@@ -1,10 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal
 from uuid import UUID
@@ -23,6 +24,7 @@ from core.brain.schema import BrainLayer, BrainRecord
 from core.memory.manager import PersistentMemoryManager
 from core.operator.history import append_history, get_history
 from core.operator.manager import OperatorExecution, OperatorManager
+from core.prompts.commercial_style import build_commercial_system_prompt
 from core.runtime.memory_manager import MemoryManager, SessionNotFoundError
 from core.runtime.auth import require_api_key
 from core.runtime.model_profile_selection import (
@@ -736,7 +738,7 @@ LEARNING_PROTECTED_PATTERN = re.compile(
 
 
 def _normalize_intent_text(text: str) -> str:
-    lowered = text.lower().strip().replace("’", "'")
+    lowered = text.lower().strip().replace("â€™", "'")
     lowered = re.sub(r"[\s,]+", " ", lowered)
     return lowered
 
@@ -918,7 +920,9 @@ def _classify_speech_act(question: str) -> str:
     if is_question:
         return "status_question"
 
-    if IMPLEMENTATION_TASK_PATTERN.search(normalized):
+    if IMPLEMENTATION_TASK_PATTERN.search(
+        normalized
+    ) and _is_protected_implementation_task(normalized):
         return "implementation_task"
 
     return "normal_question"
@@ -930,6 +934,121 @@ def _build_task_guard_answer() -> str:
         "Use Operator Mode for repo writes, writes outside the approved sandbox, destructive actions, commit/push, or other protected mutations. "
         "No files were changed. No tests were run. No commit or push occurred."
     )
+
+
+def _is_protected_implementation_task(normalized_question: str) -> bool:
+    if not normalized_question:
+        return False
+
+    protected_markers = (
+        " repo",
+        " repository",
+        " codebase",
+        " workspace",
+        " worktree",
+        " file",
+        " files",
+        " folder",
+        " directory",
+        " x:\\",
+        " git",
+        " commit",
+        " push",
+        " branch",
+        " pull request",
+        " pr",
+        " pytest",
+        " npm",
+        " test suite",
+        " tests",
+        " docker",
+        " container",
+        " sandbox",
+        " implement patch",
+        " apply patch",
+    )
+    padded = f" {normalized_question} "
+    return any(marker in padded for marker in protected_markers)
+
+
+def _runtime_clock_timezone() -> ZoneInfo | timezone:
+    configured = (
+        os.getenv("XV7_LOCAL_TIMEZONE") or os.getenv("TZ") or "America/New_York"
+    ).strip()
+    try:
+        return ZoneInfo(configured)
+    except Exception:
+        return timezone.utc
+
+
+def _runtime_clock_now() -> datetime:
+    return datetime.now(_runtime_clock_timezone())
+
+
+def _format_runtime_date(now: datetime) -> str:
+    return f"{now.strftime('%A, %B')} {now.day}, {now.year}"
+
+
+def _format_runtime_time(now: datetime) -> str:
+    hour = now.hour % 12 or 12
+    return f"{hour}:{now.minute:02d} {now.strftime('%p')}"
+
+
+def _runtime_clock_system_prompt() -> str:
+    now = _runtime_clock_now()
+    tz_name = getattr(now.tzinfo, "key", None) or str(now.tzinfo or "UTC")
+    return (
+        "--- RUNTIME CLOCK ---\n"
+        f"Current runtime date/time: {_format_runtime_date(now)} at {_format_runtime_time(now)} ({tz_name}).\n"
+        "Use this date when answering current date, day, today, tomorrow, yesterday, or schedule questions.\n"
+        "Do not infer a different date from memory or prior conversation.\n"
+        "---------------------"
+    )
+
+
+def _is_runtime_clock_question(question: str) -> bool:
+    normalized = _normalize_intent_text(question).strip(" .!?")
+    direct_questions = {
+        "what is today's date",
+        "what is todays date",
+        "what date is it",
+        "what is the date",
+        "what day is it",
+        "what day is today",
+        "what is today",
+        "tell me today's date",
+        "tell me todays date",
+        "current date",
+        "today date",
+    }
+    if normalized in direct_questions:
+        return True
+    return bool(
+        re.search(
+            r"\b(today'?s? date|current date|what date|what day is it|what day is today)\b",
+            normalized,
+        )
+    )
+
+
+def _runtime_clock_answer() -> tuple[str, dict[str, Any]]:
+    now = _runtime_clock_now()
+    tz_name = getattr(now.tzinfo, "key", None) or str(now.tzinfo or "UTC")
+    visible_text = f"Today's date is {_format_runtime_date(now)} ({tz_name})."
+    context_receipt = {
+        "compact": f"Context receipt: Runtime clock ({tz_name}).",
+        "context_receipts": [
+            {
+                "layer": "runtime_clock",
+                "record_id": "RUNTIME-CLOCK",
+                "source": "server_clock",
+                "status": "active",
+                "timezone": tz_name,
+            }
+        ],
+        "record_ids": ["RUNTIME-CLOCK"],
+    }
+    return visible_text, context_receipt
 
 
 def _is_build_follow_up_prompt(question: str) -> bool:
@@ -1229,7 +1348,7 @@ def _active_focus_system_prompt(session_metadata: dict[str, Any]) -> str:
 
     return (
         "--- ACTIVE FOCUS (DIRECT USER INSTRUCTION) ---\n"
-        f"{label} — {summary}\n"
+        f"{label} â€” {summary}\n"
         "Treat this as the current working priority until the user changes it.\n"
         "Do not confuse roadmap phase with active user focus.\n"
         "----------------------------------------------\n"
@@ -1425,7 +1544,7 @@ def _active_focus_guided_plan_answer() -> str:
         "5. Use compact receipts to show what was applied, what source was used, and what changed.\n"
         "6. Verify persistence by checking behavior after new session, reload, and container restart.\n"
         "7. Reduce hallucinations by requiring explicit source/proof on repo and runtime status claims.\n\n"
-        "Clarifying question (only if needed now): which lane should I tune first for you — correction handling, preference persistence, or workflow habit learning?"
+        "Clarifying question (only if needed now): which lane should I tune first for you â€” correction handling, preference persistence, or workflow habit learning?"
     )
 
 
@@ -2453,6 +2572,51 @@ async def add_session_message(
         )
         if early_operator_action is not None:
             return await _store_operator_response(early_operator_action)
+
+    if _is_runtime_clock_question(payload.raw_text):
+        visible_text, clock_context_receipt = _runtime_clock_answer()
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "runtime_clock",
+            "brain_answer_source": "runtime_clock",
+            "intent_class": "status_question",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt(
+                clock_context_receipt, session_state.metadata
+            ),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=[],
+            action_history_refs=action_history_refs,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = policy_provenance
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
 
     if intent_class in {
         "user_correction",
@@ -3834,6 +3998,32 @@ async def add_session_message(
     except Exception:
         facts = {}
 
+    learned_rule_texts = [
+        str((getattr(record, "summary", "") or getattr(record, "body", ""))).strip()
+        for record in _active_learned_rules(learned_records)
+        if str((getattr(record, "summary", "") or getattr(record, "body", ""))).strip()
+    ]
+    active_focus_summary = ""
+    active_focus_payload = session_state.metadata.get("active_focus")
+    if isinstance(active_focus_payload, dict):
+        active_focus_summary = str(active_focus_payload.get("summary", "")).strip()
+
+    inference_state.messages.insert(
+        0,
+        ConversationMessage(
+            role="system",
+            content=build_commercial_system_prompt(
+                active_focus=active_focus_summary,
+                learned_rules=learned_rule_texts,
+                session_facts=facts,
+            ),
+        ),
+    )
+    inference_state.messages.insert(
+        0,
+        ConversationMessage(role="system", content=_runtime_clock_system_prompt()),
+    )
+
     facts_prompt = build_facts_system_prompt(facts)
     if facts_prompt:
         inference_state.messages.insert(
@@ -3926,3 +4116,4 @@ async def add_session_message(
     await memory_manager.update_session(updated_state)
 
     return updated_state
+

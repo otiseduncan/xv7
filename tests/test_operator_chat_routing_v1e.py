@@ -509,6 +509,17 @@ def test_create_new_repository_on_github_prompt_routes_to_operator_project_actio
 
     handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
         "Operator Mode: create a new repository on GitHub for this and push",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "earthx-github-proof"
+                        )
+                    }
+                }
+            ]
+        },
         operator_mode_enabled=True,
     )
 
@@ -592,12 +603,25 @@ def test_github_workflow_missing_remote_returns_clear_repo_target_message(
     monkeypatch.setattr("core.operator.manager.run_action", _run_action)
 
     handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
-        "push to github"
+        "push to github",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "harry-s-hot-dog-cart"
+                        )
+                    }
+                }
+            ]
+        },
     )
 
     assert handled is not None
     assert "has no github remote" in handled.answer.lower()
-    assert "create a new github repo named harry-s-hot-dog-cart" in handled.answer.lower()
+    assert (
+        "create a new github repo named harry-s-hot-dog-cart" in handled.answer.lower()
+    )
 
 
 def test_github_workflow_missing_gh_returns_clear_install_guidance(
@@ -631,7 +655,18 @@ def test_github_workflow_missing_gh_returns_clear_install_guidance(
     monkeypatch.setattr("core.operator.manager.run_action", _run_action)
 
     handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
-        "create a new repository on github and push"
+        "create a new repository on github and push",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "earthx-github-proof"
+                        )
+                    }
+                }
+            ]
+        },
     )
 
     assert handled is not None
@@ -712,9 +747,285 @@ def test_slash_github_create_routes_to_operator_project_action(
     monkeypatch.setattr("core.operator.manager.run_action", _run_action)
 
     handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
-        "/github create earthx-github-proof"
+        "/github create earthx-github-proof",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "earthx-github-proof"
+                        )
+                    }
+                }
+            ]
+        },
     )
 
     assert handled is not None
     payload = json.loads(str(forwarded["target"]))
     assert payload["create_github_repo"] is True
+
+
+def test_push_to_github_uses_active_exported_slug_for_repo_name(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "sandbox" / "marco-s-taco-cart"),
+                "pushed": False,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "push to github",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_target_path": "generated-sites/marco-s-taco-cart/index.html"
+                    }
+                }
+            ]
+        },
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["project_name"] == "marco-s-taco-cart"
+    assert payload["github_repo_name"] == "marco-s-taco-cart"
+    assert payload["write_project_files"] is False
+    assert payload["push"] is True
+
+
+def test_create_new_repo_named_routes_to_github_repo_creation_intent(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "sandbox" / "marco-s-taco-cart"),
+                "pushed": False,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "create a new repo named GitHub poop project",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "marco-s-taco-cart"
+                        )
+                    }
+                }
+            ]
+        },
+        operator_mode_enabled=False,
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["create_github_repo"] is True
+    assert payload["push"] is False
+    assert payload["github_repo_name"] == "github-poop-project"
+    assert payload["write_project_files"] is False
+
+
+def test_push_to_github_new_repo_carries_requested_repo_name(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "sandbox" / "marco-s-taco-cart"),
+                "pushed": False,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "push to github new repo X push proof",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_project_path": str(
+                            tmp_path / "sandbox" / "marco-s-taco-cart"
+                        )
+                    }
+                }
+            ]
+        },
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["create_github_repo"] is True
+    assert payload["push"] is True
+    assert payload["github_repo_name"] == "x-push-proof"
+    assert payload["write_project_files"] is False
+
+
+def test_missing_remote_suggests_active_exported_slug_repo_name(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        payload = json.loads(str(target or "{}"))
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            status="failed",
+            stderr="origin remote is not configured",
+            mutates_files=True,
+            data={
+                "missing_remote": True,
+                "suggested_repo_name": payload.get("github_repo_name", ""),
+                "repo_before": {
+                    "branch": "main",
+                    "remotes": [],
+                    "status_lines": ["## main"],
+                },
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "push to github",
+        session_metadata={
+            "artifact_history": [
+                {
+                    "artifact": {
+                        "sandbox_target_path": "generated-sites/marco-s-taco-cart/index.html"
+                    }
+                }
+            ]
+        },
+    )
+
+    assert handled is not None
+    assert "create a new github repo named marco-s-taco-cart" in handled.answer.lower()
+
+
+def test_push_to_github_uses_active_export_metadata_without_explicit_path_prompt(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    forwarded: dict[str, Any] = {}
+
+    def _run_action(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        forwarded["action_name"] = action_name
+        forwarded["target"] = target
+        return _result(
+            action_name=action_name,
+            action_id=action_id,
+            repo_root=repo_root,
+            mutates_files=True,
+            data={
+                "project_path": str(tmp_path / "sandbox" / "tony-s-taco-tavern"),
+                "pushed": False,
+            },
+        )
+
+    monkeypatch.setattr("core.operator.manager.run_action", _run_action)
+
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "push to github",
+        session_metadata={
+            "active_exported_artifact": {
+                "project_slug": "tony-s-taco-tavern",
+                "relative_project_path": "generated-sites/tony-s-taco-tavern",
+                "container_project_path": "/app/generated-sites/tony-s-taco-tavern",
+                "host_project_path": "X:\\xoduz-sandbox\\tony-s-taco-tavern",
+                "file_count": 10,
+                "entry_file": "index.html",
+            }
+        },
+    )
+
+    assert handled is not None
+    assert forwarded["action_name"] == "operator_github_proof_project"
+    payload = json.loads(str(forwarded["target"]))
+    assert payload["project_name"] == "tony-s-taco-tavern"
+    assert payload["github_repo_name"] == "tony-s-taco-tavern"
+    assert payload["sandbox_project_path"].endswith("tony-s-taco-tavern")
+    assert "need one confirmation" not in handled.answer.lower()
+
+
+def test_missing_path_confirmation_message_is_dynamic_not_stale_example(
+    tmp_path: Path,
+) -> None:
+    handled = OperatorManager(repo_root=tmp_path).try_handle_chat(
+        "push to github",
+        session_metadata={
+            "artifact_history": [],
+        },
+    )
+
+    assert handled is not None
+    assert handled.result.status == "pending"
+    assert "earthx-github-proof" not in handled.answer.lower()

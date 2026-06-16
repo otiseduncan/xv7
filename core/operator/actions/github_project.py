@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 import os
 from pathlib import Path
 import re
@@ -8,8 +9,21 @@ import subprocess
 from typing import Callable
 from typing import Any
 
+import yaml
+
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.operator.schema import OperatorActionResult, OperatorSafety
+
+
+DEFAULT_GITHUB_PUBLISH_PROFILE: dict[str, str] = {
+    "github_owner": "otiseduncan",
+    "git_user_name": "Otis Duncan",
+    "git_user_email": "otiseduncan@gmail.com",
+    "sandbox_root_host": "X:\\xoduz-sandbox",
+    "sandbox_root_container": "/app/generated-sites",
+    "proof_repo_pattern": "xv7-sandbox-export-proof-YYYYMMDD",
+    "proof_repo_url": "https://github.com/otiseduncan/xv7-sandbox-export-proof-20260614",
+}
 
 
 def _command_text(args: list[str]) -> str:
@@ -66,6 +80,103 @@ def _extract_origin_url(remotes: list[str]) -> str:
         if len(parts) >= 2 and parts[0] == "origin":
             return parts[1].strip()
     return ""
+
+
+def _profile_store_path() -> Path:
+    configured = str(os.getenv("XV7_GITHUB_PUBLISH_PROFILE_PATH", "")).strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path("/app/data/memory/github_publish_profile.json")
+
+
+def _system_config_candidates() -> list[Path]:
+    return [
+        Path("/app/config/system.yml"),
+        Path(__file__).resolve().parents[3] / "config" / "system.yml",
+        Path.cwd() / "config" / "system.yml",
+    ]
+
+
+def _sanitize_publish_profile(raw: dict[str, Any] | None) -> dict[str, str]:
+    payload = raw if isinstance(raw, dict) else {}
+    profile = dict(DEFAULT_GITHUB_PUBLISH_PROFILE)
+    for key in list(profile.keys()):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            profile[key] = value.strip()
+    return profile
+
+
+def _load_publish_profile_from_system_config() -> dict[str, str]:
+    for candidate in _system_config_candidates():
+        try:
+            if not candidate.exists():
+                continue
+            parsed = yaml.safe_load(candidate.read_text(encoding="utf-8"))
+            if not isinstance(parsed, dict):
+                continue
+            section = parsed.get("github_publish_profile")
+            if isinstance(section, dict):
+                return _sanitize_publish_profile(section)
+        except Exception:
+            continue
+    return dict(DEFAULT_GITHUB_PUBLISH_PROFILE)
+
+
+def _load_publish_profile_from_store() -> dict[str, str] | None:
+    path = _profile_store_path()
+    try:
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        return _sanitize_publish_profile(payload)
+    except Exception:
+        return None
+
+
+def _load_durable_publish_profile() -> tuple[dict[str, str], str]:
+    source = "defaults"
+    profile = _load_publish_profile_from_system_config()
+    if profile != DEFAULT_GITHUB_PUBLISH_PROFILE:
+        source = "config/system.yml"
+
+    stored = _load_publish_profile_from_store()
+    if stored:
+        profile = _sanitize_publish_profile({**profile, **stored})
+        source = "profile_store"
+
+    env_overrides = {
+        "github_owner": str(os.getenv("XV7_GITHUB_OWNER", "")).strip(),
+        "git_user_name": str(os.getenv("XV7_GIT_USER_NAME", "")).strip(),
+        "git_user_email": str(os.getenv("XV7_GIT_USER_EMAIL", "")).strip(),
+        "sandbox_root_host": (
+            str(os.getenv("XV7_SANDBOX_ROOT_DISPLAY", "")).strip()
+            or str(os.getenv("XV7_SANDBOX_ROOT", "")).strip()
+        ),
+        "sandbox_root_container": str(
+            os.getenv("XV7_SANDBOX_ROOT_CONTAINER", "")
+        ).strip(),
+        "proof_repo_pattern": str(
+            os.getenv("XV7_GITHUB_PROOF_REPO_PATTERN", "")
+        ).strip(),
+        "proof_repo_url": str(os.getenv("XV7_GITHUB_PROOF_REPO_URL", "")).strip(),
+    }
+    for key, value in env_overrides.items():
+        if value:
+            profile[key] = value
+            source = "env"
+
+    return profile, source
+
+
+def _persist_publish_profile(profile: dict[str, str]) -> None:
+    path = _profile_store_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_sanitize_publish_profile(profile), indent=2), encoding="utf-8"
+    )
 
 
 def _inspect_repo(
@@ -126,7 +237,9 @@ def _read_git_config(
     return (proc.stdout or "").strip()
 
 
-def _configured_identity_from_env() -> tuple[str, str]:
+def _configured_identity_from_env(
+    profile: dict[str, str] | None = None,
+) -> tuple[str, str]:
     name = (
         str(os.getenv("XV7_GIT_USER_NAME", "")).strip()
         or str(os.getenv("GIT_AUTHOR_NAME", "")).strip()
@@ -137,11 +250,16 @@ def _configured_identity_from_env() -> tuple[str, str]:
         or str(os.getenv("GIT_AUTHOR_EMAIL", "")).strip()
         or str(os.getenv("GIT_COMMITTER_EMAIL", "")).strip()
     )
+    if not name and isinstance(profile, dict):
+        name = str(profile.get("git_user_name") or "").strip()
+    if not email and isinstance(profile, dict):
+        email = str(profile.get("git_user_email") or "").strip()
     return name, email
 
 
 def _ensure_git_identity(
     run_command: Callable[[list[str]], subprocess.CompletedProcess[str]],
+    profile: dict[str, str] | None = None,
 ) -> tuple[bool, str, str, str]:
     local_name = _read_git_config(run_command, "user.name", use_global=False)
     local_email = _read_git_config(run_command, "user.email", use_global=False)
@@ -153,14 +271,24 @@ def _ensure_git_identity(
     if global_name and global_email:
         return True, global_name, global_email, ""
 
-    env_name, env_email = _configured_identity_from_env()
+    env_name, env_email = _configured_identity_from_env(profile)
     if env_name and env_email:
         set_name = run_command(["git", "config", "user.name", env_name])
         if set_name.returncode != 0:
-            return False, "", "", (set_name.stderr or "").strip() or "failed to set git user.name"
+            return (
+                False,
+                "",
+                "",
+                (set_name.stderr or "").strip() or "failed to set git user.name",
+            )
         set_email = run_command(["git", "config", "user.email", env_email])
         if set_email.returncode != 0:
-            return False, "", "", (set_email.stderr or "").strip() or "failed to set git user.email"
+            return (
+                False,
+                "",
+                "",
+                (set_email.stderr or "").strip() or "failed to set git user.email",
+            )
         return True, env_name, env_email, ""
 
     return (
@@ -272,6 +400,11 @@ def operator_github_proof_project(
 ) -> OperatorActionResult:
     started_at = datetime.now(UTC)
     sandbox_root = SandboxWriteManager.sandbox_root().resolve()
+    publish_profile, profile_source = _load_durable_publish_profile()
+    try:
+        _persist_publish_profile(publish_profile)
+    except Exception:
+        pass
 
     project_name = str(request.get("project_name") or "github-proof-project").strip()
     requested_path = str(request.get("project_path") or "").strip()
@@ -370,6 +503,8 @@ def operator_github_proof_project(
             data={
                 "project_path": str(project_path),
                 "sandbox_root": str(sandbox_root),
+                "publish_profile": publish_profile,
+                "publish_profile_source": profile_source,
                 "changed_files": changed_files,
                 "commands": commands_run,
                 "commands_run": commands_run,
@@ -425,7 +560,10 @@ def operator_github_proof_project(
     github_repo_url = ""
     remote_url = str(inspect_before.get("origin_url") or "")
     if changed_files:
-        identity_ok, _, _, identity_error = _ensure_git_identity(run_command)
+        identity_ok, _, _, identity_error = _ensure_git_identity(
+            run_command,
+            publish_profile,
+        )
         if not identity_ok:
             proc_identity = subprocess.CompletedProcess(
                 args=["git", "config", "user.name/user.email"],
@@ -767,6 +905,8 @@ def operator_github_proof_project(
         data={
             "project_path": str(project_path),
             "sandbox_root": str(sandbox_root),
+            "publish_profile": publish_profile,
+            "publish_profile_source": profile_source,
             "changed_files": changed_files,
             "commands": commands_run,
             "commands_run": commands_run,
