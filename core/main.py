@@ -129,6 +129,25 @@ from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
 from core.runtime.vector_store import VectorMemoryEngine
 from core.runtime.vector_memory_receipts import persist_vector_memory_round_trip
+from core.services.brain_record_service import (
+    build_runtime_brain_record_updates as _build_runtime_brain_record_updates_from_service,
+    list_runtime_brain_records as _list_runtime_brain_records_from_service,
+    mark_record_current as _mark_record_current_from_service,
+    mark_record_historical as _mark_record_historical_from_service,
+    mark_record_superseded as _mark_record_superseded_from_service,
+    serialize_refreshed_record_or_raise as _serialize_refreshed_record_or_raise_from_service,
+)
+from core.services.operator_action_service import (
+    build_operator_history_update as _build_operator_history_update_from_service,
+    operator_action_response as _operator_action_response_from_service,
+    should_clear_pending_after_confirm as _should_clear_pending_after_confirm_from_service,
+    stage_operator_response as _stage_operator_response_from_service,
+)
+from core.services.runtime_status_service import (
+    active_model_payload as _active_model_payload_from_service,
+    ensure_required_models_available as _ensure_required_models_available_from_service,
+    runtime_communication_proof_status_payload as _runtime_communication_proof_status_payload_from_service,
+)
 
 
 def _resolve_operator_repo_root(
@@ -781,14 +800,7 @@ async def runtime_status() -> dict:
 
 @app.get("/runtime/communication-proof-status")
 async def runtime_communication_proof_status() -> dict[str, Any]:
-    return {
-        "communication_core": "green",
-        "active_focus_persistence": "green",
-        "runtime_communication_proof": "green",
-        "browser_receipt_visibility": "green",
-        "last_completed_code": 8,
-        "next_recommended_code": 9,
-    }
+    return _runtime_communication_proof_status_payload_from_service()
 
 
 @app.get("/runtime/ollama")
@@ -809,15 +821,7 @@ async def runtime_model_profiles() -> dict[str, Any]:
 @app.get("/runtime/models/active")
 async def runtime_active_model_profile(profile: str | None = None) -> dict[str, Any]:
     payload = await fetch_runtime_models(profile_override=profile)
-    return {
-        "active_profile": payload["active_profile"],
-        "profile_source": payload["profile_source"],
-        "resolved_models": payload["resolved_models"],
-        "role_aliases": payload["role_aliases"],
-        "availability": payload["availability"],
-        "ollama": payload["ollama"],
-        "config_error": payload["config_error"],
-    }
+    return _active_model_payload_from_service(payload)
 
 
 @app.put(
@@ -834,34 +838,13 @@ async def set_runtime_active_model_profile(
 
     runtime_payload = await fetch_runtime_models()
     if payload.require_available:
-        if not runtime_payload.get("ollama", {}).get("reachable", False):
+        try:
+            _ensure_required_models_available_from_service(runtime_payload)
+        except ValueError:
             clear_runtime_profile_override()
-            raise ValueError(
-                "Cannot apply profile with require_available=true because Ollama is unreachable."
-            )
+            raise
 
-        availability = runtime_payload.get("availability", {})
-        missing = [
-            role
-            for role in ("chat", "reasoning", "code", "embedding")
-            if not bool(availability.get(role, False))
-        ]
-        if missing:
-            clear_runtime_profile_override()
-            raise ValueError(
-                "Cannot apply profile with require_available=true; missing required "
-                f"models for roles: {', '.join(missing)}."
-            )
-
-    return {
-        "active_profile": runtime_payload["active_profile"],
-        "profile_source": runtime_payload["profile_source"],
-        "resolved_models": runtime_payload["resolved_models"],
-        "role_aliases": runtime_payload["role_aliases"],
-        "availability": runtime_payload["availability"],
-        "ollama": runtime_payload["ollama"],
-        "config_error": runtime_payload["config_error"],
-    }
+    return _active_model_payload_from_service(runtime_payload)
 
 
 @app.delete(
@@ -871,15 +854,7 @@ async def set_runtime_active_model_profile(
 async def clear_runtime_active_model_profile() -> dict[str, Any]:
     clear_runtime_profile_override()
     payload = await fetch_runtime_models()
-    return {
-        "active_profile": payload["active_profile"],
-        "profile_source": payload["profile_source"],
-        "resolved_models": payload["resolved_models"],
-        "role_aliases": payload["role_aliases"],
-        "availability": payload["availability"],
-        "ollama": payload["ollama"],
-        "config_error": payload["config_error"],
-    }
+    return _active_model_payload_from_service(payload)
 
 
 @app.get("/runtime/models/effective")
@@ -919,64 +894,18 @@ async def runtime_brain_records(
     history_only: bool = False,
     review_only: bool = False,
 ) -> dict[str, Any]:
-    entries = brain_context_manager.loader.load_records_with_source()
-    records: list[dict[str, Any]] = []
-
-    for record, source, path in entries:
-        if layer is not None and record.layer != layer:
-            continue
-        if pending_only and record.status not in {"pending", "pending_review"}:
-            continue
-        if not include_archived and record.status not in {
-            "active",
-            "pending",
-            "pending_review",
-        }:
-            continue
-        if learned_only:
-            tags = {str(tag).lower() for tag in record.tags}
-            if "learned-rule" not in tags and "otis-learning" not in tags:
-                continue
-        serialized = _serialize_brain_record(record=record, source=source, path=path)
-        effective_relevance = serialized.get(
-            "effective_relevance_state", record.relevance_state
-        )
-        stored_relevance = str(
-            serialized.get("relevance_state", record.relevance_state)
-        )
-        status_label = serialized.get("status_label", _status_label(record.status))
-
-        if relevance is not None and effective_relevance != relevance:
-            continue
-        if history_only and not (
-            stored_relevance in {"historical", "superseded", "expired"}
-            or effective_relevance in {"historical", "superseded", "expired"}
-        ):
-            continue
-        if review_only and not (
-            status_label == "pending"
-            or stored_relevance == "needs_review"
-            or effective_relevance == "needs_review"
-            or bool(serialized.get("hygiene_recommendations"))
-            or any(
-                str(flag).lower()
-                in {
-                    "old_phase_reference",
-                    "completed_milestone",
-                    "mixed_historical_and_operational",
-                    "mixed_historical_and_current",
-                }
-                for flag in (serialized.get("hygiene_flags") or [])
-            )
-        ):
-            continue
-
-        records.append(serialized)
-
-    return {
-        "count": len(records),
-        "records": records,
-    }
+    return _list_runtime_brain_records_from_service(
+        entries=brain_context_manager.loader.load_records_with_source(),
+        layer=layer,
+        include_archived=include_archived,
+        pending_only=pending_only,
+        learned_only=learned_only,
+        relevance=relevance,
+        history_only=history_only,
+        review_only=review_only,
+        serialize_brain_record=_serialize_brain_record,
+        status_label=_status_label,
+    )
 
 
 @app.put(
@@ -992,49 +921,19 @@ async def update_runtime_brain_record(
         raise ValueError(f"Record not found: {record_id}")
 
     record, _, _ = found
-    updates: dict[str, Any] = {}
-
-    if payload.layer is not None:
-        updates["layer"] = payload.layer
-    if payload.title is not None:
-        updates["title"] = payload.title.strip()
-    if payload.body is not None:
-        cleaned_body = payload.body.strip()
-        updates["body"] = cleaned_body
-        updates["summary"] = _summary_from_body(cleaned_body)
-    if payload.tags is not None:
-        updates["tags"] = [
-            tag
-            for tag in {
-                str(tag).strip()
-                for tag in payload.tags
-                if isinstance(tag, str) and tag.strip()
-            }
-        ]
-    if payload.status is not None:
-        updates["status"] = payload.status
-    if payload.relevance_state is not None:
-        updates["relevance_state"] = payload.relevance_state
-    if payload.superseded_by is not None:
-        updates["superseded_by"] = payload.superseded_by.strip() or None
-    if payload.valid_from is not None:
-        updates["valid_from"] = payload.valid_from.strip() or None
-    if payload.valid_until is not None:
-        updates["valid_until"] = payload.valid_until.strip() or None
-    if payload.applies_when is not None:
-        updates["applies_when"] = payload.applies_when.strip() or None
-    if payload.review_reason is not None:
-        updates["review_reason"] = payload.review_reason.strip() or None
-    if payload.last_reviewed_at is not None:
-        updates["last_reviewed_at"] = payload.last_reviewed_at.strip() or None
+    updates = _build_runtime_brain_record_updates_from_service(
+        payload=payload,
+        summary_from_body=_summary_from_body,
+    )
 
     updated = record.model_copy(update=updates)
     brain_context_manager.loader.save_runtime_override(updated)
-    refreshed = brain_context_manager.loader.get_record_with_source(record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Updated record not found after save: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=record_id,
+        missing_message=f"Updated record not found after save: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1043,11 +942,12 @@ async def update_runtime_brain_record(
 )
 async def deactivate_runtime_brain_record(record_id: str) -> dict[str, Any]:
     updated = brain_context_manager.loader.archive_record(record_id)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Deactivated record not found after save: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Deactivated record not found after save: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1056,11 +956,12 @@ async def deactivate_runtime_brain_record(record_id: str) -> dict[str, Any]:
 )
 async def set_active_runtime_brain_record(record_id: str) -> dict[str, Any]:
     updated = brain_context_manager.loader.set_record_active(record_id)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Activated record not found after save: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Activated record not found after save: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1069,11 +970,12 @@ async def set_active_runtime_brain_record(record_id: str) -> dict[str, Any]:
 )
 async def approve_runtime_brain_record(record_id: str) -> dict[str, Any]:
     updated = brain_context_manager.loader.approve_record(record_id)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Approved record not found after save: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Approved record not found after save: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1082,11 +984,12 @@ async def approve_runtime_brain_record(record_id: str) -> dict[str, Any]:
 )
 async def reject_runtime_brain_record(record_id: str) -> dict[str, Any]:
     updated = brain_context_manager.loader.reject_record(record_id)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Rejected record not found after save: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Rejected record not found after save: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1098,20 +1001,14 @@ async def mark_current_runtime_brain_record(record_id: str) -> dict[str, Any]:
     if found is None:
         raise ValueError(f"Record not found: {record_id}")
     record, _, _ = found
-    updated = record.model_copy(
-        update={
-            "status": "active",
-            "relevance_state": "current",
-            "superseded_by": None,
-            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+    updated = _mark_record_current_from_service(record)
     brain_context_manager.loader.save_runtime_override(updated)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Record not found after update: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Record not found after update: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1123,19 +1020,14 @@ async def mark_historical_runtime_brain_record(record_id: str) -> dict[str, Any]
     if found is None:
         raise ValueError(f"Record not found: {record_id}")
     record, _, _ = found
-    updated = record.model_copy(
-        update={
-            "relevance_state": "historical",
-            "review_reason": record.review_reason or "Marked historical by operator.",
-            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+    updated = _mark_record_historical_from_service(record)
     brain_context_manager.loader.save_runtime_override(updated)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Record not found after update: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Record not found after update: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1154,21 +1046,18 @@ async def mark_superseded_runtime_brain_record(
         raise ValueError(f"Record not found: {record_id}")
     record, _, _ = found
 
-    updated = record.model_copy(
-        update={
-            "relevance_state": "superseded",
-            "status": "disabled",
-            "superseded_by": payload.superseded_by,
-            "review_reason": payload.review_reason or "Superseded by newer record.",
-            "last_reviewed_at": datetime.now(timezone.utc).isoformat(),
-        }
+    updated = _mark_record_superseded_from_service(
+        record,
+        superseded_by=payload.superseded_by,
+        review_reason=payload.review_reason,
     )
     brain_context_manager.loader.save_runtime_override(updated)
-    refreshed = brain_context_manager.loader.get_record_with_source(updated.record_id)
-    if refreshed is None:
-        raise RuntimeError(f"Record not found after update: {record_id}")
-    saved_record, source, path = refreshed
-    return _serialize_brain_record(record=saved_record, source=source, path=path)
+    return _serialize_refreshed_record_or_raise_from_service(
+        loader=brain_context_manager.loader,
+        record_id=updated.record_id,
+        missing_message=f"Record not found after update: {record_id}",
+        serialize_brain_record=_serialize_brain_record,
+    )
 
 
 @app.post(
@@ -1343,21 +1232,20 @@ async def stage_operator_action(payload: OperatorStageRequest) -> dict[str, Any]
         session_metadata=session_state.metadata,
     )
 
-    structured_receipt = stage_result["result"].structured_receipt()
-    history = append_history(session_state.metadata, structured_receipt)
-    session_state.metadata["operator_last_action"] = stage_result["result"].model_dump(
-        mode="json"
+    structured_receipt, _ = _build_operator_history_update_from_service(
+        session_metadata=session_state.metadata,
+        result=stage_result["result"],
+        append_history_fn=append_history,
     )
-    session_state.metadata["operator_action_history"] = history
     await memory_manager.update_session(session_state)
 
-    return {
-        "session_id": str(payload.session_id),
-        "answer": stage_result["answer"],
-        "executed": stage_result["executed"],
-        "pending_action": stage_result["pending_action"],
-        "receipt": structured_receipt,
-    }
+    return _stage_operator_response_from_service(
+        session_id=str(payload.session_id),
+        answer=stage_result["answer"],
+        executed=stage_result["executed"],
+        pending_action=stage_result["pending_action"],
+        receipt=structured_receipt,
+    )
 
 
 @app.post(
@@ -1376,27 +1264,25 @@ async def confirm_operator_action(payload: OperatorConfirmRequest) -> dict[str, 
         typed_confirmation=payload.typed_confirmation,
     )
     result = confirmation["result"]
-    structured_receipt = result.structured_receipt()
+    structured_receipt, _ = _build_operator_history_update_from_service(
+        session_metadata=session_state.metadata,
+        result=result,
+        append_history_fn=append_history,
+    )
 
-    should_clear = result.status in {"success", "cancelled", "not_implemented"}
-    if result.status == "failed":
-        err = str(result.stderr_summary or "").lower()
-        should_clear = "typed confirmation did not match" not in err
+    should_clear = _should_clear_pending_after_confirm_from_service(result)
 
     if should_clear:
         operator_manager.clear_pending_action(session_state.metadata)
 
-    history = append_history(session_state.metadata, structured_receipt)
-    session_state.metadata["operator_last_action"] = result.model_dump(mode="json")
-    session_state.metadata["operator_action_history"] = history
     await memory_manager.update_session(session_state)
 
-    return {
-        "session_id": str(payload.session_id),
-        "answer": confirmation["answer"],
-        "receipt": structured_receipt,
-        "pending_action": operator_manager.get_pending_action(session_state.metadata),
-    }
+    return _operator_action_response_from_service(
+        session_id=str(payload.session_id),
+        answer=confirmation["answer"],
+        receipt=structured_receipt,
+        pending_action=operator_manager.get_pending_action(session_state.metadata),
+    )
 
 
 @app.post(
@@ -1415,20 +1301,19 @@ async def cancel_operator_action(payload: OperatorCancelRequest) -> dict[str, An
     cancellation = operator_manager.cancel_pending_action(pending)
     operator_manager.clear_pending_action(session_state.metadata)
 
-    structured_receipt = cancellation["result"].structured_receipt()
-    history = append_history(session_state.metadata, structured_receipt)
-    session_state.metadata["operator_last_action"] = cancellation["result"].model_dump(
-        mode="json"
+    structured_receipt, _ = _build_operator_history_update_from_service(
+        session_metadata=session_state.metadata,
+        result=cancellation["result"],
+        append_history_fn=append_history,
     )
-    session_state.metadata["operator_action_history"] = history
     await memory_manager.update_session(session_state)
 
-    return {
-        "session_id": str(payload.session_id),
-        "answer": cancellation["answer"],
-        "receipt": structured_receipt,
-        "pending_action": None,
-    }
+    return _operator_action_response_from_service(
+        session_id=str(payload.session_id),
+        answer=cancellation["answer"],
+        receipt=structured_receipt,
+        pending_action=None,
+    )
 
 
 @app.post(
