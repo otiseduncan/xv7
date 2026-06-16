@@ -51,3 +51,20 @@ class OperatorCancelRequest(BaseModel):
 
     session_id: UUID
     action_id: str = Field(min_length=1)
+
+
+class UpdateFactsRequest(BaseModel):
+    """Payload for updating persistent memory facts for a session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    facts: dict[str, Any] = Field(default_factory=dict)
+
+
+class SetActiveModelProfileRequest(BaseModel):
+    """Payload for setting runtime active model profile override."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = Field(min_length=1)
+    require_available: bool = Field(default=True)
