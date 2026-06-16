@@ -167,8 +167,13 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
                 if isinstance(result.data.get("publish_profile", {}), dict)
                 else {}
             )
-            profile_owner = str(publish_profile.get("github_owner") or "").strip() or "unknown"
-            profile_source = str(result.data.get("publish_profile_source") or "").strip() or "unknown"
+            profile_owner = (
+                str(publish_profile.get("github_owner") or "").strip() or "unknown"
+            )
+            profile_source = (
+                str(result.data.get("publish_profile_source") or "").strip()
+                or "unknown"
+            )
             remotes = result.data.get("remotes", [])
             remote_count = len(remotes) if isinstance(remotes, list) else 0
             status_lines = result.data.get("status_lines", [])
@@ -196,7 +201,10 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
         status_lines = repo_before.get("status_lines", [])
         status_count = len(status_lines) if isinstance(status_lines, list) else 0
         if bool(result.data.get("missing_remote")):
-            suggested_name = str(result.data.get("suggested_repo_name") or "").strip() or "github-proof-project"
+            suggested_name = (
+                str(result.data.get("suggested_repo_name") or "").strip()
+                or "github-proof-project"
+            )
             return (
                 "The sandbox project is ready locally, but it has no GitHub remote. "
                 f"Tell me the repo target or say create a new GitHub repo named {suggested_name}."
@@ -262,8 +270,16 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
         return f"Read {path}:\n{content}"
     if action_name == "runtime_health":
         health = result.data.get("health", {}) if isinstance(result.data, dict) else {}
-        runtime_ok = bool(result.data.get("runtime_status")) if isinstance(result.data, dict) else False
-        checked_from = result.data.get("checked_from", "unknown") if isinstance(result.data, dict) else "unknown"
+        runtime_ok = (
+            bool(result.data.get("runtime_status"))
+            if isinstance(result.data, dict)
+            else False
+        )
+        checked_from = (
+            result.data.get("checked_from", "unknown")
+            if isinstance(result.data, dict)
+            else "unknown"
+        )
         return (
             f"Runtime health check: checked_from={checked_from}; "
             f"health={health.get('status', 'unknown')}; runtime_status_loaded={runtime_ok}."
@@ -280,7 +296,9 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
     if action_name == "operator_environment":
         git_available = bool(result.data.get("git_available", False))
         docker_cli_available = bool(result.data.get("docker_cli_available", False))
-        docker_socket_available = bool(result.data.get("docker_socket_available", False))
+        docker_socket_available = bool(
+            result.data.get("docker_socket_available", False)
+        )
         return (
             "Operator environment (read-only): "
             f"git_available={git_available}, "
@@ -293,7 +311,9 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
             os_name = str(scan.get("os_name") or "unknown")
             hostname = str(scan.get("hostname") or "unknown")
             uptime = scan.get("uptime_seconds")
-            return f"System info: host={hostname}; os={os_name}; uptime_seconds={uptime}."
+            return (
+                f"System info: host={hostname}; os={os_name}; uptime_seconds={uptime}."
+            )
         return "Host system scan completed."
     if action_name == "scan_cpu":
         scan = result.data.get("result", {})
@@ -301,7 +321,9 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
             name = str(scan.get("name") or "unknown")
             load = scan.get("load_percent")
             speed = scan.get("current_clock_mhz")
-            return f"CPU status: {name}; load_percent={load}; current_clock_mhz={speed}."
+            return (
+                f"CPU status: {name}; load_percent={load}; current_clock_mhz={speed}."
+            )
         return "CPU scan completed."
     if action_name == "scan_gpu":
         scan = result.data.get("result", {})
@@ -348,7 +370,9 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
         parts = []
         for item in logs:
             if isinstance(item, dict):
-                parts.append(f"{item.get('file', 'unknown')} (lines={item.get('line_count', 0)})")
+                parts.append(
+                    f"{item.get('file', 'unknown')} (lines={item.get('line_count', 0)})"
+                )
         return "Log summary: " + "; ".join(parts)
     if action_name == "memory_audit":
         counts = result.data.get("status_counts", {})

@@ -168,7 +168,9 @@ def extract_repo_name_from_prompt(source_text: str) -> str:
     return ""
 
 
-def missing_project_path_message(*, candidate_paths: list[str], project_name_hint: str) -> str:
+def missing_project_path_message(
+    *, candidate_paths: list[str], project_name_hint: str
+) -> str:
     if candidate_paths:
         example = candidate_paths[0]
     else:

@@ -38,6 +38,16 @@ from core.operator.operator_paths import (
     resolve_target_path,
 )
 from core.operator.operator_receipts import build_operator_answer
+from core.operator.protected_confirmation import (
+    cancel_pending_action as service_cancel_pending_action,
+    confirm_pending_action as service_confirm_pending_action,
+)
+from core.operator.staged_action_service import (
+    clear_pending_action as service_clear_pending_action,
+    get_pending_action as service_get_pending_action,
+    pending_key as service_pending_key,
+    stage_slash_command as service_stage_slash_command,
+)
 from core.operator.operator_types import OperatorExecution
 from core.operator.registry import build_operator_registry, run_action
 from core.operator.schema import (
@@ -87,18 +97,15 @@ class OperatorManager:
 
     @staticmethod
     def _pending_key() -> str:
-        return "operator_pending_action"
+        return service_pending_key()
 
     def get_pending_action(
         self, session_metadata: dict[str, Any]
     ) -> dict[str, Any] | None:
-        pending = session_metadata.get(self._pending_key())
-        if not isinstance(pending, dict):
-            return None
-        return pending
+        return service_get_pending_action(session_metadata)
 
     def clear_pending_action(self, session_metadata: dict[str, Any]) -> None:
-        session_metadata.pop(self._pending_key(), None)
+        service_clear_pending_action(session_metadata)
 
     def _resolve_target_path(self, raw: str) -> Path:
         return resolve_target_path(raw, self.repo_root)
@@ -665,190 +672,22 @@ class OperatorManager:
         operator_mode: bool,
         session_metadata: dict[str, Any],
     ) -> dict[str, Any]:
-        normalized = command_text.strip()
-        slash, args = self._parse_slash_command(normalized)
-        spec = self.slash_commands.get(slash)
-        if spec is None:
-            result = self._build_result(
-                action_name="unknown_slash_command",
-                status="failed",
-                command_preview=normalized,
-                target=str(self.repo_root),
-                stderr=f"Unknown slash command: {slash}",
-            )
-            return {
-                "answer": f"Unknown slash command: {slash}",
-                "result": result,
-                "pending_action": None,
-                "executed": False,
-            }
-
-        if slash == "/build-task" and not operator_mode:
-            result = self._build_result(
-                action_name="build_task",
-                status="denied",
-                mode_override="operator",
-                command_preview=normalized,
-                target=str(self.repo_root),
-                stderr="/build-task requires Operator Mode.",
-            )
-            return {
-                "answer": "/build-task requires Operator Mode. No files were changed. No tests were run. No commit or push occurred.",
-                "result": result,
-                "pending_action": None,
-                "executed": False,
-            }
-
-        if slash in FIRST_CLASS_SLASH_COMMANDS:
-            execution = self.try_handle_chat(
-                command_text,
-                session_metadata=session_metadata,
-                operator_mode_enabled=True,
-            )
-            if execution is None:
-                result = self._build_result(
-                    action_name=slash.strip("/"),
-                    status="failed",
-                    command_preview=normalized,
-                    target=str(self.repo_root),
-                    stderr="Command was recognized but could not be routed.",
-                    mutates_files=True,
-                )
-                return {
-                    "answer": self._build_answer(result.action_name, result),
-                    "result": result,
-                    "pending_action": None,
-                    "executed": True,
-                }
-            pending_action = None
-            executed = execution.result.status != "pending"
-            if execution.result.status == "pending":
-                pending_action = {
-                    "action_id": execution.result.action_id,
-                    "command_name": slash.strip("/"),
-                    "target": execution.result.target,
-                    "command_preview": normalized,
-                    "status": "pending",
-                    "requires_confirmation": True,
-                }
-            return {
-                "answer": execution.answer,
-                "result": execution.result,
-                "pending_action": pending_action,
-                "executed": executed,
-            }
-
-        if spec.mode != "read_only" and not operator_mode:
-            result = self._build_result(
-                action_name=slash.strip("/"),
-                status="denied",
-                command_preview=normalized,
-                target=str(self.repo_root),
-                stderr="Operator Mode is OFF. Mutation slash commands are disabled.",
-                mutates_files=True,
-            )
-            return {
-                "answer": "Operator Mode is OFF. This mutation command is blocked until Operator Mode is enabled.",
-                "result": result,
-                "pending_action": None,
-                "executed": False,
-            }
-
-        if slash == "/build-task":
-            result = self._build_task_plan_result(normalized, args)
-            return {
-                "answer": self._build_answer("build_task", result),
-                "result": result,
-                "pending_action": None,
-                "executed": True,
-            }
-
-        if spec.mode == "read_only":
-            result = self._read_only_scan_result(slash, args)
-            return {
-                "answer": self._build_answer(result.action_name, result),
-                "result": result,
-                "pending_action": None,
-                "executed": True,
-            }
-
-        if slash == "/apply-patch":
-            invalid = self._validate_apply_patch_stage_payload(normalized, args)
-            if invalid is not None:
-                return {
-                    "answer": self._build_answer(invalid.action_name, invalid),
-                    "result": invalid,
-                    "pending_action": None,
-                    "executed": True,
-                }
-
-        action_id = self._next_action_id()
-        now = datetime.now(UTC)
-        target = args[0] if args else "(no target)"
-        confirmation_phrase = None
-        if spec.requires_typed_confirmation and spec.confirmation_phrase:
-            confirmation_phrase = spec.confirmation_phrase.replace("{target}", target)
-
-        pending_action = {
-            "action_id": action_id,
-            "command_name": slash.strip("/"),
-            "category": spec.category,
-            "target": target,
-            "arguments": args,
-            "mode": "operator",
-            "risk_level": spec.risk_level,
-            "command_preview": normalized,
-            "human_summary": f"Prepare {slash} on {target}",
-            "reversible": spec.reversible,
-            "requires_confirmation": True,
-            "requires_typed_confirmation": spec.requires_typed_confirmation,
-            "confirmation_phrase": confirmation_phrase,
-            "status": "pending",
-            "created_at": now.isoformat(),
-            "expires_at": datetime.fromtimestamp(
-                now.timestamp() + self.pending_ttl_seconds, tz=UTC
-            ).isoformat(),
-            "implemented": spec.implemented,
-        }
-        session_metadata[self._pending_key()] = pending_action
-
-        result = OperatorActionResult(
-            action_id=action_id,
-            action_name=slash.strip("/"),
-            mode="high_risk" if spec.risk_level == "high" else "operator",
-            status="pending",
-            started_at=now,
-            completed_at=now,
-            command_or_operation=normalized,
-            target=target,
-            stdout_summary="pending confirmation",
-            stderr_summary="",
-            exit_code=None,
-            data={
-                "risk_level": spec.risk_level,
-                "reversible": spec.reversible,
-                "requires_typed_confirmation": spec.requires_typed_confirmation,
-                "confirmation_phrase": confirmation_phrase,
-                "command_preview": normalized,
-                "status": "pending_confirmation",
-            },
-            safety=OperatorSafety(
-                allowed=True,
-                read_only=False,
-                mutates_files=True,
-                requires_approval=True,
-            ),
-            receipt_label=f"{slash.strip('/')} {action_id}",
+        return service_stage_slash_command(
+            command_text=command_text,
+            operator_mode=operator_mode,
+            session_metadata=session_metadata,
+            repo_root=self.repo_root,
+            pending_ttl_seconds=self.pending_ttl_seconds,
+            slash_commands=self.slash_commands,
+            parse_slash_command=self._parse_slash_command,
+            build_result=self._build_result,
+            build_answer=self._build_answer,
+            try_handle_chat=self.try_handle_chat,
+            build_task_plan_result=self._build_task_plan_result,
+            read_only_scan_result=self._read_only_scan_result,
+            validate_apply_patch_stage_payload=self._validate_apply_patch_stage_payload,
+            next_action_id=self._next_action_id,
         )
-        answer = (
-            "I'm ready to perform this operator action, but I need confirmation first."
-        )
-        return {
-            "answer": answer,
-            "result": result,
-            "pending_action": pending_action,
-            "executed": False,
-        }
 
     def confirm_pending_action(
         self,
@@ -856,139 +695,25 @@ class OperatorManager:
         *,
         typed_confirmation: str | None,
     ) -> dict[str, Any]:
-        if not pending_action:
-            result = self._build_result(
-                action_name="operator_confirm",
-                status="failed",
-                command_preview="confirm pending operator action",
-                target=str(self.repo_root),
-                stderr="No pending operator action to confirm.",
-            )
-            return {
-                "answer": "No pending operator action to confirm.",
-                "result": result,
-            }
-
-        expires_at = str(pending_action.get("expires_at", ""))
-        if expires_at:
-            try:
-                expiry = datetime.fromisoformat(expires_at)
-                if datetime.now(UTC) > expiry:
-                    result = self._build_result(
-                        action_name=str(
-                            pending_action.get("command_name", "operator_action")
-                        ),
-                        status="failed",
-                        command_preview=str(pending_action.get("command_preview", "")),
-                        target=str(pending_action.get("target", str(self.repo_root))),
-                        stderr="Pending action expired.",
-                    )
-                    return {
-                        "answer": "Pending action expired. Stage the command again.",
-                        "result": result,
-                    }
-            except Exception:
-                pass
-
-        if pending_action.get("requires_typed_confirmation"):
-            expected = str(pending_action.get("confirmation_phrase") or "").strip()
-            provided = str(typed_confirmation or "").strip()
-            if not expected or provided != expected:
-                result = self._build_result(
-                    action_name=str(
-                        pending_action.get("command_name", "operator_action")
-                    ),
-                    status="failed",
-                    mode_override="high_risk",
-                    command_preview=str(pending_action.get("command_preview", "")),
-                    target=str(pending_action.get("target", str(self.repo_root))),
-                    stderr="Typed confirmation did not match.",
-                    data={"typed_confirmation": "mismatch"},
-                )
-                return {
-                    "answer": "Typed confirmation did not match. Action is still blocked.",
-                    "result": result,
-                }
-
-        slash = "/" + str(pending_action.get("command_name", "")).lstrip("/")
-        args = pending_action.get("arguments", [])
-        spec = self.slash_commands.get(slash)
-        if spec is None:
-            result = self._build_result(
-                action_name=str(pending_action.get("command_name", "operator_action")),
-                status="failed",
-                command_preview=str(pending_action.get("command_preview", "")),
-                target=str(pending_action.get("target", str(self.repo_root))),
-                stderr="Pending command no longer exists.",
-            )
-            return {"answer": "Pending command no longer exists.", "result": result}
-
-        if not spec.implemented:
-            result = self._build_result(
-                action_name=str(pending_action.get("command_name", "operator_action")),
-                status="not_implemented",
-                mode_override="high_risk"
-                if bool(pending_action.get("requires_typed_confirmation"))
-                else "operator",
-                command_preview=str(pending_action.get("command_preview", "")),
-                target=str(pending_action.get("target", str(self.repo_root))),
-                stderr="Action not implemented yet.",
-                data={"typed_confirmation": "matched"}
-                if bool(pending_action.get("requires_typed_confirmation"))
-                else {},
-                mutates_files=True,
-            )
-            return {"answer": "Action not implemented yet.", "result": result}
-
-        result = self._execute_mutation(
-            slash, list(args) if isinstance(args, list) else []
+        return service_confirm_pending_action(
+            pending_action=pending_action,
+            typed_confirmation=typed_confirmation,
+            repo_root=self.repo_root,
+            slash_commands=self.slash_commands,
+            build_result=self._build_result,
+            execute_mutation=self._execute_mutation,
+            build_answer=self._build_answer,
         )
-        if result.status == "success":
-            answer = f"Operator action {result.action_name} executed successfully."
-        else:
-            answer = self._build_answer(result.action_name, result)
-        return {"answer": answer, "result": result}
 
     def cancel_pending_action(
         self, pending_action: dict[str, Any] | None
     ) -> dict[str, Any]:
-        if not pending_action:
-            result = self._build_result(
-                action_name="operator_cancel",
-                status="failed",
-                command_preview="cancel pending operator action",
-                target=str(self.repo_root),
-                stderr="No pending operator action to cancel.",
-            )
-            return {"answer": "No pending operator action to cancel.", "result": result}
-
-        result = OperatorActionResult(
-            action_id=str(pending_action.get("action_id", self._next_action_id())),
-            action_name=str(pending_action.get("command_name", "operator_action")),
-            mode="high_risk"
-            if bool(pending_action.get("requires_typed_confirmation"))
-            else "operator",
-            status="cancelled",
-            started_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC),
-            command_or_operation=str(pending_action.get("command_preview", "cancel")),
-            target=str(pending_action.get("target", str(self.repo_root))),
-            stdout_summary="pending action cancelled",
-            stderr_summary="",
-            exit_code=None,
-            data={"status": "cancelled"},
-            safety=OperatorSafety(
-                allowed=True,
-                read_only=False,
-                requires_approval=True,
-                mutates_files=True,
-            ),
-            receipt_label=f"{pending_action.get('command_name', 'operator_action')} {pending_action.get('action_id', 'n/a')}",
+        return service_cancel_pending_action(
+            pending_action=pending_action,
+            repo_root=self.repo_root,
+            build_result=self._build_result,
+            next_action_id=self._next_action_id,
         )
-        return {
-            "answer": "Pending operator action was cancelled.",
-            "result": result,
-        }
 
     def _next_action_id(self) -> str:
         self._counter += 1
