@@ -554,6 +554,19 @@ class MemoryAutoPilotService:
             return MemorySignal.answer_style_preference
 
         if MemoryAutoPilotService.COMMUNICATION_PATTERN.search(normalized):
+            # CI-specific proof guard directives must fall through to the main intent
+            # router so they are classified as hallucination_guard and saved as
+            # BrainRecords with proof-guard tags rather than generic memory records.
+            if re.search(r"\b(ci|github\s+actions?)\b", normalized) and any(
+                token in normalized
+                for token in (
+                    "check proof",
+                    "proof first",
+                    "do not guess",
+                    "don't guess",
+                )
+            ):
+                return MemorySignal.no_memory
             return MemorySignal.communication_preference
 
         if MemoryAutoPilotService.WORKFLOW_PATTERN.search(normalized):
