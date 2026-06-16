@@ -21,6 +21,7 @@ from core.api.brain_records import (
     status_label as _status_label,
     summary_from_body as _summary_from_body,
 )
+from core.api.repo_paths import resolve_operator_repo_root
 from core.api.response_payloads import (
     auto_memory_prompt_from_metadata as _auto_memory_prompt_from_metadata,
     build_assistant_payload,
@@ -66,46 +67,25 @@ from core.runtime.vector_store import VectorMemoryEngine
 from core.runtime.vector_memory_receipts import persist_vector_memory_round_trip
 
 
-memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
-if memory_path.suffix == ".db":
-    facts_db_path = memory_path
-else:
-    facts_db_path = memory_path / "session_facts.db"
-facts_db_path.parent.mkdir(parents=True, exist_ok=True)
-
-
 def _resolve_operator_repo_root(
     *,
     env_value: str | None = None,
     fallback: Path | None = None,
     current_os_name: str | None = None,
 ) -> Path:
-    fallback_root = (fallback or Path.cwd()).resolve()
-    raw = str(
-        env_value
-        if env_value is not None
-        else os.getenv("XV7_OPERATOR_REPO_ROOT", str(fallback_root))
-    ).strip()
-    if not raw:
-        return fallback_root
+    return resolve_operator_repo_root(
+        env_value=env_value,
+        fallback=fallback,
+        current_os_name=current_os_name,
+    )
 
-    os_name = current_os_name or os.name
-    if os_name != "nt" and re.match(r"^[A-Za-z]:[\\/]", raw):
-        return fallback_root
 
-    candidate = Path(raw)
-    if not candidate.is_absolute():
-        candidate = fallback_root / candidate
-
-    try:
-        resolved = candidate.resolve()
-    except OSError:
-        return fallback_root
-
-    if not resolved.exists():
-        return fallback_root
-
-    return resolved
+memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
+if memory_path.suffix == ".db":
+    facts_db_path = memory_path
+else:
+    facts_db_path = memory_path / "session_facts.db"
+facts_db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def build_facts_system_prompt(facts: dict[str, Any]) -> str:
@@ -1292,7 +1272,7 @@ vector_store = VectorMemoryEngine()
 brain_context_manager = BrainContextManager()
 persistent_memory_manager = PersistentMemoryManager()
 memory_auto_pilot = MemoryAutoPilotService()
-_operator_repo_root = _resolve_operator_repo_root()
+_operator_repo_root = resolve_operator_repo_root()
 operator_manager = OperatorManager(repo_root=_operator_repo_root)
 
 
