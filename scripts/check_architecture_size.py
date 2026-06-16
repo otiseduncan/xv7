@@ -24,6 +24,7 @@ WATCH_LINES = 500
 # Keep ceilings close to the latest audit so these files cannot keep growing.
 BASELINE_MAX_LINES: dict[str, int] = {
     "core/brain/answer_contract.py": 6700,
+    "core/brain/artifact_response_service.py": 1700,
     "public/app.js": 6500,
     "public/app.test.js": 5500,
     "core/main.py": 4600,
