@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from core.brain.schema import BrainLayer
 
 
 class CreateSessionRequest(BaseModel):
@@ -68,3 +70,80 @@ class SetActiveModelProfileRequest(BaseModel):
 
     profile: str = Field(min_length=1)
     require_available: bool = Field(default=True)
+
+
+class BrainRecordUpdateRequest(BaseModel):
+    """Payload for runtime brain record edits stored as runtime overrides."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    layer: BrainLayer | None = None
+    title: str | None = Field(default=None, min_length=1)
+    body: str | None = Field(default=None, min_length=1)
+    tags: list[str] | None = None
+    status: Literal["active", "pending", "pending_review", "disabled", "archived"] | None = None
+    relevance_state: Literal[
+        "current",
+        "historical",
+        "superseded",
+        "expired",
+        "needs_review",
+    ] | None = None
+    superseded_by: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+    applies_when: str | None = None
+    review_reason: str | None = None
+    last_reviewed_at: str | None = None
+
+
+class BrainRecordRelevanceUpdateRequest(BaseModel):
+    """Payload for setting brain record relevance lifecycle state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    relevance_state: Literal[
+        "current",
+        "historical",
+        "superseded",
+        "expired",
+        "needs_review",
+    ]
+    superseded_by: str | None = None
+    review_reason: str | None = None
+    applies_when: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+
+
+class BrainRecordApplyRecommendationRequest(BaseModel):
+    """Explicit approval payload for a staged hygiene recommendation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation_type: Literal[
+        "mark_historical_via_runtime_override",
+        "split_record",
+    ]
+    approve: bool = True
+    operational_title: str | None = None
+    operational_summary: str | None = None
+    operational_body: str | None = None
+    tags: list[str] | None = None
+    layer: BrainLayer | None = None
+
+
+class BrainRecordSplitRequest(BaseModel):
+    """Payload for explicitly splitting mixed historical/current records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operational_title: str | None = None
+    operational_summary: str | None = None
+    operational_body: str | None = None
+    tags: list[str] | None = None
+    layer: BrainLayer | None = None
+    review_reason: str | None = None
+    applies_when: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
