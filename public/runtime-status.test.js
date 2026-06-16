@@ -72,7 +72,7 @@ describe('runtime status UI helpers', () => {
     });
   });
 
-  it('renders a status element with phase classes and text', () => {
+  it('renders running status as busy but not terminal', () => {
     const el = document.createElement('div');
     const status = updateRuntimeStatusElement(el, {
       phase: 'running',
@@ -82,9 +82,19 @@ describe('runtime status UI helpers', () => {
     expect(status.phase).toBe('running');
     expect(el.dataset.runtimePhase).toBe('running');
     expect(el.classList.contains('is-busy')).toBe(true);
-    expect(el.classList.contains('is-terminal')).toBe(true);
+    expect(el.classList.contains('is-terminal')).toBe(false);
     expect(el.textContent).toContain('Exporting sandbox files');
     expect(el.textContent).toContain('Running an allowed operation.');
+  });
+
+  it('renders complete, failed, blocked, and approval phases as terminal', () => {
+    for (const phase of ['complete', 'failed', 'blocked', 'needs_approval']) {
+      const el = document.createElement('div');
+      updateRuntimeStatusElement(el, { phase });
+      expect(el.dataset.runtimePhase).toBe(phase);
+      expect(el.classList.contains('is-busy')).toBe(false);
+      expect(el.classList.contains('is-terminal')).toBe(true);
+    }
   });
 
   it('falls back to readable action labels', () => {
