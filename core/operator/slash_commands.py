@@ -11,6 +11,7 @@ from typing import Any
 @dataclass(frozen=True)
 class SlashCommandSpec:
     """Specification for a slash command."""
+
     slash: str
     category: str
     risk_level: str
@@ -23,7 +24,7 @@ class SlashCommandSpec:
 
 def build_slash_command_registry() -> dict[str, SlashCommandSpec]:
     """Build the complete slash command registry.
-    
+
     Returns a dictionary mapping slash command names to their specifications.
     """
     return {
@@ -81,24 +82,14 @@ def build_slash_command_registry() -> dict[str, SlashCommandSpec]:
         "/run-tests": SlashCommandSpec(
             "/run-tests", "read_only_scan", "low", "read_only"
         ),
-        "/build-task": SlashCommandSpec(
-            "/build-task", "planning", "low", "operator"
-        ),
-        "/build": SlashCommandSpec(
-            "/build", "project_workflow", "medium", "operator"
-        ),
+        "/build-task": SlashCommandSpec("/build-task", "planning", "low", "operator"),
+        "/build": SlashCommandSpec("/build", "project_workflow", "medium", "operator"),
         "/export": SlashCommandSpec(
             "/export", "project_workflow", "medium", "operator"
         ),
-        "/write": SlashCommandSpec(
-            "/write", "project_workflow", "medium", "operator"
-        ),
-        "/commit": SlashCommandSpec(
-            "/commit", "git_mutation", "medium", "operator"
-        ),
-        "/push": SlashCommandSpec(
-            "/push", "git_mutation", "destructive", "operator"
-        ),
+        "/write": SlashCommandSpec("/write", "project_workflow", "medium", "operator"),
+        "/commit": SlashCommandSpec("/commit", "git_mutation", "medium", "operator"),
+        "/push": SlashCommandSpec("/push", "git_mutation", "destructive", "operator"),
         "/github": SlashCommandSpec(
             "/github", "git_mutation", "destructive", "operator"
         ),
@@ -362,22 +353,34 @@ def get_implemented_operator_tools() -> list[str]:
 def get_stubbed_roadmap_tools() -> list[str]:
     """Get list of stubbed roadmap tools (declared but not implemented)."""
     registry = build_slash_command_registry()
-    return [
-        slash
-        for slash, spec in registry.items()
-        if not spec.implemented
-    ]
+    return [slash for slash, spec in registry.items() if not spec.implemented]
 
 
 def get_tool_capability_summary() -> dict[str, Any]:
     """Get a summary of current tool capabilities and implementation status."""
     registry = build_slash_command_registry()
-    
-    read_only_impl = [s for s, spec in registry.items() if spec.mode == "read_only" and spec.implemented]
-    read_only_stub = [s for s, spec in registry.items() if spec.mode == "read_only" and not spec.implemented]
-    operator_impl = [s for s, spec in registry.items() if spec.mode == "operator" and spec.implemented]
-    operator_stub = [s for s, spec in registry.items() if spec.mode == "operator" and not spec.implemented]
-    
+
+    read_only_impl = [
+        s
+        for s, spec in registry.items()
+        if spec.mode == "read_only" and spec.implemented
+    ]
+    read_only_stub = [
+        s
+        for s, spec in registry.items()
+        if spec.mode == "read_only" and not spec.implemented
+    ]
+    operator_impl = [
+        s
+        for s, spec in registry.items()
+        if spec.mode == "operator" and spec.implemented
+    ]
+    operator_stub = [
+        s
+        for s, spec in registry.items()
+        if spec.mode == "operator" and not spec.implemented
+    ]
+
     return {
         "implemented_read_only_tools": sorted(read_only_impl),
         "stubbed_read_only_tools": sorted(read_only_stub),

@@ -214,45 +214,104 @@ class DesignIntentInterpreter:
 
     # Visual intent phrases and their CSS/design token mappings
     DARKER_PHRASES = (
-        "make it darker", "darker theme", "darker background", "dim the colors",
-        "less bright", "reduce brightness", "make it moody", "darker mood"
+        "make it darker",
+        "darker theme",
+        "darker background",
+        "dim the colors",
+        "less bright",
+        "reduce brightness",
+        "make it moody",
+        "darker mood",
     )
     LIGHTER_PHRASES = (
-        "make it lighter", "lighter theme", "lighter background", "brighter colors",
-        "more bright", "increase brightness", "make it airy"
+        "make it lighter",
+        "lighter theme",
+        "lighter background",
+        "brighter colors",
+        "more bright",
+        "increase brightness",
+        "make it airy",
     )
     GLOW_PHRASES = (
-        "add glow", "glowing", "add glowing", "make it glow", "glow effects",
-        "add glowing effects", "make buttons glow", "make cards glow", "hero glow",
-        "make the buttons glow", "add a red glow", "red glow",
-        "make the hero pop", "hero pop"
+        "add glow",
+        "glowing",
+        "add glowing",
+        "make it glow",
+        "glow effects",
+        "add glowing effects",
+        "make buttons glow",
+        "make cards glow",
+        "hero glow",
+        "make the buttons glow",
+        "add a red glow",
+        "red glow",
+        "make the hero pop",
+        "hero pop",
     )
     TRANSLUCENT_PHRASES = (
-        "make translucent", "translucent cards", "glass effect", "frosted cards",
-        "frosted glass", "transparent cards", "make it transparent", "blur effect",
-        "backdrop blur", "frosted border", "cards translucent"
+        "make translucent",
+        "translucent cards",
+        "glass effect",
+        "frosted cards",
+        "frosted glass",
+        "transparent cards",
+        "make it transparent",
+        "blur effect",
+        "backdrop blur",
+        "frosted border",
+        "cards translucent",
     )
     FONT_SIZE_PHRASES = (
-        "make font bigger", "bigger text", "larger text", "increase font size",
-        "make text bigger", "make font size bigger", "bigger headings",
+        "make font bigger",
+        "bigger text",
+        "larger text",
+        "increase font size",
+        "make text bigger",
+        "make font size bigger",
+        "bigger headings",
         "make the font bigger",
-        "make it smaller", "smaller text", "decrease font size"
+        "make it smaller",
+        "smaller text",
+        "decrease font size",
     )
     SPACING_PHRASES = (
-        "spread layout out", "increase spacing", "more space", "looser layout",
+        "spread layout out",
+        "increase spacing",
+        "more space",
+        "looser layout",
         "spread the layout out more",
-        "compact layout", "tight spacing", "dense layout", "decrease spacing"
+        "compact layout",
+        "tight spacing",
+        "dense layout",
+        "decrease spacing",
     )
     CARD_PHRASES = (
-        "card layout", "card density", "card padding", "card design", "cards",
-        "more cards", "fewer cards", "card grid"
+        "card layout",
+        "card density",
+        "card padding",
+        "card design",
+        "cards",
+        "more cards",
+        "fewer cards",
+        "card grid",
     )
     PREMIUM_PHRASES = (
-        "make it premium", "premium look", "luxurious", "high end", "upscale",
-        "polished", "refined", "elegant", "sophisticated"
+        "make it premium",
+        "premium look",
+        "luxurious",
+        "high end",
+        "upscale",
+        "polished",
+        "refined",
+        "elegant",
+        "sophisticated",
     )
     MODERN_PHRASES = (
-        "make it modern", "modern design", "contemporary", "sleek", "clean lines"
+        "make it modern",
+        "modern design",
+        "contemporary",
+        "sleek",
+        "clean lines",
     )
 
     @classmethod
@@ -301,7 +360,12 @@ class DesignIntentInterpreter:
                 intent["font_bigger"] = True
 
         for phrase in cls.SPACING_PHRASES:
-            if "decrease" in phrase or "tight" in phrase or "compact" in phrase or "dense" in phrase:
+            if (
+                "decrease" in phrase
+                or "tight" in phrase
+                or "compact" in phrase
+                or "dense" in phrase
+            ):
                 if phrase in lower_prompt:
                     intent["spacing_decrease"] = True
             elif phrase in lower_prompt:
@@ -318,9 +382,13 @@ class DesignIntentInterpreter:
                 break
 
         # Determine overall intensity
-        if any(word in lower_prompt for word in ("very", "much", "lot", "really", "strong")):
+        if any(
+            word in lower_prompt for word in ("very", "much", "lot", "really", "strong")
+        ):
             intent["intensity"] = "strong"
-        elif any(word in lower_prompt for word in ("slightly", "little", "bit", "subtle")):
+        elif any(
+            word in lower_prompt for word in ("slightly", "little", "bit", "subtle")
+        ):
             intent["intensity"] = "subtle"
 
         return intent
@@ -344,7 +412,9 @@ class DesignIntentInterpreter:
             "hero_glow": False,
         }
 
-        intensity_scale = {"subtle": 0.5, "medium": 1.0, "strong": 1.5}[intent.get("intensity", "medium")]
+        intensity_scale = {"subtle": 0.5, "medium": 1.0, "strong": 1.5}[
+            intent.get("intensity", "medium")
+        ]
 
         if intent["darker"]:
             mods["background_brightness"] = -0.2 * intensity_scale
@@ -391,7 +461,9 @@ class DesignIntentInterpreter:
         return mods
 
     @classmethod
-    def build_design_change_receipt(cls, intent: dict[str, Any], mods: dict[str, Any]) -> str:
+    def build_design_change_receipt(
+        cls, intent: dict[str, Any], mods: dict[str, Any]
+    ) -> str:
         """Build a human-readable receipt of design changes."""
 
         changes: list[str] = []
@@ -438,4 +510,3 @@ class DesignIntentInterpreter:
 
         receipt = "Updated site styling: " + "; ".join(changes) + "."
         return receipt
-

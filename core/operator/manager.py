@@ -88,7 +88,9 @@ class OperatorManager:
         self._counter = 0
         self.registry = build_operator_registry()
         self.pending_ttl_seconds = 300
-        self.slash_commands: dict[str, SlashCommandSpec] = build_slash_command_registry()
+        self.slash_commands: dict[str, SlashCommandSpec] = (
+            build_slash_command_registry()
+        )
 
     def list_slash_commands(self, *, operator_mode: bool) -> list[dict[str, Any]]:
         commands: list[dict[str, Any]] = []

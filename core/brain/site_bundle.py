@@ -17,7 +17,6 @@ from core.brain.website_design_renderer import (
     render_site_bundle_files,
 )
 from core.brain.website_page_plan_manager import WebsitePagePlanManager
-from core.brain.website_style_plan_manager import DesignIntentInterpreter
 
 SITE_BUNDLE_ACTION_PATTERN = re.compile(
     r"\b(generate|preview|show|display|draft|mock\s*up|mockup)\b"
@@ -671,22 +670,24 @@ def _color_value(color: str) -> str:
 
 def apply_design_intent_to_css(css_content: str, design_mods: dict[str, Any]) -> str:
     """Apply design intent modifications to CSS content."""
-    
+
     if not design_mods:
         return css_content
-    
+
     updated = css_content
-    
+
     # Apply background brightness changes
     if design_mods.get("background_brightness"):
         brightness_val = design_mods["background_brightness"]
-        updated = _set_css_var(updated, "brightness", f"brightness({1 + brightness_val})")
-    
+        updated = _set_css_var(
+            updated, "brightness", f"brightness({1 + brightness_val})"
+        )
+
     # Apply text contrast changes
     if design_mods.get("text_contrast"):
         contrast_val = design_mods["text_contrast"]
         updated = _set_css_var(updated, "contrast", f"contrast({contrast_val})")
-    
+
     # Apply glow strength
     if design_mods.get("glow_strength"):
         glow = design_mods["glow_strength"]
@@ -699,33 +700,33 @@ def apply_design_intent_to_css(css_content: str, design_mods: dict[str, Any]) ->
         if design_mods.get("hero_glow"):
             hero_glow = f"\n.hero-section, .hero-card {{ filter: drop-shadow(0 0 {10 * glow}px color-mix(in srgb, var(--accent, #4db8ff) {45 * glow}%, transparent)); }}\n"
             updated = f"{updated.rstrip()}{hero_glow}"
-    
+
     # Apply translucent effects
     if design_mods.get("translucent_alpha"):
         alpha = design_mods["translucent_alpha"]
         blur_px = design_mods.get("backdrop_blur", 12)
         trans_css = f"\n.card, .info-card, .panel {{ background: color-mix(in srgb, currentColor {alpha * 100}%, transparent) !important; backdrop-filter: blur({blur_px}px); }}\n"
         updated = f"{updated.rstrip()}{trans_css}"
-    
+
     # Apply font scaling
     if design_mods.get("font_scale") and design_mods["font_scale"] != 1.0:
         scale = design_mods["font_scale"]
         updated = _set_css_var(updated, "font-scale", str(scale))
         font_css = f"\nbody {{ font-size: calc(1rem * var(--font-scale, {scale})); }}\nh1 {{ font-size: calc(2.4rem * var(--font-scale, {scale})); }}\nh2 {{ font-size: calc(1.8rem * var(--font-scale, {scale})); }}\n"
         updated = f"{updated.rstrip()}{font_css}"
-    
+
     # Apply spacing scaling
     if design_mods.get("spacing_scale") and design_mods["spacing_scale"] != 1.0:
         scale = design_mods["spacing_scale"]
         updated = _set_css_var(updated, "spacing-scale", str(scale))
         spacing_css = f"\nsection, .section {{ margin: calc(2rem * var(--spacing-scale, {scale})); padding: calc(1.5rem * var(--spacing-scale, {scale})); }}\n"
         updated = f"{updated.rstrip()}{spacing_css}"
-    
+
     # Apply shadow strength
     if design_mods.get("shadow_strength") and design_mods["shadow_strength"] != 1.0:
         shadow = design_mods["shadow_strength"]
         updated = _set_css_var(updated, "shadow-strength", str(shadow))
-    
+
     return updated
 
 

@@ -6,10 +6,10 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from typing import Callable
 from typing import Any
+from typing import Callable
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.operator.schema import OperatorActionResult, OperatorSafety
