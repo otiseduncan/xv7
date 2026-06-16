@@ -108,6 +108,7 @@ from core.api.runtime_routes import (
     configure_runtime_routes,
     router as runtime_router,
 )
+from core.api.session_message_routes import configure_session_message_routes
 
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
@@ -791,6 +792,11 @@ app.include_router(health_router)
 app.include_router(runtime_router)
 app.include_router(brain_record_router)
 app.include_router(operator_router)
+app.include_router(
+    configure_session_message_routes(
+        add_message_handler_getter=lambda: add_session_message
+    )
+)
 
 
 @app.exception_handler(SessionNotFoundError)
@@ -877,11 +883,6 @@ async def update_session_facts(
     return {"status": "ok", "session_id": str(session_id)}
 
 
-@app.post(
-    "/sessions/{session_id}/messages",
-    response_model=SessionState,
-    dependencies=[Depends(require_api_key)],
-)
 async def add_session_message(
     session_id: UUID,
     payload: AddMessageRequest,
