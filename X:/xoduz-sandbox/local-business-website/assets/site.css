@@ -1,0 +1,60 @@
+/* XV7 polished website renderer for Local Business Website */
+/* requested-colors: default */
+/* requested-styles: balanced */
+:root {
+  --bg: #050505;
+  --panel: rgba(15,23,42,.72);
+  --text: #ffffff;
+  --muted: #cbd5e1;
+  --accent: #22c55e;
+  --accent-2: #ffffff;
+  --ring: color-mix(in srgb, var(--accent) 52%, transparent);
+  --requested-1: default;
+  --requested-2: default;
+  --requested-3: default;
+  --requested-4: default;
+  --button-scale: 1;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 26%, transparent), transparent 34rem), linear-gradient(135deg, var(--bg), #111827); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+a { color: inherit; }
+.site-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem clamp(1rem, 4vw, 4rem); backdrop-filter: blur(18px); background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
+.brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; border-radius: 1rem; text-decoration: none; font-weight: 900; letter-spacing: .06em; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #020617; box-shadow: 0 18px 50px color-mix(in srgb, var(--accent) 26%, transparent); }
+.site-nav { display: flex; flex-wrap: wrap; gap: .55rem; justify-content: flex-end; }
+.nav-link { text-decoration: none; padding: .7rem .9rem; border-radius: 999px; color: var(--muted); border: 1px solid transparent; }
+.nav-link.active, .nav-link:hover { color: var(--text); border-color: var(--ring); background: color-mix(in srgb, var(--panel) 76%, transparent); }
+.page-content { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(2rem, 6vw, 5rem) 0; }
+.hero-section { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: clamp(1.25rem, 4vw, 3rem); align-items: center; min-height: 65vh; }
+.hero-copy h1, .page-hero h1 { margin: 0; font-size: clamp(3rem, 9vw, 7rem); line-height: .88; letter-spacing: -.08em; }
+.hero-lede { max-width: 64ch; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.35rem); line-height: 1.7; }
+.visual-direction { max-width: 58ch; color: var(--text); border-left: 4px solid var(--accent); padding-left: 1rem; line-height: 1.6; }
+.eyebrow { color: var(--accent); text-transform: uppercase; font-weight: 900; letter-spacing: .16em; font-size: .8rem; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.5rem; }
+.button { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; padding: .9rem 1.15rem; border-radius: 999px; text-decoration: none; font-weight: 900; border: 1px solid var(--ring); }
+.button-primary { color: #020617; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 18px 55px color-mix(in srgb, var(--accent) 28%, transparent); }
+.button-ghost { color: var(--text); background: color-mix(in srgb, var(--panel) 70%, transparent); }
+.hero-card, .info-card, .split-band, .premium-band, .custom-band, .spotlight-section, .cta-band { border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 92%, transparent), color-mix(in srgb, var(--bg) 84%, transparent)); box-shadow: 0 30px 90px rgba(0,0,0,.28); }
+.hero-card { border-radius: 2rem; padding: clamp(1.25rem, 4vw, 2rem); }
+.hero-card strong { display: block; margin: .75rem 0; font-size: clamp(1.8rem, 4vw, 3.35rem); line-height: .95; letter-spacing: -.05em; }
+.hero-card em { display: inline-flex; margin-top: 1rem; color: var(--accent); font-style: normal; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; font-size: .72rem; }
+.proof-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; margin: 1.5rem 0; }
+.proof-strip span { padding: 1rem; border-radius: 1.2rem; background: color-mix(in srgb, var(--panel) 75%, transparent); color: var(--muted); border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent); }
+.card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.info-card { border-radius: 1.35rem; padding: 1.25rem; }
+.info-card h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
+.info-card p { margin: 0; color: var(--muted); line-height: 1.65; }
+.deal-card span { display: inline-flex; margin-bottom: .75rem; color: var(--accent); font-weight: 900; text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; }
+.split-band, .premium-band, .custom-band, .spotlight-section, .cta-band { margin-top: 1.25rem; border-radius: 1.6rem; padding: clamp(1.25rem, 4vw, 2rem); }
+.split-band { display: grid; grid-template-columns: .9fr 1.1fr; gap: 1.25rem; align-items: center; }
+.split-band h2, .premium-band h2, .custom-band h2, .cta-band h2 { margin: 0; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1; letter-spacing: -.05em; }
+.compact-hero { min-height: auto; padding-bottom: 1.5rem; }
+.inner-page .card-grid { margin-top: 1rem; }
+.compact-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.is-premium .hero-card, .is-premium .info-card { border-color: color-mix(in srgb, var(--accent) 48%, transparent); }
+.is-spacious .page-content { padding-top: clamp(3rem, 8vw, 7rem); }
+.is-bold .button-primary { transform: scale(var(--button-scale)); }
+.is-bold h1 { text-shadow: 0 16px 50px color-mix(in srgb, var(--accent) 22%, transparent); }
+.is-playful .brand-mark, .is-playful .button { border-radius: 1.35rem; }
+.is-customized .custom-band { border-style: dashed; }
+.site-footer { display: flex; justify-content: space-between; gap: 1rem; padding: 2rem clamp(1rem, 4vw, 4rem); color: var(--muted); border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); }
+@media (max-width: 820px) { .hero-section, .split-band, .card-grid, .proof-strip { grid-template-columns: 1fr; } .site-header { position: relative; align-items: flex-start; flex-direction: column; } .site-footer { flex-direction: column; } }

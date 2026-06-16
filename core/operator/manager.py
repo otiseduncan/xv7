@@ -1366,7 +1366,6 @@ class OperatorManager:
         active_export = session_metadata.get("active_exported_artifact")
         if isinstance(active_export, dict):
             for key in (
-                "host_project_path",
                 "container_project_path",
                 "relative_project_path",
                 "entry_file",
