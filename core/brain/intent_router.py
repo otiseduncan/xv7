@@ -86,7 +86,7 @@ class IntentRouter:
         r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use|improve|redesign|move|keep|preserve|undo|revert|summarize|add)\b"
     )
     ARTIFACT_EDIT_TARGET_PATTERN = re.compile(
-        r"\b(website|site|artifact|page|pages|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|css|html|javascript|js|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger|home\s?page|homepage|specials?)\b"
+        r"\b(website|site|artifact|page|pages|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|css|html|javascript|js|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger|home\s?page|homepage|specials?|glass|glassmorphism|frosted|translucent|transparent|backdrop|blur|glow|glowing|shadow|card|roomy|cherry|spread)\b"
     )
     ARTIFACT_UNDO_PATTERN = re.compile(
         r"\b(undo the last change|undo|revert that|go back|restore previous)\b"

@@ -50,5 +50,13 @@ Thumbs.db
 .idea/
 
 # Node/Vitest generated artifacts
+node_modules/
 node_modules/.vite/vitest/results.json
 node_modules/.vite/vitest/*.json
+
+# Test results and artifacts
+test-results/
+playwright-report/
+.playwright/
+trace.zip
+*.trace

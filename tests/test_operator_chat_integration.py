@@ -293,7 +293,9 @@ def test_operator_mode_github_proof_prompt_with_mode_on_routes_to_operator_flow(
     answer = str(message["content"]).lower()
     metadata = message["metadata"]
 
-    assert "sandbox project workflow completed" in answer
+    assert "need one confirmation first" in answer
+    assert "sandbox project path" in answer
+    assert "github repo creation/push safely" in answer
     assert metadata.get("artifact_patch_proposal", {}) == {}
     receipts = metadata.get("operator_receipts") or []
     assert isinstance(receipts, list)

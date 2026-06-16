@@ -1,4 +1,7 @@
 :root {
+  /* P2 note: keep this stylesheet as a single cascade-ordered source for now.
+     The file contains legacy compatibility rules that rely on source order,
+     so component splitting is deferred until the legacy tail is normalized. */
   --color-bg: #050812;
   --color-panel: #08111f;
   --color-panel-2: #0a1628;

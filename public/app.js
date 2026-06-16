@@ -5577,13 +5577,38 @@ class Xv7UI {
   choosePreferredVoice(voices) {
     if (!Array.isArray(voices) || !voices.length) return null;
 
-    const femaleHints = ['female', 'woman', 'jenny', 'aria', 'sonia', 'zira', 'susan', 'samantha', 'victoria', 'google us english', 'microsoft zira', 'microsoft jenny', 'microsoft aria'];
+    // Preferred defaults: prioritize Google US female voices
+    const googleUsFemaleVoice = voices.find((voice) => {
+      const haystack = `${voice.name || ''} ${voice.lang || ''}`.toLowerCase();
+      const isFemale = ['female', 'woman', 'google us english'].some((hint) => haystack.includes(hint)) || 
+                      voice.lang === 'en-US';
+      return (haystack.includes('google') && haystack.includes('us') && isFemale) ||
+             (haystack.includes('google us english'));
+    });
+    if (googleUsFemaleVoice) return googleUsFemaleVoice;
+
+    // Second preference: en-US female voices
+    const enUsFemaleVoice = voices.find((voice) => {
+      const lang = String(voice.lang || '').toLowerCase();
+      const isFemale = voice.lang === 'en-US' || lang === 'en-us' || lang === 'en_us';
+      const haystack = `${voice.name || ''} ${voice.lang || ''}`.toLowerCase();
+      const hasFemaleHint = ['female', 'woman', 'jenny', 'aria', 'sonia', 'zira', 'samantha', 'victoria', 
+                            'microsoft zira', 'microsoft jenny', 'microsoft aria'].some((hint) => haystack.includes(hint));
+      return isFemale && hasFemaleHint;
+    });
+    if (enUsFemaleVoice) return enUsFemaleVoice;
+
+    // Third preference: other female-like voices (excluding european voices)
+    const femaleHints = ['female', 'woman', 'jenny', 'aria', 'sonia', 'zira', 'samantha', 'victoria', 'microsoft zira', 'microsoft jenny', 'microsoft aria'];
     const femaleVoice = voices.find((voice) => {
       const haystack = `${voice.name || ''} ${voice.lang || ''}`.toLowerCase();
+      // Avoid Susan from en-GB (European) or other non-US regions
+      if (haystack.includes('susan') && !haystack.includes('en-us')) return false;
       return femaleHints.some((hint) => haystack.includes(hint));
     });
     if (femaleVoice) return femaleVoice;
 
+    // Fourth preference: any English voice
     const englishVoice = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith('en'));
     if (englishVoice) return englishVoice;
 

@@ -19,6 +19,7 @@ from core.brain.code_artifact_builder import CodeArtifactBuilder
 from core.brain.intent_router import IntentRouter
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.brain.schema import BrainLayer, BrainRecord
+from core.operator.slash_commands import get_tool_capability_summary
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
     resolve_model_for_runtime_role,
@@ -60,7 +61,7 @@ class AnswerContract:
         r"\b(change|make|update|revise|edit|adjust|tweak|restyle|refresh|rewrite|switch|set|use|improve|redesign|move|keep|preserve|undo|revert|show|summarize)\b"
     )
     ARTIFACT_EDIT_TARGET_PATTERN = re.compile(
-        r"\b(website|site|artifact|page|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger)\b"
+        r"\b(website|site|artifact|page|font|text|headline|button|buttons|copy|wording|color|colors|palette|theme|style|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|preview|code|hero|cta|section|layout|spacing|background|read|smaller|bigger|glass|glassmorphism|frosted|translucent|transparent|backdrop|blur|glow|glowing|shadow|card|cards|roomy|cherry|spread)\b"
     )
     SMS_EXPLICIT_SEND_PATTERN = re.compile(
         r"\b(send a text|send text|send this as a text message|text my|message\s+[a-z0-9]+|sms this)\b"
@@ -72,7 +73,7 @@ class AnswerContract:
         r"\b(what changed|show me what changed|summarize the changes|summarise the changes|explain the changes)\b"
     )
     ARTIFACT_STYLE_PATTERN = re.compile(
-        r"\b(color|colors|palette|background|font|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|easier to read|black|gold|white)\b"
+        r"\b(color|colors|palette|background|font|script|cursive|handwritten|premium|luxury|playful|modern|dark|light|bold|cleaner|easier to read|black|gold|white|glass|glassmorphism|frosted|translucent|transparent|backdrop|blur|glow|glowing|shadow|card|roomy|cherry|spread)\b"
     )
     ARTIFACT_CONTENT_PATTERN = re.compile(
         r"\b(headline|cta|button text|buttons|copy|wording|services section|main headline|rewrite|say)\b"
@@ -3263,11 +3264,26 @@ if __name__ == \"__main__\":
     @staticmethod
     def _replace_first_tag_text(content: str, tag: str, replacement: str) -> str:
         return ArtifactFidelityManager.replace_first_tag_text(content, tag, replacement)
-        escaped = html.escape(replacement, quote=False)
-        pattern = re.compile(
-            rf"(<{tag}[^>]*>)(.*?)(</{tag}>)", flags=re.IGNORECASE | re.DOTALL
+
+    @staticmethod
+    def _current_capabilities_answer() -> str:
+        summary = get_tool_capability_summary()
+        read_only_tools = ", ".join(summary.get("implemented_read_only_tools", []))
+        operator_tools = ", ".join(summary.get("implemented_operator_tools", []))
+        stubbed_tools = ", ".join(
+            [
+                *summary.get("stubbed_read_only_tools", []),
+                *summary.get("stubbed_operator_tools", []),
+            ]
         )
-        return pattern.sub(rf"\1{escaped}\3", content, count=1)
+        return (
+            "Current capabilities (wired now): "
+            f"Read-only tools ({len(summary.get('implemented_read_only_tools', []))}): {read_only_tools}. "
+            f"Operator/mutation tools ({len(summary.get('implemented_operator_tools', []))}): {operator_tools}. "
+            f"Roadmap/stubbed tools ({len(summary.get('stubbed_read_only_tools', [])) + len(summary.get('stubbed_operator_tools', []))}): {stubbed_tools}. "
+            "Not wired yet: live internet browsing, email connectors, calendar scheduling, and VS Code control commands. "
+            "Filesystem mutation is only available through implemented Operator Mode slash commands with confirmation."
+        )
 
     @staticmethod
     def _replace_first_button_text(content: str, replacement: str) -> str:
@@ -6082,6 +6098,14 @@ if __name__ == \"__main__\":
                 "I'm being built into Xoduz: Otis Duncan's personal AI assistant, trusted AI best-friend/homie-style presence, technical co-pilot, and operator partner "
                 "— with everyday assistant tools, local scan capability, VS Code access, Operator Mode, and future external connectors added safely over time."
             )
+
+        if normalized in {
+            "what are your current capabilities?",
+            "what are your current capabilities",
+            "what can you currently do?",
+            "what can you currently do",
+        }:
+            return self._current_capabilities_answer()
 
         if normalized in {
             "what can you do locally?",

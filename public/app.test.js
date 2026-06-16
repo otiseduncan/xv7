@@ -3909,6 +3909,47 @@ describe('ModelProfileControl', () => {
     expect(window.speechSynthesis.cancel).toHaveBeenCalled();
   });
 
+  it('voice selector prefers Google US (en-US) over European Susan', async () => {
+    // Test that Google US voice is preferred over Microsoft Susan (European)
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Google US English', lang: 'en-US', default: false },
+      { name: 'Microsoft Susan - English (United Kingdom)', lang: 'en-GB', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('voiceSelect').value).toBe('Google US English');
+    expect(document.getElementById('voiceSettingsStatus').textContent).toContain('Using Google US English.');
+    expect(document.getElementById('voiceDiagSelected').textContent).toBe('Google US English');
+  });
+
+  it('voice selector prefers en-US voices when Google US not available', async () => {
+    // Test that en-US voices are preferred when Google US is not available
+    window.speechSynthesis = buildSpeechSynthesisMock([
+      { name: 'Microsoft David Desktop', lang: 'en-GB', default: false },
+      { name: 'Microsoft Zira Desktop', lang: 'en-US', default: false },
+    ]);
+    window.SpeechSynthesisUtterance = function SpeechSynthesisUtterance(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    };
+    global.fetch = createRuntimeFetchMock();
+
+    new Xv7UI();
+    await flushAsync();
+
+    expect(document.getElementById('voiceSelect').value).toBe('Microsoft Zira Desktop');
+    expect(document.getElementById('voiceSettingsStatus').textContent).toContain('Using Microsoft Zira Desktop.');
+  });
+
   it('unsupported speech synthesis disables read-aloud gracefully', async () => {
     window.speechSynthesis = undefined;
     window.SpeechSynthesisUtterance = undefined;

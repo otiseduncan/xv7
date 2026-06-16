@@ -15,6 +15,7 @@ class WebsiteStylePlanManager:
 
     COLOR_ALIASES = {
         "bleu": "blue",
+        "cherry": "red",
         "blu": "blue",
         "charcoal": "gray",
         "emerald": "green",
@@ -206,3 +207,235 @@ class WebsiteStylePlanManager:
             "styles": styles,
             "palette": cls.build_palette(prompt),
         }
+
+
+class DesignIntentInterpreter:
+    """Maps user visual design phrases to concrete CSS token modifications."""
+
+    # Visual intent phrases and their CSS/design token mappings
+    DARKER_PHRASES = (
+        "make it darker", "darker theme", "darker background", "dim the colors",
+        "less bright", "reduce brightness", "make it moody", "darker mood"
+    )
+    LIGHTER_PHRASES = (
+        "make it lighter", "lighter theme", "lighter background", "brighter colors",
+        "more bright", "increase brightness", "make it airy"
+    )
+    GLOW_PHRASES = (
+        "add glow", "glowing", "add glowing", "make it glow", "glow effects",
+        "add glowing effects", "make buttons glow", "make cards glow", "hero glow",
+        "make the buttons glow", "add a red glow", "red glow",
+        "make the hero pop", "hero pop"
+    )
+    TRANSLUCENT_PHRASES = (
+        "make translucent", "translucent cards", "glass effect", "frosted cards",
+        "frosted glass", "transparent cards", "make it transparent", "blur effect",
+        "backdrop blur", "frosted border", "cards translucent"
+    )
+    FONT_SIZE_PHRASES = (
+        "make font bigger", "bigger text", "larger text", "increase font size",
+        "make text bigger", "make font size bigger", "bigger headings",
+        "make the font bigger",
+        "make it smaller", "smaller text", "decrease font size"
+    )
+    SPACING_PHRASES = (
+        "spread layout out", "increase spacing", "more space", "looser layout",
+        "spread the layout out more",
+        "compact layout", "tight spacing", "dense layout", "decrease spacing"
+    )
+    CARD_PHRASES = (
+        "card layout", "card density", "card padding", "card design", "cards",
+        "more cards", "fewer cards", "card grid"
+    )
+    PREMIUM_PHRASES = (
+        "make it premium", "premium look", "luxurious", "high end", "upscale",
+        "polished", "refined", "elegant", "sophisticated"
+    )
+    MODERN_PHRASES = (
+        "make it modern", "modern design", "contemporary", "sleek", "clean lines"
+    )
+
+    @classmethod
+    def extract_design_intent(cls, prompt: str) -> dict[str, Any]:
+        """Extract design intent signals from a user request."""
+
+        lower_prompt = (prompt or "").lower()
+        intent = {
+            "darker": False,
+            "lighter": False,
+            "glow": False,
+            "translucent": False,
+            "font_bigger": False,
+            "font_smaller": False,
+            "spacing_increase": False,
+            "spacing_decrease": False,
+            "premium": False,
+            "modern": False,
+            "intensity": "medium",  # subtle, medium, strong
+        }
+
+        for phrase in cls.DARKER_PHRASES:
+            if phrase in lower_prompt:
+                intent["darker"] = True
+                break
+
+        for phrase in cls.LIGHTER_PHRASES:
+            if phrase in lower_prompt:
+                intent["lighter"] = True
+                break
+
+        for phrase in cls.GLOW_PHRASES:
+            if phrase in lower_prompt:
+                intent["glow"] = True
+                break
+
+        for phrase in cls.TRANSLUCENT_PHRASES:
+            if phrase in lower_prompt:
+                intent["translucent"] = True
+                break
+
+        for phrase in cls.FONT_SIZE_PHRASES:
+            if "smaller" in phrase and phrase in lower_prompt:
+                intent["font_smaller"] = True
+            elif phrase in lower_prompt:
+                intent["font_bigger"] = True
+
+        for phrase in cls.SPACING_PHRASES:
+            if "decrease" in phrase or "tight" in phrase or "compact" in phrase or "dense" in phrase:
+                if phrase in lower_prompt:
+                    intent["spacing_decrease"] = True
+            elif phrase in lower_prompt:
+                intent["spacing_increase"] = True
+
+        for phrase in cls.PREMIUM_PHRASES:
+            if phrase in lower_prompt:
+                intent["premium"] = True
+                break
+
+        for phrase in cls.MODERN_PHRASES:
+            if phrase in lower_prompt:
+                intent["modern"] = True
+                break
+
+        # Determine overall intensity
+        if any(word in lower_prompt for word in ("very", "much", "lot", "really", "strong")):
+            intent["intensity"] = "strong"
+        elif any(word in lower_prompt for word in ("slightly", "little", "bit", "subtle")):
+            intent["intensity"] = "subtle"
+
+        return intent
+
+    @classmethod
+    def build_css_modifications(cls, intent: dict[str, Any]) -> dict[str, Any]:
+        """Convert design intent into CSS modifications."""
+
+        mods = {
+            "background_brightness": None,  # -0.2 (darker), +0.2 (lighter)
+            "text_contrast": None,
+            "glow_strength": None,  # 0-1
+            "translucent_alpha": None,  # 0.1-0.9
+            "backdrop_blur": None,  # px
+            "font_scale": 1.0,
+            "spacing_scale": 1.0,
+            "shadow_strength": 1.0,
+            "accent_glow": False,
+            "button_glow": False,
+            "card_glow": False,
+            "hero_glow": False,
+        }
+
+        intensity_scale = {"subtle": 0.5, "medium": 1.0, "strong": 1.5}[intent.get("intensity", "medium")]
+
+        if intent["darker"]:
+            mods["background_brightness"] = -0.2 * intensity_scale
+            mods["text_contrast"] = 1.1
+            mods["shadow_strength"] = 1.3
+
+        if intent["lighter"]:
+            mods["background_brightness"] = 0.2 * intensity_scale
+            mods["text_contrast"] = 0.9
+
+        if intent["glow"]:
+            mods["glow_strength"] = 0.6 * intensity_scale
+            mods["button_glow"] = True
+            mods["accent_glow"] = True
+            mods["card_glow"] = True
+            mods["hero_glow"] = True
+
+        if intent["translucent"]:
+            mods["translucent_alpha"] = 0.7 * intensity_scale
+            mods["backdrop_blur"] = 12 * intensity_scale
+
+        if intent["font_bigger"]:
+            mods["font_scale"] = 1.15 * intensity_scale
+
+        if intent["font_smaller"]:
+            mods["font_scale"] = 0.85 / intensity_scale
+
+        if intent["spacing_increase"]:
+            mods["spacing_scale"] = 1.2 * intensity_scale
+
+        if intent["spacing_decrease"]:
+            mods["spacing_scale"] = 0.8 / intensity_scale
+
+        if intent["premium"]:
+            mods["shadow_strength"] = 1.4
+            mods["text_contrast"] = 1.05
+            mods["button_glow"] = True
+            mods["card_glow"] = True
+
+        if intent["modern"]:
+            mods["shadow_strength"] = 1.1
+            mods["spacing_scale"] = 1.05
+
+        return mods
+
+    @classmethod
+    def build_design_change_receipt(cls, intent: dict[str, Any], mods: dict[str, Any]) -> str:
+        """Build a human-readable receipt of design changes."""
+
+        changes: list[str] = []
+
+        if intent["darker"]:
+            changes.append("colors: darker")
+
+        if intent["lighter"]:
+            changes.append("colors: lighter")
+
+        if intent["glow"]:
+            intensity = intent.get("intensity", "medium")
+            changes.append(f"glow: {intensity}")
+
+        if mods.get("shadow_strength") and mods["shadow_strength"] != 1.0:
+            shadow_strength = str(mods["shadow_strength"])
+            changes.append(f"shadow: strength {shadow_strength}")
+
+        if intent["translucent"]:
+            blur_px = int(float(mods.get("backdrop_blur") or 0))
+            changes.append("cards: frosted glass")
+            changes.append(f"glass/translucency: blur {blur_px}px")
+
+        if intent["font_bigger"]:
+            changes.append("typography: increased heading/body scale")
+
+        if intent["font_smaller"]:
+            changes.append("typography: decreased heading/body scale")
+
+        if intent["spacing_increase"]:
+            changes.append("layout: spacious card gaps")
+
+        if intent["spacing_decrease"]:
+            changes.append("layout: compact card gaps")
+
+        if intent["premium"]:
+            changes.append("card style: premium depth")
+
+        if intent["modern"]:
+            changes.append("card style: modern clean")
+
+        if not changes:
+            return "No visual changes applied."
+
+        receipt = "Updated site styling: " + "; ".join(changes) + "."
+        return receipt
+
