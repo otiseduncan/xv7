@@ -21,6 +21,7 @@ from core.api.brain_records import (
     status_label as _status_label,
     summary_from_body as _summary_from_body,
 )
+from core.api.facts_prompt import build_facts_system_prompt
 from core.api.repo_paths import resolve_operator_repo_root
 from core.api.response_payloads import (
     auto_memory_prompt_from_metadata as _auto_memory_prompt_from_metadata,
@@ -86,21 +87,6 @@ if memory_path.suffix == ".db":
 else:
     facts_db_path = memory_path / "session_facts.db"
 facts_db_path.parent.mkdir(parents=True, exist_ok=True)
-
-
-def build_facts_system_prompt(facts: dict[str, Any]) -> str:
-    if not facts:
-        return ""
-    pretty = json.dumps(facts, ensure_ascii=False, indent=2)
-    # Adding a clear boundary marker helps the LLM distinguish
-    # persistent facts from transient conversation.
-    return (
-        "--- PERSISTENT SESSION MEMORY ---\n"
-        "These facts are your long-term knowledge base for this specific session.\n"
-        "Do not explain that you have this memory; simply use the information.\n"
-        f"{pretty}\n"
-        "----------------------------------\n"
-    )
 
 
 def _serialize_brain_record(
