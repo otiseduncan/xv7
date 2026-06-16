@@ -16,6 +16,15 @@ import httpx
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from core.api.active_focus import (
+    ACTIVE_FOCUS_PROTECTED_PATTERN as _ACTIVE_FOCUS_PROTECTED_PATTERN,
+    ACTIVE_FOCUS_UPDATE_PREFIXES as _ACTIVE_FOCUS_UPDATE_PREFIXES,
+    extract_active_focus_instruction as _extract_active_focus_instruction_from_api,
+    focus_violates_protected_rules as _focus_violates_protected_rules_from_api,
+    is_active_focus_candidate as _is_active_focus_candidate_from_api,
+    is_focus_status_question as _is_focus_status_question_from_api,
+    is_unclear_focus_instruction as _is_unclear_focus_instruction_from_api,
+)
 from core.api.brain_record_ids import (
     next_record_id_for_layer as _next_record_id_for_layer_from_records,
 )
@@ -25,6 +34,22 @@ from core.api.brain_records import (
     summary_from_body as _summary_from_body,
 )
 from core.api.facts_prompt import build_facts_system_prompt
+from core.api.learned_rules import (
+    active_learned_rules as _active_learned_rules_from_api,
+    append_learning_signal as _append_learning_signal_from_api,
+    applies_learned_rule as _applies_learned_rule_from_api,
+    extract_correction_text as _extract_correction_text_from_api,
+    extract_preference_text as _extract_preference_text_from_api,
+    extract_workflow_habit_text as _extract_workflow_habit_text_from_api,
+    is_emotional_unclear_feedback as _is_emotional_unclear_feedback_from_api,
+    learned_rules_prompt as _learned_rules_prompt_from_api,
+    learning_protected_boundary as _learning_protected_boundary_from_api,
+    learning_rule_tags as _learning_rule_tags_from_api,
+    learning_rule_title as _learning_rule_title_from_api,
+    needs_learning_clarification as _needs_learning_clarification_from_api,
+    speech_act_confidence as _speech_act_confidence_from_api,
+    speech_act_to_learning_layer as _speech_act_to_learning_layer_from_api,
+)
 from core.api.repo_paths import resolve_operator_repo_root
 from core.api.response_payloads import (
     auto_memory_prompt_from_metadata as _auto_memory_prompt_from_metadata,
@@ -189,33 +214,7 @@ def _split_record_to_current_operational(
     return historical, created
 
 
-ACTIVE_FOCUS_UPDATE_PREFIXES = (
-    "focus on ",
-    "focus or ",
-    "active closest to focus on ",
-    "active closest to focus or ",
-    "from now on focus on ",
-    "from now on focus or ",
-    "change your active focus to ",
-    "change your active closest to focus to ",
-    "change active focus to ",
-    "update your active focus: ",
-    "update your active focus to ",
-    "update active focus: ",
-    "update active focus to ",
-    "set your focus to ",
-    "set active focus to ",
-    "set the active focus to ",
-    "change your focus to ",
-    "change my focus to ",
-    "make your focus ",
-    "make the active focus ",
-    "your active focus is ",
-    "our focus right now is ",
-    "from now on your focus is ",
-    "your priority is ",
-    "we need your focus to be ",
-)
+ACTIVE_FOCUS_UPDATE_PREFIXES = _ACTIVE_FOCUS_UPDATE_PREFIXES
 
 INTENT_CLASSES = {
     "active_focus_update",
@@ -344,104 +343,29 @@ def _normalize_intent_text(text: str) -> str:
     return lowered
 
 
-ACTIVE_FOCUS_PROTECTED_PATTERN = re.compile(
-    r"\b("
-    r"delete|remove|destroy|format|wipe|erase|"
-    r"bypass safety|disable safety|ignore safety|"
-    r"exfiltrate|steal|credential theft|malware|ransomware|"
-    r"without confirmation|without approval|without receipts"
-    r")\b",
-    flags=re.IGNORECASE,
-)
+ACTIVE_FOCUS_PROTECTED_PATTERN = _ACTIVE_FOCUS_PROTECTED_PATTERN
 
 
 def _extract_active_focus_instruction(question: str) -> str | None:
-    stripped = question.strip()
-    normalized = _normalize_intent_text(stripped)
-
-    if normalized.startswith("please "):
-        normalized = normalized[len("please ") :]
-
-    def _cleanup_focus_text(raw_text: str) -> str:
-        cleaned = raw_text.strip(" .!?,:")
-        cleaned = re.sub(r"^focus\s+(?:on|or)\s+", "", cleaned)
-        cleaned = re.sub(r"^active\s+closest\s+to\s+focus\s+(?:on|or)\s+", "", cleaned)
-        cleaned = re.sub(r"^active\s+focus\s+(?:on|or)\s+", "", cleaned)
-        cleaned = " ".join(cleaned.split())
-        return cleaned
-
-    for prefix in ACTIVE_FOCUS_UPDATE_PREFIXES:
-        if normalized.startswith(prefix):
-            focus_text = _cleanup_focus_text(normalized[len(prefix) :])
-            if len(focus_text) >= 3:
-                return focus_text
-
-    from_now_on_match = re.match(r"^from now on\s*,?\s*focus on\s+(.+)$", normalized)
-    if from_now_on_match:
-        focus_text = _cleanup_focus_text(from_now_on_match.group(1))
-        if len(focus_text) >= 3:
-            return focus_text
-
-    voice_variants = (
-        r"^change\s+(?:your|my)?\s*active\s*focus\s*[\.:,]?\s*focus\s+(?:on|or)\s+(.+)$",
-        r"^change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus\s*[\.:,]?\s*focus\s+(?:on|or)\s+(.+)$",
-        r"^change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus\s*[\.:,]?\s+(.+)$",
-        r"^change\s+(?:your|my)?\s*active\s*focus\s*[\.:,]?\s+(.+)$",
-        r"^make\s+the\s+active\s+focus\s+(.+)$",
-        r"^our\s+focus\s+right\s+now\s+is\s+(.+)$",
-        r"^from\s+now\s+on\s*,?\s*(?:your\s+)?focus\s+is\s+(.+)$",
-        r"^your\s+priority\s+is\s+(.+)$",
-        r"^we\s+need\s+your\s+focus\s+to\s+be\s+(.+)$",
-        r"^active\s+closest\s+to\s+focus\s+(?:on|or)\s+(.+)$",
+    return _extract_active_focus_instruction_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+        prefixes=ACTIVE_FOCUS_UPDATE_PREFIXES,
     )
-    for pattern in voice_variants:
-        matched = re.match(pattern, normalized)
-        if matched:
-            focus_text = _cleanup_focus_text(matched.group(1))
-            if len(focus_text) >= 3:
-                return focus_text
-
-    return None
 
 
 def _is_active_focus_candidate(question: str) -> bool:
-    normalized = _normalize_intent_text(question)
-    if STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?"):
-        return False
-    return bool(
-        re.search(
-            r"\b(change\s+(?:your|my)?\s*active\s*focus|"
-            r"change\s+(?:your|my)?\s*active\s*closest\s*to\s*focus|"
-            r"set\s+(?:your|the)?\s*active\s*focus|"
-            r"update\s+(?:your|the)?\s*active\s*focus|"
-            r"make\s+the\s+active\s+focus|"
-            r"our\s+focus\s+right\s+now\s+is|"
-            r"from\s+now\s+on\s+(?:your\s+)?focus\s+is|"
-            r"your\s+priority\s+is|"
-            r"we\s+need\s+your\s+focus\s+to\s+be|"
-            r"active\s+closest\s+to\s+focus\s+(?:on|or)|"
-            r"focus\s+(?:on|or)\s+)\b",
-            normalized,
-        )
+    return _is_active_focus_candidate_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+        is_status_question=lambda normalized: bool(
+            STATUS_QUESTION_PATTERN.match(normalized)
+        ),
     )
 
 
 def _is_unclear_focus_instruction(focus_text: str) -> bool:
-    cleaned = " ".join(focus_text.strip().split())
-    if len(cleaned) < 10:
-        return True
-
-    vague_only = {
-        "this",
-        "that",
-        "it",
-        "more",
-        "better",
-        "same",
-        "normal",
-    }
-    tokens = [token for token in cleaned.split(" ") if token]
-    return all(token in vague_only for token in tokens)
+    return _is_unclear_focus_instruction_from_api(focus_text)
 
 
 def _extract_after_prefixes(normalized: str, prefixes: tuple[str, ...]) -> str:
@@ -684,139 +608,74 @@ def _lacks_verified_operator_success(session_metadata: dict[str, Any]) -> bool:
 
 
 def _extract_correction_text(question: str) -> str:
-    normalized = _normalize_intent_text(question)
-    return _extract_after_prefixes(normalized, CORRECTION_PREFIXES)
+    return _extract_correction_text_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+        correction_prefixes=CORRECTION_PREFIXES,
+    )
 
 
 def _extract_preference_text(question: str) -> str:
-    normalized = _normalize_intent_text(question)
-    return normalized.strip(" .!?")
+    return _extract_preference_text_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+    )
 
 
 def _extract_workflow_habit_text(question: str) -> str:
-    normalized = _normalize_intent_text(question)
-    return normalized.strip(" .!?")
+    return _extract_workflow_habit_text_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+    )
 
 
 def _speech_act_to_learning_layer(speech_act: str) -> BrainLayer:
-    if speech_act in {
-        "workflow_habit_learning",
-        "hallucination_guard",
-        "diagnostic_rule",
-    }:
-        return BrainLayer.KNOWLEDGE
-    return BrainLayer.MEMORY
+    return _speech_act_to_learning_layer_from_api(speech_act)
 
 
 def _speech_act_confidence(speech_act: str, text: str) -> float:
-    normalized = _normalize_intent_text(text)
-    if speech_act in {"hallucination_guard", "diagnostic_rule"}:
-        return 0.9
-    if speech_act == "workflow_habit_learning":
-        return 0.84
-    if speech_act == "answer_style_preference":
-        return 0.88
-    if speech_act == "communication_preference":
-        return 0.86
-    if speech_act == "user_correction":
-        if "instead" in normalized or "not asking" in normalized:
-            return 0.87
-        return 0.7
-    return 0.65
+    return _speech_act_confidence_from_api(
+        speech_act,
+        text,
+        normalize_intent_text=_normalize_intent_text,
+    )
 
 
 def _needs_learning_clarification(speech_act: str, text: str) -> bool:
-    normalized = _normalize_intent_text(text)
-    emotional_only = {
-        "you screwed up",
-        "no",
-        "wrong",
-        "bad",
-    }
-    if speech_act == "user_correction" and normalized in emotional_only:
-        return True
-    if len(normalized) < 24:
-        return True
-    if not any(
-        token in normalized
-        for token in (
-            "when",
-            "if",
-            "instead",
-            "prefer",
-            "don't",
-            "do not",
-            "always",
-            "before",
-            "unless",
-            "should",
-            "treat",
-            "preview",
-            "write",
-            "export",
-            "generate",
-            "going forward",
-        )
-    ):
-        return True
-    return False
+    return _needs_learning_clarification_from_api(
+        speech_act,
+        text,
+        normalize_intent_text=_normalize_intent_text,
+    )
 
 
 def _is_emotional_unclear_feedback(text: str) -> bool:
-    normalized = _normalize_intent_text(text)
-    if len(normalized.split()) > 8:
-        return False
-    return any(
-        token in normalized
-        for token in (
-            "screwed up",
-            "wrong",
-            "bad",
-            "not what i meant",
-        )
+    return _is_emotional_unclear_feedback_from_api(
+        text,
+        normalize_intent_text=_normalize_intent_text,
     )
 
 
 def _learning_protected_boundary(text: str) -> bool:
-    return bool(LEARNING_PROTECTED_PATTERN.search(_normalize_intent_text(text)))
+    return _learning_protected_boundary_from_api(
+        text,
+        normalize_intent_text=_normalize_intent_text,
+        learning_protected_pattern=LEARNING_PROTECTED_PATTERN,
+    )
 
 
 def _learning_rule_tags(speech_act: str, proof_required: bool) -> list[str]:
-    tags = ["learning", "learned-rule", speech_act.replace("_", "-")]
-    if speech_act in {"answer_style_preference", "communication_preference"}:
-        tags.append("communication")
-    if speech_act in {"workflow_habit_learning", "diagnostic_rule"}:
-        tags.append("workflow")
-    if speech_act == "hallucination_guard":
-        tags.append("proof-guard")
-    if proof_required:
-        tags.append("proof-required")
-    return tags
+    return _learning_rule_tags_from_api(speech_act, proof_required)
 
 
 def _learning_rule_title(speech_act: str, lesson_text: str) -> str:
-    prefix = {
-        "user_correction": "Correction",
-        "communication_preference": "Communication Preference",
-        "workflow_habit_learning": "Workflow Habit",
-        "hallucination_guard": "Hallucination Guard",
-        "answer_style_preference": "Answer Style",
-        "diagnostic_rule": "Diagnostic Rule",
-    }.get(speech_act, "Learned Rule")
-    clipped = " ".join(lesson_text.split())
-    if len(clipped) > 84:
-        clipped = clipped[:81].rstrip() + "..."
-    return f"{prefix}: {clipped}"
+    return _learning_rule_title_from_api(speech_act, lesson_text)
 
 
 def _append_learning_signal(
     session_metadata: dict[str, Any], signal: dict[str, Any]
 ) -> None:
-    current = session_metadata.get("learning_signals")
-    if not isinstance(current, list):
-        current = []
-    current.append(signal)
-    session_metadata["learning_signals"] = current[-50:]
+    _append_learning_signal_from_api(session_metadata, signal)
 
 
 def _intent_context_receipt(
@@ -877,64 +736,29 @@ def _learning_context_receipt(
 
 
 def _active_learned_rules(records: list[BrainRecord]) -> list[BrainRecord]:
-    out: list[BrainRecord] = []
-    for record in records:
-        if record.status != "active":
-            continue
-        tags = {str(tag).lower() for tag in record.tags}
-        if "learned-rule" in tags or "otis-learning" in tags:
-            out.append(record)
-    return out
+    return _active_learned_rules_from_api(records)
 
 
 def _learned_rules_prompt(records: list[BrainRecord]) -> str:
-    active = _active_learned_rules(records)
-    if not active:
-        return ""
-
-    lines = [
-        "--- LEARNED USER RULES (DURABLE) ---",
-        "Apply these learned behavior rules unless they conflict with safety boundaries:",
-    ]
-    for record in active[:10]:
-        lines.append(f"- {record.record_id}: {record.summary}")
-    lines.append("-------------------------------------")
-    return "\n".join(lines)
+    return _learned_rules_prompt_from_api(records)
 
 
 def _applies_learned_rule(
     question: str,
     records: list[BrainRecord],
 ) -> tuple[str | None, BrainRecord | None]:
-    normalized = _normalize_intent_text(question)
-    ci_or_github_status_prompt = bool(
-        re.search(
-            r"\b(github\s+actions?|ci\s+status|build\s+status|checks?\s+status|did\s+ci|is\s+ci)\b",
-            normalized,
-        )
+    return _applies_learned_rule_from_api(
+        question,
+        records,
+        normalize_intent_text=_normalize_intent_text,
     )
-
-    # Never replace explicit operator-history/status introspection prompts.
-    if re.search(
-        r"\b(operator\s+actions?|what\s+did\s+you\s+just\s+check|last\s+operator\s+receipt)\b",
-        normalized,
-    ):
-        return None, None
-
-    for record in _active_learned_rules(records):
-        tags = {str(tag).lower() for tag in record.tags}
-        if (
-            "proof-required" in tags or "proof-guard" in tags
-        ) and ci_or_github_status_prompt:
-            return (
-                "Understood. Per your learned diagnostic rule, I will require proof before claiming CI/GitHub status. I do not have live proof in this turn.",
-                record,
-            )
-    return None, None
 
 
 def _focus_violates_protected_rules(focus_text: str) -> bool:
-    return bool(ACTIVE_FOCUS_PROTECTED_PATTERN.search(focus_text))
+    return _focus_violates_protected_rules_from_api(
+        focus_text,
+        protected_pattern=ACTIVE_FOCUS_PROTECTED_PATTERN,
+    )
 
 
 def _active_focus_system_prompt(session_metadata: dict[str, Any]) -> str:
@@ -971,19 +795,7 @@ async def _persist_session_focus_fact(
 
 
 def _is_focus_status_question(question: str) -> bool:
-    normalized = " ".join(question.lower().strip().split())
-    return normalized in {
-        "what are we working on?",
-        "what are we working on",
-        "what are we working on right now?",
-        "what are we working on right now",
-        "what is your current active focus?",
-        "what is your current active focus",
-        "what is your active focus?",
-        "what is your active focus",
-        "what did i just change your focus to?",
-        "what did i just change your focus to",
-    }
+    return _is_focus_status_question_from_api(question)
 
 
 def _session_focus_context_receipt(
