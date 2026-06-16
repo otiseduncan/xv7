@@ -38,6 +38,7 @@ from core.api.learned_rules import (
     active_learned_rules as _active_learned_rules_from_api,
     append_learning_signal as _append_learning_signal_from_api,
     applies_learned_rule as _applies_learned_rule_from_api,
+    extract_after_prefixes as _extract_after_prefixes_from_api,
     extract_correction_text as _extract_correction_text_from_api,
     extract_preference_text as _extract_preference_text_from_api,
     extract_workflow_habit_text as _extract_workflow_habit_text_from_api,
@@ -49,6 +50,16 @@ from core.api.learned_rules import (
     needs_learning_clarification as _needs_learning_clarification_from_api,
     speech_act_confidence as _speech_act_confidence_from_api,
     speech_act_to_learning_layer as _speech_act_to_learning_layer_from_api,
+)
+from core.api.intent_helpers import (
+    active_focus_guided_plan_answer as _active_focus_guided_plan_answer_from_api,
+    active_focus_system_prompt as _active_focus_system_prompt_from_api,
+    build_task_guard_answer as _build_task_guard_answer_from_api,
+    classify_speech_act as _classify_speech_act_from_api,
+    is_build_follow_up_prompt as _is_build_follow_up_prompt_from_api,
+    is_focus_guided_follow_up as _is_focus_guided_follow_up_from_api,
+    is_local_scan_or_operator_prompt as _is_local_scan_or_operator_prompt_from_api,
+    is_protected_implementation_task as _is_protected_implementation_task_from_api,
 )
 from core.api.context_receipts import (
     active_focus_guided_context_receipt as _active_focus_guided_context_receipt_from_api,
@@ -389,131 +400,33 @@ def _is_unclear_focus_instruction(focus_text: str) -> bool:
 
 
 def _extract_after_prefixes(normalized: str, prefixes: tuple[str, ...]) -> str:
-    for prefix in prefixes:
-        if normalized.startswith(prefix):
-            return normalized[len(prefix) :].strip(" .!?")
-    return normalized.strip(" .!?")
+    return _extract_after_prefixes_from_api(normalized, prefixes)
 
 
 def _classify_speech_act(question: str) -> str:
-    normalized = _normalize_intent_text(question)
-    is_question = STATUS_QUESTION_PATTERN.match(normalized) or normalized.endswith("?")
-    is_repo_build_task = (
-        "build this feature" in normalized
-        or "code 9" in normalized
-        or "code builder" in normalized
-        or "code builder smoke test" in normalized
-        or "add tests" in normalized
-        or "add or update tests" in normalized
-        or "run pytest" in normalized
-        or "pytest" in normalized
-        or "code builder smoke test" in normalized
-        or "git commit" in normalized
-        or "git push" in normalized
-        or "implement patch" in normalized
-    ) and (
-        "we are in" in normalized
-        or "x:\\" in normalized
-        or "pytest" in normalized
-        or "git" in normalized
+    return _classify_speech_act_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+        status_question_pattern=STATUS_QUESTION_PATTERN,
+        correction_prefixes=CORRECTION_PREFIXES,
+        hallucination_guard_markers=HALLUCINATION_GUARD_MARKERS,
+        answer_style_markers=ANSWER_STYLE_MARKERS,
+        diagnostic_rule_markers=DIAGNOSTIC_RULE_MARKERS,
+        workflow_habit_markers=WORKFLOW_HABIT_MARKERS,
+        communication_preference_markers=COMMUNICATION_PREFERENCE_MARKERS,
+        protected_mutation_pattern=PROTECTED_MUTATION_PATTERN,
+        implementation_task_pattern=IMPLEMENTATION_TASK_PATTERN,
+        extract_active_focus_instruction=_extract_active_focus_instruction,
+        is_protected_implementation_task=_is_protected_implementation_task,
     )
-
-    if _extract_active_focus_instruction(question) is not None:
-        return "active_focus_update"
-
-    if is_repo_build_task:
-        return "implementation_task"
-
-    if any(normalized.startswith(prefix) for prefix in CORRECTION_PREFIXES):
-        return "user_correction"
-
-    if "you are not responsible for building yourself" in normalized:
-        return "user_correction"
-
-    if is_question and not any(
-        marker in normalized
-        for marker in (
-            "when i ask about",
-            "from now on",
-            "i want you to",
-            "remember i prefer",
-            "check proof first",
-            "do not guess",
-            "don't guess",
-        )
-    ):
-        return "status_question"
-
-    if any(marker in normalized for marker in HALLUCINATION_GUARD_MARKERS):
-        return "hallucination_guard"
-
-    if any(marker in normalized for marker in ANSWER_STYLE_MARKERS):
-        return "answer_style_preference"
-
-    if any(marker in normalized for marker in DIAGNOSTIC_RULE_MARKERS):
-        return "diagnostic_rule"
-
-    if any(marker in normalized for marker in WORKFLOW_HABIT_MARKERS):
-        return "workflow_habit_learning"
-
-    if any(marker in normalized for marker in COMMUNICATION_PREFERENCE_MARKERS):
-        return "communication_preference"
-
-    if PROTECTED_MUTATION_PATTERN.search(normalized):
-        return "protected_mutation_request"
-
-    if is_question:
-        return "status_question"
-
-    if IMPLEMENTATION_TASK_PATTERN.search(
-        normalized
-    ) and _is_protected_implementation_task(normalized):
-        return "implementation_task"
-
-    return "normal_question"
 
 
 def _build_task_guard_answer() -> str:
-    return (
-        "This is a build task targeting a protected location or protected mutation boundary. "
-        "Use Operator Mode for repo writes, writes outside the approved sandbox, destructive actions, commit/push, or other protected mutations. "
-        "No files were changed. No tests were run. No commit or push occurred."
-    )
+    return _build_task_guard_answer_from_api()
 
 
 def _is_protected_implementation_task(normalized_question: str) -> bool:
-    if not normalized_question:
-        return False
-
-    protected_markers = (
-        " repo",
-        " repository",
-        " codebase",
-        " workspace",
-        " worktree",
-        " file",
-        " files",
-        " folder",
-        " directory",
-        " x:\\",
-        " git",
-        " commit",
-        " push",
-        " branch",
-        " pull request",
-        " pr",
-        " pytest",
-        " npm",
-        " test suite",
-        " tests",
-        " docker",
-        " container",
-        " sandbox",
-        " implement patch",
-        " apply patch",
-    )
-    padded = f" {normalized_question} "
-    return any(marker in padded for marker in protected_markers)
+    return _is_protected_implementation_task_from_api(normalized_question)
 
 
 def _runtime_clock_timezone() -> ZoneInfo | timezone:
@@ -548,17 +461,10 @@ def _runtime_clock_answer() -> tuple[str, dict[str, Any]]:
 
 
 def _is_build_follow_up_prompt(question: str) -> bool:
-    normalized = _normalize_intent_text(question)
-    return normalized in {
-        "implement patch",
-        "implemente patch",
-        "do it",
-        "finish it",
-        "commit it",
-        "push it",
-        "run it",
-        "make it happen",
-    }
+    return _is_build_follow_up_prompt_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
+    )
 
 
 def _lacks_verified_operator_success(session_metadata: dict[str, Any]) -> bool:
@@ -693,22 +599,7 @@ def _focus_violates_protected_rules(focus_text: str) -> bool:
 
 
 def _active_focus_system_prompt(session_metadata: dict[str, Any]) -> str:
-    focus = session_metadata.get("active_focus")
-    if not isinstance(focus, dict):
-        return ""
-
-    label = str(focus.get("id", "FOCUS-USER")).strip() or "FOCUS-USER"
-    summary = str(focus.get("summary", "")).strip()
-    if not summary:
-        return ""
-
-    return (
-        "--- ACTIVE FOCUS (DIRECT USER INSTRUCTION) ---\n"
-        f"{label} â€” {summary}\n"
-        "Treat this as the current working priority until the user changes it.\n"
-        "Do not confuse roadmap phase with active user focus.\n"
-        "----------------------------------------------\n"
-    )
+    return _active_focus_system_prompt_from_api(session_metadata)
 
 
 async def _persist_session_focus_fact(
@@ -773,51 +664,21 @@ def _is_communication_workflow_focus(session_metadata: dict[str, Any]) -> bool:
 
 
 def _is_focus_guided_follow_up(question: str) -> bool:
-    normalized = _normalize_intent_text(question)
-    patterns = (
-        "next steps",
-        "what now",
-        "how do we improve this",
-        "what should we pursue",
-        "communicate better",
-        "fluid communication",
-        "increasing fluid communication",
+    return _is_focus_guided_follow_up_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
     )
-    return any(token in normalized for token in patterns)
 
 
 def _is_local_scan_or_operator_prompt(question: str) -> bool:
-    normalized = _normalize_intent_text(question)
-    scan_tokens = (
-        "local scan",
-        "scan",
-        "bridge",
-        "hardware",
-        "host visibility",
-        "operator mode",
-        "staging",
-        "stage action",
-        "cpu",
-        "gpu",
-        "disk",
-        "ports",
-        "container",
+    return _is_local_scan_or_operator_prompt_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
     )
-    return any(token in normalized for token in scan_tokens)
 
 
 def _active_focus_guided_plan_answer() -> str:
-    return (
-        "Next steps for better communication with Otis, under the current Active Focus:\n"
-        "1. Track Otis corrections turn-by-turn and convert them into durable behavior updates.\n"
-        "2. Save communication preferences (style, depth, tone, constraints) and apply them on every response.\n"
-        "3. Learn workflow habits from repeated patterns and reflect them in execution order.\n"
-        "4. Ask one clarifying question whenever an instruction is ambiguous before taking action.\n"
-        "5. Use compact receipts to show what was applied, what source was used, and what changed.\n"
-        "6. Verify persistence by checking behavior after new session, reload, and container restart.\n"
-        "7. Reduce hallucinations by requiring explicit source/proof on repo and runtime status claims.\n\n"
-        "Clarifying question (only if needed now): which lane should I tune first for you â€” correction handling, preference persistence, or workflow habit learning?"
-    )
+    return _active_focus_guided_plan_answer_from_api()
 
 
 def _active_focus_guided_context_receipt(focus_id: str) -> dict[str, Any]:
