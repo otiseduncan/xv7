@@ -4,9 +4,7 @@ import os
 import html
 import re
 import difflib
-import hashlib
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -15,7 +13,14 @@ import httpx
 
 from core.brain import site_bundle as sb
 from core.brain.artifact_fidelity_manager import ArtifactFidelityManager
+from core.brain.artifact_utils import (
+    content_sha256,
+    safe_slug,
+    slugify_artifact_name,
+    utc_now_iso,
+)
 from core.brain.code_artifact_builder import CodeArtifactBuilder
+from core.brain.git_runner import run_git
 from core.brain.intent_router import IntentRouter
 from core.brain.repo_safety_policy import RepoSafetyPolicy
 from core.brain.sandbox_writer import SandboxWriteManager
@@ -285,617 +290,42 @@ class AnswerContract:
     @staticmethod
     def is_code_artifact_request(normalized_question: str) -> bool:
         return IntentRouter.is_code_artifact_request(normalized_question)
-        has_hint = bool(
-            AnswerContract.CODE_ARTIFACT_HINT_PATTERN.search(normalized_question)
-        )
-        has_action = bool(
-            AnswerContract.CODE_ARTIFACT_PATTERN.search(normalized_question)
-        )
-        return has_hint and has_action
 
     @staticmethod
     def _code_artifact_language(normalized_question: str) -> str:
         return CodeArtifactBuilder.code_artifact_language(normalized_question)
-        if "typescript" in normalized_question or re.search(
-            r"\bts\b", normalized_question
-        ):
-            return "typescript"
-        if "javascript" in normalized_question or re.search(
-            r"\bjs\b", normalized_question
-        ):
-            return "javascript"
-        if "css" in normalized_question:
-            return "css"
-        if "python" in normalized_question:
-            return "python"
         return "html"
 
     @staticmethod
     def _code_artifact_filename(language: str) -> str:
         return CodeArtifactBuilder.code_artifact_filename(language)
-        if language == "css":
-            return "styles.css"
-        if language == "javascript":
-            return "app.js"
-        if language == "typescript":
-            return "app.ts"
-        if language == "python":
-            return "main.py"
         return "index.html"
 
     @staticmethod
     def _clean_artifact_label(text: str) -> str:
         return CodeArtifactBuilder.clean_artifact_label(text)
-        value = re.sub(r"\s+", " ", text.strip())
-        return value.strip(" .,:;\"'“”‘’")
 
     @classmethod
     def _extract_artifact_name(cls, question: str) -> str | None:
         return CodeArtifactBuilder.extract_artifact_name(question)
-        quoted_patterns = [
-            r"one-page\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]\s+website",
-            r"website\s+for\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]",
-            r"for\s+[\"'“”‘’]([^\"'“”‘’]{2,80})[\"'“”‘’]",
-        ]
-        for pattern in quoted_patterns:
-            match = re.search(pattern, question, flags=re.IGNORECASE)
-            if not match:
-                continue
-            candidate = cls._clean_artifact_label(match.group(1))
-            if candidate:
-                return candidate
-
-        patterns = [
-            (r"one-page\s+([^,.]+?)\s+website", False),
-            (r"for\s+([^,.]+?)\s+website", False),
-            (
-                r"for\s+([^,.]+?)\s+(?:grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b",
-                True,
-            ),
-            (r"for\s+([^,.]+?)\s+using\b", True),
-            (
-                r"(?:html\s+)?artifact\s+([^,.]+?)\s+and\s+(?:a\s+)?(?:biker\s+bar|bar|grooming|dog\s+grooming|pet\s+grooming|detailing|locksmiths?|arcade|florist|flowers?)\b",
-                True,
-            ),
-            (r"(?:html\s+)?artifact\s+([^,.]+?)\s+using\b", True),
-            (
-                r"website\s+for\s+([^,.]+?)(?:\s+return|\s+with|\s+that|\s+please|\.|,|$)",
-                False,
-            ),
-        ]
-
-        suffixes = (
-            " dog grooming",
-            " pet grooming",
-            " grooming",
-            " detailing",
-            " locksmiths",
-            " locksmith",
-            " arcade",
-            " florist",
-            " flowers",
-            " website",
-            " site",
-        )
-        banned_full = {
-            "website",
-            "site",
-            "local business",
-            "local business website",
-            "one-page website",
-            "one page website",
-            "small html artifact",
-            "html artifact",
-            "code artifact",
-            "grooming",
-            "pet grooming",
-            "dog grooming",
-            "detailing",
-            "locksmith",
-            "locksmiths",
-            "arcade",
-            "florist",
-            "flowers",
-        }
-
-        for pattern, trim_suffix in patterns:
-            match = re.search(pattern, question, flags=re.IGNORECASE)
-            if not match:
-                continue
-            candidate = cls._clean_artifact_label(match.group(1))
-            lowered = candidate.lower()
-            if trim_suffix:
-                for suffix in suffixes:
-                    if lowered.endswith(suffix):
-                        candidate = cls._clean_artifact_label(candidate[: -len(suffix)])
-                        lowered = candidate.lower()
-                        break
-            if lowered in banned_full:
-                continue
-            if candidate:
-                return candidate
         return None
 
     @staticmethod
     def _artifact_business_category(question: str, name: str | None) -> str:
         return CodeArtifactBuilder.artifact_business_category(question, name)
-        text = f"{question} {name or ''}".lower()
-        if any(
-            token in text
-            for token in (
-                "locksmith",
-                "lockout",
-                "rekey",
-                "deadbolt",
-                "key",
-                "security lock",
-            )
-        ):
-            return "locksmith"
-        if any(
-            token in text
-            for token in (
-                "dog grooming",
-                "pet grooming",
-                "grooming",
-                "puppy",
-                "dog wash",
-                "bath",
-                "trim",
-                "fur",
-                "paw",
-                "kennel",
-                "pet spa",
-                "groomer",
-            )
-        ):
-            return "grooming"
-        if any(
-            token in text
-            for token in (
-                "hot dog",
-                "hotdog",
-                "cart",
-                "food truck",
-                "food cart",
-                "concession",
-            )
-        ):
-            return "hot_dog_cart"
-        if any(
-            token in text
-            for token in (
-                "flower",
-                "florist",
-                "bouquet",
-                "bouquets",
-                "blossom",
-                "bloom",
-                "petal",
-            )
-        ):
-            return "florist"
-        if any(
-            token in text
-            for token in (
-                "detail",
-                "detailing",
-                "car wash",
-                "auto detail",
-                "mobile detailing",
-                "vehicle",
-            )
-        ):
-            return "detailing"
-        if any(
-            token in text
-            for token in (
-                "arcade",
-                "gaming",
-                "game",
-                "retro",
-                "neon byte",
-                "pixel",
-                "high score",
-            )
-        ):
-            return "arcade"
-        if any(
-            token in text for token in ("biker bar", "bar", "tavern", "pub", "alehouse")
-        ):
-            return "biker_bar"
         return "generic"
 
     @staticmethod
     def _artifact_style_profile(question: str, category: str) -> dict[str, str]:
         return CodeArtifactBuilder.artifact_style_profile(question, category)
-        text = question.lower()
-        style = {
-            "accent": "#fbbf24",
-            "accent_2": "#fb7185",
-            "font_stack": '"Segoe UI", system-ui, sans-serif',
-            "hero_transform": "none",
-            "bg": "#07111f",
-            "panel": "rgba(10, 19, 34, 0.92)",
-            "text": "#f3f7fb",
-            "muted": "#b7c5d7",
-            "border": "rgba(122, 214, 255, 0.18)",
-        }
-
-        if category == "locksmith":
-            style.update(
-                {
-                    "accent": "#dc2626",
-                    "accent_2": "#9ca3af",
-                    "font_stack": '"Segoe UI", system-ui, sans-serif',
-                }
-            )
-        elif category == "grooming":
-            style.update(
-                {
-                    "accent": "#7c3aed",
-                    "accent_2": "#22c55e",
-                    "font_stack": '"Segoe UI", system-ui, sans-serif',
-                    "bg": "#ffffff",
-                    "panel": "rgba(255, 255, 255, 0.96)",
-                    "text": "#1f2937",
-                    "muted": "#4b5563",
-                    "border": "rgba(124, 58, 237, 0.22)",
-                }
-            )
-        elif category == "hot_dog_cart":
-            style.update(
-                {
-                    "accent": "#fbbf24",
-                    "accent_2": "#fb7185",
-                    "font_stack": '"Segoe UI", system-ui, sans-serif',
-                }
-            )
-        elif category == "florist":
-            style.update(
-                {
-                    "accent": "#f59e0b",
-                    "accent_2": "#ec4899",
-                    "font_stack": 'Georgia, "Times New Roman", serif',
-                }
-            )
-        elif category == "detailing":
-            style.update(
-                {
-                    "accent": "#38bdf8",
-                    "accent_2": "#22d3ee",
-                    "font_stack": '"Segoe UI", system-ui, sans-serif',
-                }
-            )
-        elif category == "arcade":
-            style.update(
-                {
-                    "accent": "#a855f7",
-                    "accent_2": "#22d3ee",
-                    "font_stack": '"Trebuchet MS", "Arial Black", sans-serif',
-                    "hero_transform": "uppercase",
-                }
-            )
-        elif category == "biker_bar":
-            style.update(
-                {
-                    "accent": "#f97316",
-                    "accent_2": "#facc15",
-                    "font_stack": '"Trebuchet MS", "Arial Black", sans-serif',
-                    "bg": "#070707",
-                    "panel": "rgba(12, 12, 12, 0.96)",
-                    "text": "#f5f5f5",
-                    "muted": "#d4d4d4",
-                    "border": "rgba(249, 115, 22, 0.24)",
-                }
-            )
-
-        if any(token in text for token in ("purple", "violet", "magenta")):
-            style["accent"] = "#a855f7"
-        if "yellow" in text:
-            style["accent"] = "#facc15"
-        if "gold" in text:
-            style["accent"] = "#d4af37"
-        if "red" in text:
-            style["accent"] = "#dc2626"
-        if "orange" in text:
-            style["accent"] = "#f97316"
-        if "blue" in text:
-            style["accent"] = "#2563eb"
-        if any(token in text for token in ("green", "mint", "lime")):
-            style["accent_2"] = "#22c55e"
-        if "black" in text:
-            style.update(
-                {
-                    "bg": "#070707",
-                    "panel": "rgba(12, 12, 12, 0.96)",
-                    "text": "#f5f5f5",
-                    "muted": "#d4d4d4",
-                    "border": "rgba(250, 204, 21, 0.24)",
-                }
-            )
-        if "white" in text:
-            style.update(
-                {
-                    "bg": "#ffffff",
-                    "panel": "rgba(255, 255, 255, 0.96)",
-                    "text": "#111827",
-                    "muted": "#4b5563",
-                }
-            )
-        if "silver" in text:
-            style["accent_2"] = "#c0c0c0"
-        if any(token in text for token in ("cyan", "aqua", "teal")):
-            style["accent_2"] = "#22d3ee"
-        if any(token in text for token in ("bright", "neon")):
-            style["accent"] = style.get("accent", "#fbbf24")
-        if any(token in text for token in ("elegant", "luxury")):
-            style["font_stack"] = 'Georgia, "Times New Roman", serif'
-        if any(token in text for token in ("retro", "futuristic")):
-            style["font_stack"] = '"Trebuchet MS", "Arial Black", sans-serif'
-        if (
-            any(token in text for token in ("clean", "playful"))
-            and category != "arcade"
-        ):
-            style["font_stack"] = '"Segoe UI", system-ui, sans-serif'
-
-        if any(token in text for token in ("white", "cream")) and any(
-            token in text for token in ("black", "dark")
-        ):
-            style["text"] = "#111827"
-            style["panel"] = "rgba(255, 255, 255, 0.94)"
-
-        return style
 
     @staticmethod
     def _format_business_name(name: str | None, fallback: str) -> str:
         return CodeArtifactBuilder.format_business_name(name, fallback)
-        value = (name or "").strip()
-        return value or fallback
 
     @classmethod
     def _build_business_site_template(cls, question: str) -> dict[str, Any]:
         return CodeArtifactBuilder.build_business_site_template(question)
-        business_name = cls._extract_artifact_name(question)
-        category = cls._artifact_business_category(question, business_name)
-        display_name = cls._format_business_name(
-            business_name, "Local Business Website"
-        )
-        style = cls._artifact_style_profile(question, category)
-
-        if category == "locksmith":
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Locked out? Fast, verified locksmith response when every minute matters.",
-                "lead": f"An urgent, trust-first one-page locksmith website for {display_name} focused on emergency lockout service, rekeying, and home security.",
-                "primary_cta": "Call emergency lockout now",
-                "secondary_cta": "View security services",
-                "highlight_title": "Emergency & Security Services",
-                "highlights": [
-                    (
-                        "24/7 Emergency Lockout",
-                        "Rapid dispatch for home, office, and vehicle lockouts",
-                    ),
-                    (
-                        "Rekey & Key Duplication",
-                        "Secure key control without full lock replacement",
-                    ),
-                    (
-                        "Deadbolt & Entry Security",
-                        "Reinforced hardware and break-in response",
-                    ),
-                ],
-                "info_title": "Why Residents Trust Us",
-                "info_lines": [
-                    "Licensed local locksmith technicians with verified ID on arrival.",
-                    "Upfront pricing before work starts. No hidden after-hours surprises.",
-                    "Priority dispatch for urgent lockout and compromised-lock situations.",
-                ],
-                "action_title": "Need Help Right Now?",
-                "action_body": "Call now for immediate emergency lockout support and on-site security restoration.",
-                "action_label": "Dispatch Technician",
-            }
-
-        if category == "grooming":
-            palette = ", ".join(
-                AnswerContract._extract_style_hints(question).get("colors", [])
-            )
-            palette_line = (
-                f"Requested palette applied across grooming stations and CTA accents: {palette}."
-                if palette
-                else "Requested palette applied across grooming stations and CTA accents."
-            )
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Pet grooming that keeps every pup clean, calm, and camera-ready.",
-                "lead": f"A friendly one-page pet grooming website for {display_name} featuring gentle bath, trim, and coat care with easy booking.",
-                "primary_cta": "Book a grooming appointment",
-                "secondary_cta": "See bath & trim services",
-                "highlight_title": "Dog & Pet Grooming Services",
-                "highlights": [
-                    (
-                        "Bath & Wash",
-                        "Deep clean wash with pet-safe shampoo and careful rinse",
-                    ),
-                    (
-                        "Trim & Paw Care",
-                        "Breed-aware trim, nail touch-up, and paw tidy service",
-                    ),
-                    (
-                        "Coat & Fur Care",
-                        "Deshed, brush-out, and coat conditioning for comfort",
-                    ),
-                ],
-                "info_title": "Why Pet Parents Choose Us",
-                "info_lines": [
-                    "Calm, pet-safe handling for puppies and adult dogs.",
-                    palette_line,
-                    "Simple appointment booking and clear service timing.",
-                ],
-                "action_title": "Ready for a Fresh Groom?",
-                "action_body": "Book your pet grooming appointment for bath, trim, fur care, and a happy return home.",
-                "action_label": "Book Grooming",
-            }
-
-        if category == "hot_dog_cart":
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Fresh dogs, fast service, neighborhood flavor.",
-                "lead": f"A one-page local website for {display_name} with quick pickup, bold toppings, and a friendly street-side feel.",
-                "primary_cta": "See the menu",
-                "secondary_cta": "Plan your visit",
-                "highlight_title": "Menu Highlights",
-                "highlights": [
-                    ("Classic Cart Dog", "Mustard, relish, onion"),
-                    ("Chicago-Style Dog", "Pickle, tomato, sport peppers"),
-                    ("Loaded Chili Dog", "Cheese, onion, jalapeno"),
-                ],
-                "info_title": "Location & Hours",
-                "info_lines": [
-                    "Main Street corner near the park.",
-                    "Mon-Sat, 11:00 AM - 7:00 PM",
-                    "Sunday by event schedule",
-                ],
-                "action_title": "Order Ahead",
-                "action_body": "Call ahead, swing by for pickup, or ask about catering for local events.",
-                "action_label": "Call Now",
-            }
-
-        if category == "florist":
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Fresh blooms, thoughtful arrangements, same-day smiles.",
-                "lead": f"A one-page florist website for {display_name} with bouquets, seasonal stems, and delivery-ready service.",
-                "primary_cta": "Browse bouquets",
-                "secondary_cta": "Schedule delivery",
-                "highlight_title": "Featured Arrangements",
-                "highlights": [
-                    ("Seasonal Bouquets", "Hand-tied color stories for every room"),
-                    ("Event Florals", "Weddings, showers, and celebrations"),
-                    ("Daily Bloom Bar", "Fresh picks ready to go"),
-                ],
-                "info_title": "Shop Info",
-                "info_lines": [
-                    "Neighborhood studio with local pickup.",
-                    "Mon-Sat, 9:00 AM - 6:00 PM",
-                    "Same-day delivery available in town",
-                ],
-                "action_title": "Send Flowers",
-                "action_body": "Choose a bouquet, add a note, and let the blooms do the talking.",
-                "action_label": "Order Flowers",
-            }
-
-        if category == "detailing":
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Mobile shine, showroom finish, driveway convenience.",
-                "lead": f"A one-page mobile detailing website for {display_name} with on-site wash, interior refresh, and protective finishes.",
-                "primary_cta": "Book a detail",
-                "secondary_cta": "View packages",
-                "highlight_title": "Detailing Packages",
-                "highlights": [
-                    ("Interior Reset", "Vacuum, wipe-down, glass, and trim"),
-                    ("Exterior Wash", "Paint-safe wash and wheel cleaning"),
-                    ("Protection Add-On", "Sealant for longer-lasting shine"),
-                ],
-                "info_title": "Service Area",
-                "info_lines": [
-                    "Mobile appointments at home or work.",
-                    "Mon-Sat, 8:00 AM - 6:00 PM",
-                    "Serving cars, trucks, and SUVs",
-                ],
-                "action_title": "Schedule Service",
-                "action_body": "Pick a package, choose a time, and get a clean ride without the wait.",
-                "action_label": "Book Now",
-            }
-
-        if category == "arcade":
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Play fast, chase high scores, and keep the neon glowing.",
-                "lead": f"A one-page arcade website for {display_name} with cabinets, tournaments, and a bold retro-futuristic feel.",
-                "primary_cta": "Start playing",
-                "secondary_cta": "See the games",
-                "highlight_title": "Featured Games",
-                "highlights": [
-                    ("Pixel Runner", "Fast reflexes, bright lights, leaderboard chase"),
-                    ("Neon Drift", "Racing lanes with glowing city vibes"),
-                    ("Boss Battle", "High-score challenge for night owls"),
-                ],
-                "info_title": "Arcade Info",
-                "info_lines": [
-                    "Open late with classic cabinets and modern favorites.",
-                    "Friday-Sunday tournaments and free-play nights.",
-                    "Bring friends, grab tokens, and push the high score.",
-                ],
-                "action_title": "Join the Game",
-                "action_body": "Drop in, power up, and claim a spot on the scoreboard.",
-                "action_label": "Play Now",
-            }
-
-        if category == "biker_bar":
-            return {
-                "display_name": display_name,
-                "style": style,
-                "hero": "Heavy bikes, loud riffs, cold pours, and a road-ready crowd.",
-                "lead": f"A one-page biker bar website for {display_name} with live music nights, tap highlights, and rally-friendly events.",
-                "primary_cta": "See tonight's lineup",
-                "secondary_cta": "View tap list",
-                "highlight_title": "Biker Bar Highlights",
-                "highlights": [
-                    (
-                        "Live Music Nights",
-                        "Weekly sets with local hard rock and blues bands",
-                    ),
-                    (
-                        "House Tap Picks",
-                        "Rotating drafts, whiskey pours, and rider specials",
-                    ),
-                    (
-                        "Road Crew Events",
-                        "Bike meetups, poker runs, and weekend rally starts",
-                    ),
-                ],
-                "info_title": "The Tavern Vibe",
-                "info_lines": [
-                    "Leather jackets welcome, helmets by the door, good times on tap.",
-                    "Black, orange, and yellow palette tuned for a bold late-night biker bar look.",
-                    "Open late with food, drinks, and event nights built for the ride-in crowd.",
-                ],
-                "action_title": "Roll In Tonight",
-                "action_body": "Check the live set, lock in your crew, and ride over for the next round.",
-                "action_label": "Plan Your Night",
-            }
-
-        return {
-            "display_name": display_name,
-            "style": style,
-            "hero": "A clean one-page website with a clear offer and simple call to action.",
-            "lead": f"A one-page business website for {display_name} with a bold hero, useful details, and a clear next step.",
-            "primary_cta": "Explore services",
-            "secondary_cta": "Get in touch",
-            "highlight_title": "Key Services",
-            "highlights": [
-                ("Service One", "Simple summary of the main offer"),
-                ("Service Two", "Supporting option or package"),
-                ("Service Three", "Another helpful detail for visitors"),
-            ],
-            "info_title": "Business Info",
-            "info_lines": [
-                "Local service with a friendly, direct approach.",
-                "Open by appointment or posted hours.",
-                "Reach out for pricing, availability, or booking.",
-            ],
-            "action_title": "Contact Us",
-            "action_body": "Call, email, or send a quick message to get started.",
-            "action_label": "Contact",
-        }
 
     @staticmethod
     def _default_code_artifact_content(
@@ -906,398 +336,47 @@ class AnswerContract:
             language,
             question,
         )
-        if language == "html":
-            template = AnswerContract._build_business_site_template(question)
-            display_name = html.escape(str(template["display_name"]), quote=False)
-            hero = html.escape(str(template["hero"]), quote=False)
-            lead = html.escape(str(template["lead"]), quote=False)
-            highlight_title = html.escape(str(template["highlight_title"]), quote=False)
-            info_title = html.escape(str(template["info_title"]), quote=False)
-            action_title = html.escape(str(template["action_title"]), quote=False)
-            action_body = html.escape(str(template["action_body"]), quote=False)
-            primary_cta = html.escape(str(template["primary_cta"]), quote=False)
-            secondary_cta = html.escape(str(template["secondary_cta"]), quote=False)
-            action_label = html.escape(str(template["action_label"]), quote=False)
-            highlights = "".join(
-                f'<li><span>{html.escape(str(left), quote=False)}</span><span class="muted">{html.escape(str(right), quote=False)}</span></li>'
-                for left, right in template["highlights"]
-            )
-            info_lines = "".join(
-                f'<p class="muted">{html.escape(str(line), quote=False)}</p>'
-                for line in template["info_lines"]
-            )
-            style = template["style"]
-            accent = str(style["accent"])
-            accent_2 = str(style["accent_2"])
-            font_stack = str(style["font_stack"])
-            hero_transform = str(style["hero_transform"])
-            bg = str(style.get("bg", "#07111f"))
-            panel = str(style.get("panel", "rgba(10, 19, 34, 0.92)"))
-            text_color = str(style.get("text", "#f3f7fb"))
-            muted = str(style.get("muted", "#b7c5d7"))
-            border = str(style.get("border", "rgba(122, 214, 255, 0.18)"))
-            return f"""<!doctype html>
-<html lang=\"en\">
-    <head>
-        <meta charset=\"utf-8\" />
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-        <title>{display_name}</title>
-        <style>
-            :root {{
-                color-scheme: dark;
-                --bg: {bg};
-                --panel: {panel};
-                --text: {text_color};
-                --muted: {muted};
-                --accent: {accent};
-                --accent-2: {accent_2};
-                --border: {border};
-                --font-stack: {font_stack};
-            }}
-            * {{ box-sizing: border-box; }}
-            body {{
-                margin: 0;
-                min-height: 100vh;
-                font-family: var(--font-stack);
-                color: var(--text);
-                background:
-                    radial-gradient(circle at top, color-mix(in srgb, var(--accent) 22%, transparent), transparent 36%),
-                    linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, #0a1323) 0%, var(--bg) 52%, color-mix(in srgb, var(--bg) 80%, #050b14) 100%);
-            }}
-            .page {{
-                min-height: 100vh;
-                display: grid;
-                place-items: center;
-                padding: 24px;
-            }}
-            .card {{
-                width: min(960px, 100%);
-                background: var(--panel);
-                border: 1px solid var(--border);
-                border-radius: 28px;
-                overflow: hidden;
-                box-shadow: 0 30px 70px rgba(0, 0, 0, 0.35);
-            }}
-            .hero {{
-                padding: 40px 28px 28px;
-                background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent-2) 14%, transparent));
-            }}
-            .eyebrow {{
-                display: inline-flex;
-                padding: 8px 12px;
-                border-radius: 999px;
-                background: rgba(255, 255, 255, 0.08);
-                color: var(--muted);
-                font-size: 0.82rem;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-            }}
-            h1 {{
-                margin: 18px 0 12px;
-                font-size: clamp(2.4rem, 7vw, 4.8rem);
-                line-height: 0.95;
-                letter-spacing: -0.05em;
-                text-transform: {hero_transform};
-            }}
-            .lead {{
-                max-width: 62ch;
-                margin: 0;
-                color: var(--muted);
-                font-size: clamp(1rem, 2.2vw, 1.15rem);
-                line-height: 1.6;
-            }}
-            .hero-actions {{
-                display: flex;
-                flex-wrap: wrap;
-                gap: 12px;
-                margin-top: 24px;
-            }}
-            .button {{
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 48px;
-                padding: 0 18px;
-                border-radius: 999px;
-                text-decoration: none;
-                font-weight: 700;
-            }}
-            .button.primary {{
-                color: #111827;
-                background: linear-gradient(135deg, var(--accent), var(--accent-2));
-            }}
-            .button.secondary {{
-                color: var(--text);
-                border: 1px solid rgba(255, 255, 255, 0.14);
-                background: rgba(255, 255, 255, 0.05);
-            }}
-            .grid {{
-                display: grid;
-                gap: 20px;
-                padding: 28px;
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            }}
-            .panel {{
-                padding: 20px;
-                border-radius: 22px;
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-            }}
-            .panel h2 {{
-                margin: 0 0 10px;
-                font-size: 1.1rem;
-            }}
-            .menu-list {{
-                margin: 0;
-                padding: 0;
-                list-style: none;
-                display: grid;
-                gap: 10px;
-            }}
-            .menu-list li {{
-                display: flex;
-                justify-content: space-between;
-                gap: 16px;
-                padding-bottom: 10px;
-                border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
-            }}
-            .muted {{ color: var(--muted); }}
-            @media (max-width: 640px) {{
-                .hero, .grid {{ padding-left: 18px; padding-right: 18px; }}
-                .button {{ width: 100%; }}
-            }}
-        </style>
-    </head>
-    <body>
-        <main class=\"page\">
-            <section class=\"card\">
-                <header class=\"hero\">
-                    <div class=\"eyebrow\">{display_name}</div>
-                    <h1>{hero}</h1>
-                    <p class=\"lead\">{lead}</p>
-                    <div class=\"hero-actions\">
-                        <a class=\"button primary\" href=\"#highlights\">{primary_cta}</a>
-                        <a class=\"button secondary\" href=\"#info\">{secondary_cta}</a>
-                    </div>
-                </header>
-                <section class=\"grid\">
-                    <article class=\"panel\" id=\"highlights\">
-                        <h2>{highlight_title}</h2>
-                        <ul class=\"menu-list\">{highlights}</ul>
-                    </article>
-                    <article class=\"panel\" id=\"info\">
-                        <h2>{info_title}</h2>
-                        {info_lines}
-                    </article>
-                    <article class=\"panel\">
-                        <h2>{action_title}</h2>
-                        <p class=\"muted\">{action_body}</p>
-                        <a class=\"button primary\" href=\"#highlights\">{action_label}</a>
-                    </article>
-                </section>
-            </section>
-        </main>
-    </body>
-</html>"""
-
-        if language == "css":
-            return """body {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-}
-"""
-
-        display_name = AnswerContract._format_business_name(
-            AnswerContract._extract_artifact_name(question),
-            "Local Business Website" if language == "html" else "Draft Artifact",
-        )
-
-        if language == "javascript":
-            return f'const brand = "{display_name}";\nconsole.log(brand);'
-
-        if language == "typescript":
-            return f'const brand: string = "{display_name}";\nconsole.log(brand);'
-
-        if language == "python":
-            return f"""def main() -> None:
-    print(\"{display_name}\")
-
-
-if __name__ == \"__main__\":
-    main()
-"""
-
         return f"# Draft artifact for {filename}\n"
 
     @staticmethod
     def _extract_requested_filename(question: str, language: str) -> str:
         return CodeArtifactBuilder.extract_requested_filename(question, language)
-        match = re.search(
-            r"\bfilename\s*[=:]?\s*[\"'“”‘’]?([a-zA-Z0-9._-]{1,80})[\"'“”‘’]?",
-            question,
-            flags=re.IGNORECASE,
-        )
-        if match:
-            return match.group(1)
         return AnswerContract._code_artifact_filename(language)
 
     @staticmethod
     def _extract_requested_previewable(question: str, language: str) -> bool:
         return CodeArtifactBuilder.extract_requested_previewable(question, language)
-        match = re.search(
-            r"\bpreviewable\s*[=:]?\s*(true|false)\b", question, flags=re.IGNORECASE
-        )
-        if match:
-            return match.group(1).lower() == "true"
         return language == "html"
 
     @staticmethod
     def _extract_apply_intent(question: str) -> bool:
         return CodeArtifactBuilder.extract_apply_intent(question)
-        lowered = question.lower()
-        if "do not apply" in lowered or "don't apply" in lowered:
-            return False
-        if "apply it to the repo" in lowered or "apply to the repo" in lowered:
-            return True
         return False
 
     @staticmethod
     def _extract_style_hints(question: str) -> dict[str, list[str]]:
         return CodeArtifactBuilder.extract_style_hints(question)
-        lowered = question.lower()
-        known_colors = (
-            "black",
-            "white",
-            "red",
-            "blue",
-            "green",
-            "yellow",
-            "orange",
-            "purple",
-            "pink",
-            "cream",
-            "gold",
-            "silver",
-            "cyan",
-            "teal",
-            "magenta",
-        )
-        colors = [
-            color
-            for color in known_colors
-            if re.search(rf"\b{re.escape(color)}\b", lowered)
-        ]
-        colors.extend(re.findall(r"#[0-9a-f]{3,8}\b", lowered))
-
-        style_keywords = (
-            "elegant",
-            "script",
-            "futuristic",
-            "retro",
-            "bold",
-            "playful",
-            "trustworthy",
-            "urgent",
-            "automotive",
-            "clean",
-            "modern",
-            "minimal",
-            "neon",
-        )
-        styles = [
-            token
-            for token in style_keywords
-            if re.search(rf"\b{re.escape(token)}\b", lowered)
-        ]
-        return {
-            "colors": list(dict.fromkeys(colors)),
-            "styles": list(dict.fromkeys(styles)),
-        }
 
     @staticmethod
     def _extract_layout_hints(question: str) -> list[str]:
         return CodeArtifactBuilder.extract_layout_hints(question)
-        candidates = re.findall(
-            r"\b(include|with|featuring|highlight|show)\s+([^.;]{3,140})",
-            question,
-            flags=re.IGNORECASE,
-        )
-        hints: list[str] = []
-        for _, value in candidates:
-            cleaned = value.strip(" .")
-            if cleaned:
-                hints.append(cleaned)
-        return hints[:6]
 
     @staticmethod
     def _artifact_intent_label(question: str) -> str:
         return CodeArtifactBuilder.artifact_intent_label(question)
-        lowered = question.lower()
-        if "small html artifact" in lowered:
-            return "small HTML artifact"
-        if "one-page" in lowered and "website" in lowered:
-            return "one-page website"
-        if "html" in lowered:
-            return "HTML artifact"
         return "code artifact"
 
     @classmethod
     def _extract_prompt_fidelity_contract(cls, question: str) -> dict[str, Any]:
         return ArtifactFidelityManager.extract_prompt_fidelity_contract(question)
-        requested_business_name = cls._clean_artifact_label(
-            str(cls._extract_artifact_name(question) or "")
-        )
-        requested_business_type = cls._artifact_business_category(
-            question, requested_business_name
-        )
-        requested_colors = cls._extract_style_hints(question).get("colors", [])
-        return {
-            "requested_business_name": requested_business_name,
-            "requested_business_type": requested_business_type,
-            "requested_colors": list(dict.fromkeys(requested_colors)),
-            "artifact_intent": cls._artifact_intent_label(question),
-            "source_prompt": question.strip(),
-        }
 
     @staticmethod
     def _color_hex_map() -> dict[str, list[str]]:
         return ArtifactFidelityManager.color_hex_map()
-        return {
-            "black": ["#000", "#000000", "#070707", "#111"],
-            "white": ["#fff", "#ffffff"],
-            "yellow": ["#facc15", "#fde047", "#fbbf24"],
-            "gold": ["#d4af37", "#f5d27a"],
-            "green": ["#22c55e", "#16a34a"],
-            "purple": ["#7c3aed", "#a855f7", "#9333ea"],
-            "red": ["#dc2626", "#ef4444"],
-            "blue": ["#2563eb", "#3b82f6"],
-            "orange": ["#f97316", "#fb923c"],
-            "pink": ["#ec4899", "#f472b6"],
-            "silver": ["#c0c0c0", "#9ca3af"],
-            "cyan": ["#22d3ee", "#06b6d4"],
-            "teal": ["#14b8a6", "#0d9488"],
-            "cream": ["#fff7d6", "#fef3c7"],
-        }
 
     @staticmethod
     def _service_terms_for_business_type(business_type: str) -> tuple[str, ...]:
         return ArtifactFidelityManager.service_terms_for_business_type(business_type)
-        mapping = {
-            "grooming": ("groom", "pet", "dog", "bath", "wash", "trim", "fur", "paw"),
-            "locksmith": ("locksmith", "security", "key", "lock", "lockout", "rekey"),
-            "florist": ("floral", "flower", "bouquet", "bloom"),
-            "detailing": (
-                "detail",
-                "detailing",
-                "wash",
-                "vehicle",
-                "interior",
-                "exterior",
-            ),
-            "arcade": ("arcade", "game", "gaming", "score", "retro"),
-            "hot_dog_cart": ("hot dog", "cart", "menu", "street", "order"),
-        }
-        return mapping.get(business_type, ())
 
     @classmethod
     def _prompt_fidelity_forbidden_terms(
@@ -1310,44 +389,6 @@ if __name__ == \"__main__\":
             contract=contract,
             metadata=metadata,
         )
-        requested_name = (
-            str(contract.get("requested_business_name") or "").strip().lower()
-        )
-        requested_colors = {
-            str(color).strip().lower()
-            for color in (contract.get("requested_colors") or [])
-            if str(color).strip()
-        }
-        forbidden: list[str] = ["White, purple, and green"]
-
-        default_businesses = (
-            "Soggy Doggy",
-            "Harry's Hot Dog Cart",
-            "Flow Flowers",
-            "Rico's Mobile Detailing",
-            "Neon Byte Arcade",
-            "Crimson Turtle Locksmiths",
-        )
-        for name in default_businesses:
-            if name.lower() != requested_name:
-                forbidden.append(name)
-
-        if isinstance(metadata, dict):
-            history_names = metadata.get("history_business_names")
-            if isinstance(history_names, list):
-                for item in history_names:
-                    token = str(item or "").strip()
-                    if token and token.lower() != requested_name:
-                        forbidden.append(token)
-
-            previous_colors = metadata.get("previous_colors")
-            if requested_colors and isinstance(previous_colors, list):
-                for color in previous_colors:
-                    token = str(color or "").strip().lower()
-                    if token and token not in requested_colors:
-                        forbidden.append(token)
-
-        return list(dict.fromkeys(forbidden))
 
     @classmethod
     def validate_artifact_prompt_fidelity(
@@ -1361,100 +402,6 @@ if __name__ == \"__main__\":
             artifact_content,
             metadata,
         )
-        contract = cls._extract_prompt_fidelity_contract(prompt)
-        if isinstance(metadata, dict):
-            override_name = str(
-                metadata.get("requested_business_name_override") or ""
-            ).strip()
-            override_type = str(
-                metadata.get("requested_business_type_override") or ""
-            ).strip()
-            if override_name:
-                contract["requested_business_name"] = override_name
-            if override_type:
-                contract["requested_business_type"] = override_type
-
-        business_name = str(contract.get("requested_business_name") or "").strip()
-        business_type = str(contract.get("requested_business_type") or "").strip()
-        requested_colors = [
-            str(color).strip().lower()
-            for color in (contract.get("requested_colors") or [])
-            if str(color).strip()
-        ]
-        content = str(artifact_content or "")
-        lowered = content.lower()
-        style_blocks = re.findall(
-            r"<style[^>]*>(.*?)</style>", content, flags=re.IGNORECASE | re.DOTALL
-        )
-        style_text = "\n".join(style_blocks).lower()
-
-        failures: list[str] = []
-        if "```" in content:
-            failures.append("no_markdown_fences")
-        if re.search(r"<script[^>]+src\s*=", lowered):
-            failures.append("no_remote_scripts")
-        if re.search(
-            r"https?://|//cdn\.|fonts\.googleapis|unpkg\.com|jsdelivr", lowered
-        ):
-            failures.append("no_remote_assets")
-
-        if business_name and business_name.lower() not in lowered:
-            failures.append("requested_business_name_missing")
-
-        if business_name:
-            title_text = cls._extract_first_tag_text(content, "title") or ""
-            h1_text = cls._extract_first_tag_text(content, "h1") or ""
-            if (
-                business_name.lower() not in title_text.lower()
-                and business_name.lower() not in h1_text.lower()
-                and business_name.lower() not in lowered
-            ):
-                failures.append("business_identity_misaligned")
-
-        service_terms = cls._service_terms_for_business_type(business_type)
-        if service_terms and not any(
-            re.search(rf"\b{re.escape(term)}\b", lowered) for term in service_terms
-        ):
-            failures.append("requested_business_type_missing")
-
-        color_hex = cls._color_hex_map()
-        css_color_hits = 0
-        for color in requested_colors:
-            has_word = bool(re.search(rf"\b{re.escape(color)}\b", lowered))
-            has_hex = any(token in lowered for token in color_hex.get(color, []))
-            has_css = bool(re.search(rf"\b{re.escape(color)}\b", style_text)) or any(
-                token in style_text for token in color_hex.get(color, [])
-            )
-            if not (has_word or has_hex):
-                failures.append(f"requested_color_missing:{color}")
-            if has_css:
-                css_color_hits += 1
-
-        if requested_colors and css_color_hits < min(2, len(requested_colors)):
-            failures.append("requested_palette_not_applied_to_css")
-
-        forbidden_terms = cls._prompt_fidelity_forbidden_terms(
-            contract=contract, metadata=metadata
-        )
-        for token in forbidden_terms:
-            needle = str(token).strip()
-            if not needle:
-                continue
-            if re.search(rf"\b{re.escape(needle.lower())}\b", lowered):
-                failures.append(f"forbidden_term_present:{needle}")
-
-        return {
-            "passed": not failures,
-            "status": "passed" if not failures else "failed",
-            "failures": failures,
-            "requested_business_name": contract.get("requested_business_name"),
-            "requested_business_type": contract.get("requested_business_type"),
-            "requested_colors": contract.get("requested_colors"),
-            "artifact_intent": contract.get("artifact_intent"),
-            "source_prompt": contract.get("source_prompt"),
-            "forbidden_terms_checked": forbidden_terms,
-            "repair_attempted": False,
-        }
 
     @classmethod
     def _repair_artifact_prompt_fidelity(
@@ -1469,128 +416,6 @@ if __name__ == \"__main__\":
             artifact_content=artifact_content,
             fidelity_report=fidelity_report,
         )
-        repaired = cls._strip_markdown_fences(str(artifact_content or ""))
-        requested_name = str(
-            fidelity_report.get("requested_business_name") or ""
-        ).strip()
-        requested_type = str(
-            fidelity_report.get("requested_business_type") or ""
-        ).strip()
-        requested_colors = [
-            str(color).strip().lower()
-            for color in (fidelity_report.get("requested_colors") or [])
-            if str(color).strip()
-        ]
-
-        repaired = re.sub(
-            r"White,\s*purple,\s*and\s*green\s+studio\s+style\s+with\s+clean\s+grooming\s+stations\.",
-            "",
-            repaired,
-            flags=re.IGNORECASE,
-        )
-
-        if requested_name:
-            title_text = cls._extract_first_tag_text(repaired, "title")
-            if not title_text:
-                repaired = cls._insert_before_tag(
-                    repaired,
-                    "head",
-                    f"<title>{html.escape(requested_name, quote=False)}</title>",
-                )
-            elif requested_name.lower() not in title_text.lower():
-                repaired = cls._replace_first_tag_text(
-                    repaired, "title", requested_name
-                )
-
-            h1_text = cls._extract_first_tag_text(repaired, "h1")
-            if not h1_text:
-                repaired = cls._insert_before_tag(
-                    repaired,
-                    "body",
-                    f"<h1>{html.escape(requested_name, quote=False)}</h1>",
-                )
-            elif requested_name.lower() not in h1_text.lower():
-                repaired = cls._replace_first_tag_text(repaired, "h1", requested_name)
-
-            for token in (
-                "Soggy Doggy",
-                "Harry's Hot Dog Cart",
-                "Flow Flowers",
-                "Rico's Mobile Detailing",
-                "Neon Byte Arcade",
-                "Crimson Turtle Locksmiths",
-            ):
-                if token.lower() == requested_name.lower():
-                    continue
-                repaired = re.sub(
-                    rf"\b{re.escape(token)}\b",
-                    requested_name,
-                    repaired,
-                    flags=re.IGNORECASE,
-                )
-
-        if requested_type == "grooming" and not re.search(
-            r"\b(groom|pet|dog|bath|wash|trim|fur|paw)\b", repaired, flags=re.IGNORECASE
-        ):
-            repaired = cls._insert_before_tag(
-                repaired,
-                "body",
-                '<p class="muted">Professional pet grooming services including bath, trim, fur care, and paw tidy appointments.</p>',
-            )
-
-        if requested_colors:
-            palette = cls._color_hex_map()
-            primary = requested_colors[0]
-            secondary = (
-                requested_colors[1]
-                if len(requested_colors) > 1
-                else requested_colors[0]
-            )
-            tertiary = (
-                requested_colors[2]
-                if len(requested_colors) > 2
-                else requested_colors[-1]
-            )
-            primary_hex = palette.get(primary, ["#2563eb"])[0]
-            secondary_hex = palette.get(secondary, ["#22c55e"])[0]
-            tertiary_hex = palette.get(tertiary, ["#f3f4f6"])[0]
-            palette_comment = " ".join(requested_colors)
-            style_patch = (
-                '<style id="xv7-fidelity-repair">'
-                f"/* requested palette: {palette_comment} */"
-                f":root{{--accent:{primary_hex};--accent-2:{secondary_hex};--accent-3:{tertiary_hex};}}"
-                "body{background:linear-gradient(135deg,var(--accent),var(--accent-2));}"
-                ".hero,.panel{border-color:var(--accent-2);}"
-                ".button.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));}"
-                ".button.secondary{border:1px solid var(--accent-2);}"
-                "</style>"
-            )
-            repaired = cls._insert_before_tag(repaired, "head", style_patch)
-
-            non_requested_colors = {
-                "white",
-                "purple",
-                "pink",
-                "cream",
-                "red",
-                "blue",
-                "orange",
-                "silver",
-                "gold",
-                "yellow",
-                "green",
-                "black",
-            } - set(requested_colors)
-            replacement = requested_colors[0]
-            for color in sorted(non_requested_colors):
-                repaired = re.sub(
-                    rf"\b{re.escape(color)}\b",
-                    replacement,
-                    repaired,
-                    flags=re.IGNORECASE,
-                )
-
-        return repaired
 
     @classmethod
     def _build_local_artifact_prompt(
@@ -1619,115 +444,14 @@ if __name__ == \"__main__\":
             strict_retry=strict_retry,
             retry_requirements=retry_requirements,
         )
-        retry_requirements = retry_requirements or []
-        retry_line = "Output only source code that satisfies all constraints below."
-        if strict_retry:
-            retry_line = "This is a retry because the first draft failed validation. Be stricter and fix every missing requirement explicitly."
-            if retry_requirements:
-                retry_line += (
-                    " Missing requirements: " + "; ".join(retry_requirements) + "."
-                )
-
-        category = cls._artifact_business_category(question, business_name)
-        category_brief = {
-            "locksmith": "Locksmith direction: urgent trust-first security layout with lockout CTA, trust badges, and service cards.",
-            "florist": "Florist direction: elegant floral tone with bouquet-oriented sections and refined typography.",
-            "detailing": "Detailing direction: automotive shine/finish framing with package cards and conversion-focused CTAs.",
-            "arcade": "Arcade direction: neon retro atmosphere with game-grid energy and high-score language.",
-            "hot_dog_cart": "Hot dog cart direction: street-food clarity with menu highlights and quick-order focus.",
-            "generic": "Direction: adapt visual language to the specific business request.",
-        }.get(
-            category,
-            "Direction: adapt visual language to the specific business request.",
-        )
-        colors = ", ".join(style_hints.get("colors", [])) or "none specified"
-        styles = ", ".join(style_hints.get("styles", [])) or "none specified"
-        layout = "; ".join(layout_hints) or "none specified"
-
-        return (
-            f"Generate one {language} code artifact for filename {filename}.\n"
-            f"Request summary: {question.strip()}\n"
-            f"Business/site name: {business_name}\n"
-            f"Requested colors: {colors}\n"
-            f"Requested style/font mood: {styles}\n"
-            f"Requested layout/content hints: {layout}\n"
-            f"Industry direction: {category_brief}\n"
-            f"Previewable requested: {str(previewable).lower()}\n"
-            f"Apply to repo requested: {str(apply_requested).lower()} (must remain false in artifact metadata and never mutate repo)\n"
-            "Hard constraints:\n"
-            "- Return ONLY raw source code; no markdown fences and no explanation.\n"
-            "- No file writes, no repo mutation, no apply behavior.\n"
-            "- No tracking code.\n"
-            "- No remote assets, no remote scripts, no remote fonts, no remote images.\n"
-            "- No external script tags.\n"
-            "- Must include the exact business/site name text in visible content.\n"
-            "- Must reflect requested colors/style when provided.\n"
-            "- Avoid generic repeated hero copy; do not reuse the same hero phrase/layout across different industries.\n"
-            "- Must not include unrelated business names from earlier prompts.\n"
-            "- If language is html: return a complete single-file document including <!doctype html>, inline CSS, and no external dependencies.\n"
-            f"{retry_line}\n"
-        )
 
     @staticmethod
     def _remediation_for_validation_reason(reason: str) -> str:
         return ArtifactFidelityManager.remediation_for_validation_reason(reason)
-        mapping = {
-            "empty_content": "return non-empty source code",
-            "markdown_fence_detected": "remove markdown code fences",
-            "content_length_out_of_bounds": "keep output concise but complete",
-            "external_script_tag_detected": "remove external script tags",
-            "remote_url_detected": "remove all remote URLs/assets",
-            "business_name_missing": "include the exact business name text",
-            "color_hints_missing": "include requested color cues in CSS/style",
-            "style_hints_missing": "include requested mood/style keywords in copy or CSS",
-            "stale_business_leak_detected": "remove unrelated prior business names",
-            "html_shell_missing": "return complete HTML document shell",
-            "inline_css_missing": "include inline <style> CSS",
-            "generic_business_name_fallback_detected": "use the requested business name instead of Local Business Website",
-            "crimson_locksmith_language_missing": "include locksmith/security/key/lock/emergency/lockout language",
-            "crimson_urgency_trust_copy_missing": "include urgent and trustworthy service copy",
-            "crimson_color_black_missing": "include black/dark styling cues",
-            "crimson_color_red_missing": "include red accent styling cues",
-            "crimson_color_silver_missing": "include silver/gray/metal styling cues",
-            "crimson_irrelevant_copy_detected": "remove irrelevant non-locksmith business copy",
-            "grooming_language_missing": "include pet grooming, dog, bath, trim, fur, or paw language",
-            "grooming_irrelevant_copy_detected": "remove unrelated non-grooming business copy",
-            "generic_hero_reuse_detected": "replace generic repeated hero phrasing with industry-specific copy",
-            "revision_content_unchanged": "modify content per requested revision and return full replacement",
-        }
-        return mapping.get(reason, f"fix validation issue: {reason}")
 
     @staticmethod
     def _looks_like_artifact_edit(normalized_question: str) -> bool:
         return IntentRouter.looks_like_artifact_edit(normalized_question)
-        if AnswerContract._artifact_refinement_mode(normalized_question) in {
-            "undo",
-            "explain",
-            "typography_only",
-            "style_only",
-            "content_only",
-            "targeted_revision",
-            "full_revision",
-        }:
-            return True
-        has_action = bool(
-            AnswerContract.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question)
-        )
-        has_target = bool(
-            AnswerContract.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question)
-        )
-        explicit = any(
-            phrase in normalized_question
-            for phrase in (
-                "revise this site",
-                "update the artifact",
-                "change the website",
-                "make the text script",
-                "change the text on the website",
-                "change the font to script",
-            )
-        )
-        return explicit or (has_action and has_target)
 
     @staticmethod
     def _extract_business_name_from_html(content: str) -> str | None:
@@ -1871,8 +595,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _slugify_artifact_name(value: str) -> str:
-        slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-        return slug or "artifact"
+        return slugify_artifact_name(value)
 
     @classmethod
     def _is_patch_proposal_request(cls, normalized_question: str) -> bool:
@@ -1950,29 +673,11 @@ if __name__ == \"__main__\":
     @classmethod
     def _is_repo_mutation_build_prompt(cls, normalized_question: str) -> bool:
         return IntentRouter.is_repo_mutation_build_prompt(normalized_question)
-        if not normalized_question:
-            return False
-
-        if cls.ARTIFACT_REPO_MUTATION_PATTERN.search(normalized_question):
-            return True
-
-        if any(
-            marker in normalized_question
-            for marker in (" in the repo", " into the repo", " to the repo")
-        ) and not re.search(
-            r"\b(do not|don't)\s+(apply|write|save)\b", normalized_question
-        ):
-            return True
-
         return False
 
     @classmethod
     def _prioritize_artifact_over_build_guard(cls, normalized_question: str) -> bool:
         return IntentRouter.prioritize_artifact_over_build_guard(normalized_question)
-        return (
-            cls._has_explicit_artifact_intent(normalized_question)
-            or sb.is_site_bundle_request(normalized_question)
-        ) and not cls._is_repo_mutation_build_prompt(normalized_question)
 
     @staticmethod
     def _workspace_root() -> Path:
@@ -1988,34 +693,11 @@ if __name__ == \"__main__\":
 
     @classmethod
     def _safe_slug(cls, raw: str | None, fallback: str) -> str:
-        base = cls._slugify_artifact_name(str(raw or "").strip())
-        if not base:
-            base = cls._slugify_artifact_name(fallback)
-        base = re.sub(r"-{2,}", "-", base).strip("-")
-        if len(base) > 48:
-            base = base[:48].rstrip("-")
-        return base or cls._slugify_artifact_name(fallback)
+        return safe_slug(raw, fallback)
 
     @staticmethod
     def _sanitize_filename(filename: str, language: str) -> str:
         return SandboxWriteManager.sanitize_filename(filename, language)
-        language_defaults = {
-            "html": "index.html",
-            "css": "styles.css",
-            "javascript": "app.js",
-            "typescript": "app.ts",
-            "python": "main.py",
-        }
-        fallback = language_defaults.get(language.lower(), "artifact.txt")
-        candidate = str(filename or "").strip().split("/")[-1].split("\\")[-1]
-        candidate = re.sub(r"[^A-Za-z0-9._-]", "", candidate)
-        if not candidate:
-            candidate = fallback
-        _, ext = os.path.splitext(candidate)
-        expected_ext = os.path.splitext(fallback)[1]
-        if expected_ext and ext.lower() != expected_ext.lower():
-            candidate = os.path.splitext(candidate)[0] + expected_ext
-        return candidate
 
     @classmethod
     def _resolve_safe_sandbox_target(
@@ -2071,30 +753,7 @@ if __name__ == \"__main__\":
 
     @staticmethod
     def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-        try:
-            return subprocess.run(
-                ["git", *args],
-                cwd=str(repo_root),
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=8,
-            )
-        except FileNotFoundError:
-            return subprocess.CompletedProcess(
-                args=["git", *args],
-                returncode=127,
-                stdout="",
-                stderr="git executable not found",
-            )
-        except subprocess.TimeoutExpired:
-            command = "git " + " ".join(args)
-            return subprocess.CompletedProcess(
-                args=["git", *args],
-                returncode=124,
-                stdout="",
-                stderr=f"git command timed out after 8s while running {command}",
-            )
+        return run_git(repo_root, args)
 
     @classmethod
     def _proposed_patch_target_path(
@@ -2139,152 +798,14 @@ if __name__ == \"__main__\":
             business_name=business_name,
             operation=operation,
         )
-        checks: list[dict[str, str]] = []
-        failures: list[str] = []
-
-        def _add_check(name: str, passed: bool, detail: str) -> None:
-            checks.append(
-                {
-                    "name": name,
-                    "status": "passed" if passed else "failed",
-                    "detail": detail,
-                }
-            )
-            if not passed:
-                failures.append(f"{name}: {detail}")
-
-        target = Path(target_path)
-        target_text = target_path.replace("\\", "/")
-        _add_check(
-            "operation_allowed",
-            operation in {"create", "update"},
-            "operation must be create or update",
-        )
-        _add_check(
-            "target_path_prefix",
-            target_text.startswith("generated-sites/"),
-            "target path must stay under generated-sites/",
-        )
-        _add_check(
-            "target_path_relative",
-            not target.is_absolute(),
-            "target path must be relative",
-        )
-        _add_check(
-            "target_path_no_traversal",
-            ".." not in target.parts,
-            "target path cannot include traversal",
-        )
-        _add_check(
-            "target_path_not_blocked",
-            not cls._is_blocked_patch_target(target_text),
-            "target path cannot target protected files or folders",
-        )
-
-        try:
-            resolved = (root / target).resolve()
-            root_resolved = root.resolve()
-            _add_check(
-                "target_path_inside_repo",
-                str(resolved).startswith(str(root_resolved)),
-                "target path must resolve inside repo root",
-            )
-        except Exception:
-            _add_check(
-                "target_path_inside_repo",
-                False,
-                "target path failed canonical resolution",
-            )
-
-        language = language.lower()
-        expected_ext = {
-            "html": ".html",
-            "css": ".css",
-            "javascript": ".js",
-            "typescript": ".ts",
-            "python": ".py",
-        }.get(language)
-        ext = os.path.splitext(target_path)[1].lower()
-        _add_check(
-            "target_extension",
-            expected_ext is None or ext == expected_ext,
-            "target file extension must match artifact language",
-        )
-
-        _add_check(
-            "content_non_empty", bool(content.strip()), "content cannot be empty"
-        )
-        _add_check(
-            "content_no_markdown_fence",
-            "```" not in content,
-            "content cannot contain markdown fences",
-        )
-        _add_check(
-            "content_no_shell_commands",
-            not re.search(
-                r"\b(rm\s+-rf|git\s+reset|powershell\s+-|bash\s+-|curl\s+|wget\s+)\b",
-                content.lower(),
-            ),
-            "content cannot contain shell automation commands",
-        )
-        _add_check(
-            "content_no_repo_automation",
-            not re.search(
-                r"\b(git\s+add|git\s+commit|git\s+push|npm\s+test|pytest)\b",
-                content.lower(),
-            ),
-            "content cannot include repo automation directives",
-        )
-        _add_check(
-            "content_no_external_script",
-            not re.search(
-                r"<script[^>]+src\s*=\s*['\"]https?://", content, flags=re.IGNORECASE
-            ),
-            "content cannot include external script src URLs",
-        )
-        _add_check(
-            "content_no_remote_urls",
-            not re.search(r"https?://", content, flags=re.IGNORECASE),
-            "content cannot include remote URLs",
-        )
-
-        if language == "html":
-            target_is_site_bundle = target_path.replace("\\", "/").startswith(
-                "generated-sites/"
-            )
-            _add_check(
-                "html_shell",
-                "<!doctype html" in content.lower() or "<html" in content.lower(),
-                "html artifacts need a full html document shell",
-            )
-            _add_check(
-                "html_inline_css",
-                "<style" in content.lower()
-                or (
-                    target_is_site_bundle
-                    and "<link" in content.lower()
-                    and "stylesheet" in content.lower()
-                ),
-                "html artifacts must include inline style content",
-            )
-
-        if business_name:
-            _add_check(
-                "business_name_present",
-                business_name.lower() in content.lower(),
-                "artifact business name should remain in content",
-            )
-
-        status = "failed" if failures else "passed"
-        return status, checks, failures
 
     @staticmethod
     def _content_sha256(content: str) -> str:
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return content_sha256(content)
 
     @staticmethod
     def _utc_now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return utc_now_iso()
 
     @classmethod
     def _resolve_safe_patch_target(
@@ -3145,64 +1666,6 @@ if __name__ == \"__main__\":
     @classmethod
     def _artifact_refinement_mode(cls, normalized_question: str) -> str | None:
         return IntentRouter.artifact_refinement_mode(normalized_question)
-        typography_style = cls._typography_style_request(normalized_question)
-        asks_for_color_change = bool(
-            cls.COLOR_CHANGE_REQUEST_PATTERN.search(normalized_question)
-        )
-        if typography_style is not None and not asks_for_color_change:
-            return "typography_only"
-
-        if cls.ARTIFACT_UNDO_PATTERN.search(normalized_question):
-            return "undo"
-        if cls.ARTIFACT_EXPLAIN_PATTERN.search(normalized_question):
-            return "explain"
-        has_action = bool(cls.ARTIFACT_EDIT_ACTION_PATTERN.search(normalized_question))
-        targeted = bool(cls.ARTIFACT_TARGETED_PATTERN.search(normalized_question))
-        style = bool(cls.ARTIFACT_STYLE_PATTERN.search(normalized_question))
-        content = bool(cls.ARTIFACT_CONTENT_PATTERN.search(normalized_question))
-        has_target = bool(cls.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_question))
-        if not has_action and not (style or content or targeted):
-            return None
-        if not has_action and not has_target:
-            return None
-        if has_action and not (has_target or style or content or targeted):
-            return None
-        if targeted and style and not content:
-            return "style_only"
-        if targeted and content and not style:
-            return "content_only"
-        if (
-            style
-            and not content
-            and any(
-                phrase in normalized_question
-                for phrase in (
-                    "change the colors",
-                    "background white",
-                    "use script font",
-                    "make it easier to read",
-                    "restyle",
-                )
-            )
-        ):
-            return "style_only"
-        if (
-            content
-            and not style
-            and any(
-                phrase in normalized_question
-                for phrase in (
-                    "headline",
-                    "cta",
-                    "button text",
-                    "rewrite",
-                    "services section",
-                )
-            )
-        ):
-            return "content_only"
-        if targeted:
-            return "targeted_revision"
         return "full_revision"
 
     @staticmethod
@@ -3215,14 +1678,6 @@ if __name__ == \"__main__\":
     @staticmethod
     def _extract_first_tag_text(content: str, tag: str) -> str | None:
         return ArtifactFidelityManager.extract_first_tag_text(content, tag)
-        match = re.search(
-            rf"<{tag}[^>]*>(.*?)</{tag}>", content, flags=re.IGNORECASE | re.DOTALL
-        )
-        if not match:
-            return None
-        raw = re.sub(r"<[^>]+>", "", match.group(1))
-        value = html.unescape(re.sub(r"\s+", " ", raw)).strip()
-        return value or None
 
     @staticmethod
     def _replace_first_tag_text(content: str, tag: str, replacement: str) -> str:
@@ -3658,22 +2113,10 @@ if __name__ == \"__main__\":
     @staticmethod
     def _strip_markdown_fences(content: str) -> str:
         return ArtifactFidelityManager.strip_markdown_fences(content)
-        stripped = content.strip()
-        if not stripped.startswith("```"):
-            return stripped
-        lines = stripped.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        return "\n".join(lines).strip()
 
     @staticmethod
     def _insert_before_tag(content: str, closing_tag: str, snippet: str) -> str:
         return ArtifactFidelityManager.insert_before_tag(content, closing_tag, snippet)
-        pattern = re.compile(rf"</{re.escape(closing_tag)}>", flags=re.IGNORECASE)
-        if pattern.search(content):
-            return pattern.sub(f"{snippet}</{closing_tag}>", content, count=1)
         return content + snippet
 
     @classmethod
