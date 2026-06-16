@@ -3838,6 +3838,51 @@ async def add_session_message(
         payload.raw_text,
         learned_records,
     )
+    if learned_answer is None:
+        normalized_for_learning_fallback = _normalize_intent_text(payload.raw_text)
+        is_ci_github_status_prompt = bool(
+            re.search(
+                r"\b(github\s+actions?|ci\s+status|build\s+status|checks?\s+status|did\s+ci|is\s+ci)\b",
+                normalized_for_learning_fallback,
+            )
+        )
+        session_learning_signals = session_state.metadata.get("learning_signals", [])
+        if is_ci_github_status_prompt and isinstance(session_learning_signals, list):
+            for signal in reversed(session_learning_signals):
+                if not isinstance(signal, dict):
+                    continue
+                signal_type = str(signal.get("type", "")).strip()
+                signal_status = str(signal.get("status", "")).strip()
+                signal_content = _normalize_intent_text(str(signal.get("content", "")))
+                signal_record_id = str(signal.get("record_id", "")).strip()
+                if (
+                    signal_status == "active"
+                    and signal_record_id
+                    and signal_type in {"hallucination_guard", "diagnostic_rule"}
+                    and (
+                        "proof" in signal_content
+                        or "do not guess" in signal_content
+                        or "don't guess" in signal_content
+                    )
+                    and any(
+                        token in signal_content for token in ("ci", "github", "status")
+                    )
+                ):
+                    learned_answer = (
+                        "Understood. Per your learned diagnostic rule, I will require proof before claiming CI/GitHub status. "
+                        "I do not have live proof in this turn."
+                    )
+                    learned_record = BrainRecord(
+                        layer=BrainLayer.KNOWLEDGE,
+                        record_id=signal_record_id,
+                        title="Session learned proof rule",
+                        summary=str(signal.get("content", "")),
+                        body=str(signal.get("content", "")),
+                        tags=["learning", "learned-rule", "proof-required"],
+                        status="active",
+                    )
+                    break
+
     if learned_answer and learned_record is not None:
         learning_layer = learned_record.layer
         visible_text = sanitize_visible_answer_text(learned_answer)
