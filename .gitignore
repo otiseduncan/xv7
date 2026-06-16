@@ -60,3 +60,18 @@ playwright-report/
 .playwright/
 trace.zip
 *.trace
+
+# Dependencies
+
+# Build/test/runtime output
+coverage/
+reports/
+runtime/
+tmp/
+temp/
+
+# Python caches
+*.pyc
+
+# Local safety backups
+backups/
