@@ -1287,6 +1287,12 @@ class OperatorManager:
                     return str(candidate.parent)
                 return raw
 
+            if raw.startswith("/"):
+                candidate = Path(raw)
+                if candidate.suffix:
+                    return str(candidate.parent)
+                return str(candidate)
+
             if normalized.startswith("/app/generated-sites/"):
                 tail = normalized.removeprefix("/app/generated-sites/")
                 slug = tail.split("/", 1)[0].strip()
