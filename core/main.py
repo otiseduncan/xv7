@@ -17,7 +17,6 @@ from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from core.api.brain_records import (
-    brain_hygiene_classification as _brain_hygiene_classification,
     serialize_brain_record as _serialize_brain_record_payload,
     status_label as _status_label,
     summary_from_body as _summary_from_body,
