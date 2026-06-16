@@ -16,6 +16,9 @@ import httpx
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from core.api.brain_record_ids import (
+    next_record_id_for_layer as _next_record_id_for_layer_from_records,
+)
 from core.api.brain_records import (
     serialize_brain_record as _serialize_brain_record_payload,
     status_label as _status_label,
@@ -103,26 +106,11 @@ def _serialize_brain_record(
     )
 
 
-def _layer_token(layer: BrainLayer) -> str:
-    return {
-        BrainLayer.MEMORY: "MEMORY",
-        BrainLayer.KNOWLEDGE: "KNOWLEDGE",
-        BrainLayer.VERIFIED_STATUS: "VERIFIED",
-        BrainLayer.ACTIVE_FOCUS: "FOCUS",
-        BrainLayer.SYSTEM_PROMPT: "SYSTEM",
-    }[layer]
-
-
 def _next_record_id_for_layer(layer: BrainLayer) -> str:
-    token = _layer_token(layer)
-    records = brain_context_manager.loader.load_records()
-    max_index = 0
-    for record in records:
-        match = re.match(rf"^XV7-{token}-(\d{{4}})$", record.record_id)
-        if match is None:
-            continue
-        max_index = max(max_index, int(match.group(1)))
-    return f"XV7-{token}-{max_index + 1:04d}"
+    return _next_record_id_for_layer_from_records(
+        layer,
+        brain_context_manager.loader.load_records(),
+    )
 
 
 def _split_record_to_current_operational(
