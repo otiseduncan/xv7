@@ -121,12 +121,16 @@ function createRuntimeStatusModel(overrides = {}) {
   };
 }
 
+function isRuntimeTerminalPhase(phase) {
+  return ['complete', 'failed', 'blocked', 'needs_approval'].includes(normalizeRuntimePhase(phase));
+}
+
 function updateRuntimeStatusElement(element, model) {
   if (!element) return null;
   const status = createRuntimeStatusModel(model || {});
   element.dataset.runtimePhase = status.phase;
   element.classList.toggle('is-busy', status.busy);
-  element.classList.toggle('is-terminal', status.phase === 'running');
+  element.classList.toggle('is-terminal', isRuntimeTerminalPhase(status.phase));
   element.classList.toggle('is-complete', status.phase === 'complete');
   element.classList.toggle('is-failed', status.phase === 'failed');
   element.classList.toggle('is-blocked', status.phase === 'blocked');
