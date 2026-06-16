@@ -6258,7 +6258,7 @@ if __name__ == \"__main__\":
         }:
             if self._has_live_repo_check_proof(session_metadata):
                 return "I have proof of a live repo check in this session, but I still cannot claim CI is green unless that proof explicitly says so."
-            return "I do not have proof that CI is green. I can only claim that from verified records or a live repo check."
+            return "I require proof before claiming CI/GitHub status. I do not have proof that CI is green. I can only claim that from verified records or a live repo check."
 
         if normalized in {"what repo/status are we on?", "what repo/status are we on"}:
             if verified is None:

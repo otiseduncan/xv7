@@ -3021,7 +3021,15 @@ async def add_session_message(
             return updated_state
 
         learning_layer = _speech_act_to_learning_layer(intent_class)
-        proof_required = intent_class in {"hallucination_guard", "diagnostic_rule"}
+        lesson_norm = _normalize_intent_text(lesson_text)
+        proof_required = intent_class in {"hallucination_guard", "diagnostic_rule"} or (
+            (
+                "proof" in lesson_norm
+                or "do not guess" in lesson_norm
+                or "don't guess" in lesson_norm
+            )
+            and any(token in lesson_norm for token in ("ci", "github", "status"))
+        )
         learning_status = "active" if confidence >= 0.8 else "pending_review"
         memory_type = (
             "diagnostic_rule"

@@ -1365,18 +1365,31 @@ class OperatorManager:
 
         active_export = session_metadata.get("active_exported_artifact")
         if isinstance(active_export, dict):
+            preferred_value = ""
             for key in (
                 "host_project_path",
-                "container_project_path",
                 "relative_project_path",
-                "entry_file",
-                "project_slug",
+                "container_project_path",
             ):
                 value = active_export.get(key)
-                if isinstance(value, str):
-                    normalized_candidate = _normalized_candidate_path(value)
-                    if normalized_candidate:
-                        candidates.append(normalized_candidate)
+                if isinstance(value, str) and value.strip():
+                    preferred_value = value
+                    break
+
+            normalized_candidate = (
+                _normalized_candidate_path(preferred_value) if preferred_value else None
+            )
+            if not normalized_candidate:
+                project_slug = active_export.get("project_slug")
+                if isinstance(project_slug, str) and project_slug.strip():
+                    normalized_candidate = str(
+                        (
+                            SandboxWriteManager.sandbox_root() / project_slug.strip()
+                        ).resolve()
+                    )
+
+            if normalized_candidate:
+                candidates.append(normalized_candidate)
 
         last_payload = session_metadata.get("last_assistant_payload")
         if isinstance(last_payload, dict):
