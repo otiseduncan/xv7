@@ -81,14 +81,19 @@ class BrainRecordUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1)
     body: str | None = Field(default=None, min_length=1)
     tags: list[str] | None = None
-    status: Literal["active", "pending", "pending_review", "disabled", "archived"] | None = None
-    relevance_state: Literal[
-        "current",
-        "historical",
-        "superseded",
-        "expired",
-        "needs_review",
-    ] | None = None
+    status: (
+        Literal["active", "pending", "pending_review", "disabled", "archived"] | None
+    ) = None
+    relevance_state: (
+        Literal[
+            "current",
+            "historical",
+            "superseded",
+            "expired",
+            "needs_review",
+        ]
+        | None
+    ) = None
     superseded_by: str | None = None
     valid_from: str | None = None
     valid_until: str | None = None

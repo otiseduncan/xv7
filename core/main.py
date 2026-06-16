@@ -16,7 +16,19 @@ import httpx
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from core.api.schemas import (
+    AddMessageRequest,
+    BrainRecordApplyRecommendationRequest,
+    BrainRecordRelevanceUpdateRequest,
+    BrainRecordSplitRequest,
+    BrainRecordUpdateRequest,
+    CreateSessionRequest,
+    OperatorCancelRequest,
+    OperatorConfirmRequest,
+    OperatorStageRequest,
+    SetActiveModelProfileRequest,
+    UpdateFactsRequest,
+)
 
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
@@ -42,159 +54,6 @@ from core.runtime.status import build_runtime_status
 from core.runtime.schemas import ConversationMessage, SessionState
 from core.runtime.vector_store import VectorMemoryEngine
 from core.runtime.vector_memory_receipts import persist_vector_memory_round_trip
-
-
-class CreateSessionRequest(BaseModel):
-    """Optional initialization payload for a new session."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    current_persona: str = Field(default="default", min_length=1)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class AddMessageRequest(BaseModel):
-    """Payload for appending a new user message and running inference."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    raw_text: str = Field(min_length=1)
-    operator_mode: bool = False
-
-
-class OperatorStageRequest(BaseModel):
-    """Stage a slash command action with optional operator mode enabled."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    command_text: str = Field(min_length=1)
-    operator_mode: bool = False
-
-
-class OperatorConfirmRequest(BaseModel):
-    """Confirm a previously staged operator action."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    action_id: str = Field(min_length=1)
-    typed_confirmation: str | None = None
-
-
-class OperatorCancelRequest(BaseModel):
-    """Cancel a previously staged operator action."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    action_id: str = Field(min_length=1)
-
-
-class UpdateFactsRequest(BaseModel):
-    """Payload for updating persistent memory facts for a session."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    facts: dict[str, Any] = Field(default_factory=dict)
-
-
-class SetActiveModelProfileRequest(BaseModel):
-    """Payload for setting runtime active model profile override."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    profile: str = Field(min_length=1)
-    require_available: bool = Field(default=True)
-
-
-class BrainRecordUpdateRequest(BaseModel):
-    """Payload for runtime brain record edits (stored as runtime overrides)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    layer: BrainLayer | None = None
-    title: str | None = Field(default=None, min_length=1)
-    body: str | None = Field(default=None, min_length=1)
-    tags: list[str] | None = None
-    status: (
-        Literal[
-            "active",
-            "pending",
-            "pending_review",
-            "disabled",
-            "archived",
-        ]
-        | None
-    ) = None
-    relevance_state: (
-        Literal[
-            "current",
-            "historical",
-            "superseded",
-            "expired",
-            "needs_review",
-        ]
-        | None
-    ) = None
-    superseded_by: str | None = None
-    valid_from: str | None = None
-    valid_until: str | None = None
-    applies_when: str | None = None
-    review_reason: str | None = None
-    last_reviewed_at: str | None = None
-
-
-class BrainRecordRelevanceUpdateRequest(BaseModel):
-    """Payload for setting brain record relevance lifecycle state."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    relevance_state: Literal[
-        "current",
-        "historical",
-        "superseded",
-        "expired",
-        "needs_review",
-    ]
-    superseded_by: str | None = None
-    review_reason: str | None = None
-    applies_when: str | None = None
-    valid_from: str | None = None
-    valid_until: str | None = None
-
-
-class BrainRecordApplyRecommendationRequest(BaseModel):
-    """Explicit approval payload for a staged hygiene recommendation."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    recommendation_type: Literal[
-        "mark_historical_via_runtime_override",
-        "split_record",
-    ]
-    approve: bool = True
-    operational_title: str | None = None
-    operational_summary: str | None = None
-    operational_body: str | None = None
-    tags: list[str] | None = None
-    layer: BrainLayer | None = None
-
-
-class BrainRecordSplitRequest(BaseModel):
-    """Payload for explicit split of mixed records into historical + current operational."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    operational_title: str | None = None
-    operational_summary: str | None = None
-    operational_body: str | None = None
-    tags: list[str] | None = None
-    layer: BrainLayer | None = None
-    review_reason: str | None = None
-    applies_when: str | None = None
-    valid_from: str | None = None
-    valid_until: str | None = None
 
 
 memory_path = Path(os.getenv("MEMORY_DB_PATH", "data/memory"))
