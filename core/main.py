@@ -50,11 +50,27 @@ from core.api.learned_rules import (
     speech_act_confidence as _speech_act_confidence_from_api,
     speech_act_to_learning_layer as _speech_act_to_learning_layer_from_api,
 )
+from core.api.context_receipts import (
+    active_focus_guided_context_receipt as _active_focus_guided_context_receipt_from_api,
+    intent_context_receipt as _intent_context_receipt_from_api,
+    learning_context_receipt as _learning_context_receipt_from_api,
+    merge_focus_context_receipt as _merge_focus_context_receipt_from_api,
+    session_focus_context_receipt as _session_focus_context_receipt_from_api,
+)
 from core.api.repo_paths import resolve_operator_repo_root
 from core.api.response_payloads import (
     auto_memory_prompt_from_metadata as _auto_memory_prompt_from_metadata,
     build_assistant_payload,
     sanitize_visible_answer_text,
+)
+from core.api.runtime_helpers import (
+    format_runtime_date as _format_runtime_date_from_api,
+    format_runtime_time as _format_runtime_time_from_api,
+    is_runtime_clock_question as _is_runtime_clock_question_from_api,
+    runtime_clock_answer as _runtime_clock_answer_from_api,
+    runtime_clock_now as _runtime_clock_now_from_api,
+    runtime_clock_system_prompt as _runtime_clock_system_prompt_from_api,
+    runtime_clock_timezone as _runtime_clock_timezone_from_api,
 )
 from core.api.schemas import (
     AddMessageRequest,
@@ -68,6 +84,10 @@ from core.api.schemas import (
     OperatorStageRequest,
     SetActiveModelProfileRequest,
     UpdateFactsRequest,
+)
+from core.api.session_metadata import (
+    is_communication_workflow_focus as _is_communication_workflow_focus_from_api,
+    lacks_verified_operator_success as _lacks_verified_operator_success_from_api,
 )
 
 from core.agents.base_agent import BaseAgent
@@ -497,83 +517,34 @@ def _is_protected_implementation_task(normalized_question: str) -> bool:
 
 
 def _runtime_clock_timezone() -> ZoneInfo | timezone:
-    configured = (
-        os.getenv("XV7_LOCAL_TIMEZONE") or os.getenv("TZ") or "America/New_York"
-    ).strip()
-    try:
-        return ZoneInfo(configured)
-    except Exception:
-        return timezone.utc
+    return _runtime_clock_timezone_from_api()
 
 
 def _runtime_clock_now() -> datetime:
-    return datetime.now(_runtime_clock_timezone())
+    return _runtime_clock_now_from_api()
 
 
 def _format_runtime_date(now: datetime) -> str:
-    return f"{now.strftime('%A, %B')} {now.day}, {now.year}"
+    return _format_runtime_date_from_api(now)
 
 
 def _format_runtime_time(now: datetime) -> str:
-    hour = now.hour % 12 or 12
-    return f"{hour}:{now.minute:02d} {now.strftime('%p')}"
+    return _format_runtime_time_from_api(now)
 
 
 def _runtime_clock_system_prompt() -> str:
-    now = _runtime_clock_now()
-    tz_name = getattr(now.tzinfo, "key", None) or str(now.tzinfo or "UTC")
-    return (
-        "--- RUNTIME CLOCK ---\n"
-        f"Current runtime date/time: {_format_runtime_date(now)} at {_format_runtime_time(now)} ({tz_name}).\n"
-        "Use this date when answering current date, day, today, tomorrow, yesterday, or schedule questions.\n"
-        "Do not infer a different date from memory or prior conversation.\n"
-        "---------------------"
-    )
+    return _runtime_clock_system_prompt_from_api()
 
 
 def _is_runtime_clock_question(question: str) -> bool:
-    normalized = _normalize_intent_text(question).strip(" .!?")
-    direct_questions = {
-        "what is today's date",
-        "what is todays date",
-        "what date is it",
-        "what is the date",
-        "what day is it",
-        "what day is today",
-        "what is today",
-        "tell me today's date",
-        "tell me todays date",
-        "current date",
-        "today date",
-    }
-    if normalized in direct_questions:
-        return True
-    return bool(
-        re.search(
-            r"\b(today'?s? date|current date|what date|what day is it|what day is today)\b",
-            normalized,
-        )
+    return _is_runtime_clock_question_from_api(
+        question,
+        normalize_intent_text=_normalize_intent_text,
     )
 
 
 def _runtime_clock_answer() -> tuple[str, dict[str, Any]]:
-    now = _runtime_clock_now()
-    tz_name = getattr(now.tzinfo, "key", None) or str(now.tzinfo or "UTC")
-    visible_text = f"Today's date is {_format_runtime_date(now)} ({tz_name})."
-    context_receipt = {
-        "compact": f"Context receipt: Runtime clock ({tz_name}).",
-        "context_receipts": [
-            {
-                "layer": "runtime_clock",
-                "record_id": "RUNTIME-CLOCK",
-                "source": "server_clock",
-                "status": "active",
-                "timezone": tz_name,
-            }
-        ],
-        "record_ids": ["RUNTIME-CLOCK"],
-    }
-    return visible_text, context_receipt
+    return _runtime_clock_answer_from_api()
 
 
 def _is_build_follow_up_prompt(question: str) -> bool:
@@ -591,20 +562,7 @@ def _is_build_follow_up_prompt(question: str) -> bool:
 
 
 def _lacks_verified_operator_success(session_metadata: dict[str, Any]) -> bool:
-    last = session_metadata.get("operator_last_action")
-    if not isinstance(last, dict):
-        return True
-
-    status = str(last.get("status", "")).strip().lower()
-    if status in {"failed", "denied", "not_implemented", "cancelled", "pending"}:
-        return True
-    if status != "success":
-        return True
-
-    data = last.get("data")
-    if not isinstance(data, dict):
-        return True
-    return not bool(data)
+    return _lacks_verified_operator_success_from_api(session_metadata)
 
 
 def _extract_correction_text(question: str) -> str:
@@ -686,23 +644,13 @@ def _intent_context_receipt(
     persistence: str,
     status: str,
 ) -> dict[str, Any]:
-    return {
-        "compact": (
-            f"Context receipt: Intent {intent_class} "
-            f"(record={record_id}; source={source}; persistence={persistence}; status={status})."
-        ),
-        "context_receipts": [
-            {
-                "layer": "memory",
-                "record_id": record_id,
-                "source": source,
-                "persistence": persistence,
-                "status": status,
-                "intent_class": intent_class,
-            }
-        ],
-        "record_ids": [record_id],
-    }
+    return _intent_context_receipt_from_api(
+        intent_class=intent_class,
+        record_id=record_id,
+        source=source,
+        persistence=persistence,
+        status=status,
+    )
 
 
 def _learning_context_receipt(
@@ -711,28 +659,11 @@ def _learning_context_receipt(
     learned_record_id: str,
     proof_required: bool,
 ) -> dict[str, Any]:
-    compact_parts = [
-        f"Memory: {learned_record_id}"
-        if learning_layer == BrainLayer.MEMORY
-        else "Memory: -",
-        f"Knowledge: {learned_record_id}"
-        if learning_layer == BrainLayer.KNOWLEDGE
-        else "Knowledge: -",
-        "Focus: -",
-        "Proof: required" if proof_required else "Proof: none",
-    ]
-    return {
-        "compact": "; ".join(compact_parts),
-        "context_receipts": [
-            {
-                "layer": learning_layer.value,
-                "record_id": learned_record_id,
-                "status": "active",
-                "source": "direct_user_instruction",
-            }
-        ],
-        "record_ids": [learned_record_id],
-    }
+    return _learning_context_receipt_from_api(
+        learning_layer=learning_layer,
+        learned_record_id=learned_record_id,
+        proof_required=proof_required,
+    )
 
 
 def _active_learned_rules(records: list[BrainRecord]) -> list[BrainRecord]:
@@ -801,38 +732,7 @@ def _is_focus_status_question(question: str) -> bool:
 def _session_focus_context_receipt(
     session_metadata: dict[str, Any],
 ) -> dict[str, Any] | None:
-    focus = session_metadata.get("active_focus")
-    if not isinstance(focus, dict):
-        return None
-
-    focus_id = str(focus.get("id", "")).strip()
-    focus_summary = str(focus.get("summary", "")).strip()
-    source = (
-        str(focus.get("source", "direct_user_instruction")).strip()
-        or "direct_user_instruction"
-    )
-    persistence = (
-        str(focus.get("persistence", "session-only")).strip() or "session-only"
-    )
-    if not focus_id or not focus_summary:
-        return None
-
-    return {
-        "compact": (
-            f"Context receipt: Active Focus {focus_id} "
-            f"(source={source}; persistence={persistence})."
-        ),
-        "context_receipts": [
-            {
-                "layer": "active_focus",
-                "record_id": focus_id,
-                "source": source,
-                "persistence": persistence,
-                "status": "active",
-            }
-        ],
-        "record_ids": [focus_id],
-    }
+    return _session_focus_context_receipt_from_api(session_metadata)
 
 
 def _resolve_effective_active_focus(
@@ -865,52 +765,11 @@ def _merge_focus_context_receipt(
     base_receipt: dict[str, Any] | None,
     session_metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    merged: dict[str, Any] = dict(base_receipt or {})
-    focus_receipt = _session_focus_context_receipt(session_metadata)
-    if focus_receipt is None:
-        return merged
-
-    existing_contexts = list(merged.get("context_receipts", []))
-    if not any(
-        isinstance(item, dict) and str(item.get("layer", "")).lower() == "active_focus"
-        for item in existing_contexts
-    ):
-        existing_contexts.extend(list(focus_receipt.get("context_receipts", [])))
-    merged["context_receipts"] = existing_contexts
-
-    existing_ids = list(merged.get("record_ids", []))
-    for record_id in list(focus_receipt.get("record_ids", [])):
-        if record_id not in existing_ids:
-            existing_ids.append(record_id)
-    merged["record_ids"] = existing_ids
-
-    focus_compact = str(focus_receipt.get("compact", "")).strip()
-    base_compact = str(merged.get("compact", "")).strip()
-    if focus_compact and focus_compact not in base_compact:
-        merged["compact"] = (
-            f"{base_compact} | {focus_compact}" if base_compact else focus_compact
-        )
-
-    return merged
+    return _merge_focus_context_receipt_from_api(base_receipt, session_metadata)
 
 
 def _is_communication_workflow_focus(session_metadata: dict[str, Any]) -> bool:
-    focus = session_metadata.get("active_focus")
-    if not isinstance(focus, dict):
-        return False
-    summary = str(focus.get("summary", "")).lower()
-    if not summary:
-        return False
-    return any(
-        token in summary
-        for token in (
-            "communicat",
-            "workflow",
-            "habit",
-            "otis",
-            "operator",
-        )
-    )
+    return _is_communication_workflow_focus_from_api(session_metadata)
 
 
 def _is_focus_guided_follow_up(question: str) -> bool:
@@ -962,22 +821,7 @@ def _active_focus_guided_plan_answer() -> str:
 
 
 def _active_focus_guided_context_receipt(focus_id: str) -> dict[str, Any]:
-    return {
-        "compact": (
-            f"Focus: {focus_id}; Memory: learning-signals; "
-            "Knowledge: communication-workflow; Model: policy_only; "
-            "Proof: active_focus_guided"
-        ),
-        "context_receipts": [
-            {
-                "layer": "active_focus",
-                "record_id": focus_id,
-                "FocusApplied": True,
-                "Mode": "communication_workflow_learning",
-            }
-        ],
-        "record_ids": [focus_id],
-    }
+    return _active_focus_guided_context_receipt_from_api(focus_id)
 
 
 async def ensure_session_facts_table() -> None:
