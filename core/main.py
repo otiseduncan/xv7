@@ -16,6 +16,12 @@ import httpx
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from core.api.brain_records import (
+    brain_hygiene_classification as _brain_hygiene_classification,
+    serialize_brain_record as _serialize_brain_record_payload,
+    status_label as _status_label,
+    summary_from_body as _summary_from_body,
+)
 from core.api.schemas import (
     AddMessageRequest,
     BrainRecordApplyRecommendationRequest,
@@ -205,166 +211,18 @@ def sanitize_visible_answer_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
-def _summary_from_body(body: str) -> str:
-    cleaned = " ".join(body.split()).strip()
-    if not cleaned:
-        return "(empty)"
-    if len(cleaned) <= 160:
-        return cleaned
-    return cleaned[:157].rstrip() + "..."
-
-
-def _status_label(status: str) -> str:
-    normalized = str(status or "").lower()
-    if normalized in {"pending", "pending_review"}:
-        return "pending"
-    if normalized == "disabled":
-        return "disabled"
-    if normalized == "archived":
-        return "archived"
-    return "active"
-
-
-def _brain_hygiene_classification(record: BrainRecord) -> dict[str, Any]:
-    text_blob = " ".join(
-        [
-            record.title,
-            record.summary,
-            record.body,
-            " ".join(record.tags),
-            " ".join(record.evidence),
-        ]
-    ).lower()
-    flags: list[str] = []
-    recommendations: list[dict[str, Any]] = []
-    reasons: list[str] = []
-    effective_relevance = record.relevance_state
-
-    has_phase_ref = bool(re.search(r"\bb\d+(?:\.\d+)?\b", text_blob))
-    has_milestone_done = any(
-        token in text_blob
-        for token in (
-            "completed",
-            "passed",
-            "verified",
-            "proven",
-            "milestone",
-            "done",
-            "shipped",
-            "phase",
-        )
-    )
-    has_operational_rule = any(
-        token in text_blob
-        for token in (
-            "from now on",
-            "current",
-            "in progress",
-            "must",
-            "always",
-            "operator mode",
-            "working priority",
-            "active focus",
-            "should",
-            "bridge",
-        )
-    )
-
-    if has_phase_ref:
-        flags.append("old_phase_reference")
-        reasons.append("Contains legacy B-phase references.")
-    if has_milestone_done:
-        flags.append("completed_milestone")
-        reasons.append("Contains completed/passed milestone language.")
-    if has_phase_ref and has_milestone_done:
-        flags.append("historical_candidate")
-        if record.relevance_state == "current":
-            effective_relevance = "historical"
-            recommendations.append(
-                {
-                    "type": "mark_historical_via_runtime_override",
-                    "record_id": record.record_id,
-                    "approval_required": True,
-                    "reason": "Contains old completed milestones without current-only scoping.",
-                    "payload": {
-                        "relevance_state": "historical",
-                        "review_reason": "Contains completed or passed phase milestone references.",
-                    },
-                }
-            )
-
-    if has_phase_ref and has_milestone_done and has_operational_rule:
-        flags.append("mixed_historical_and_operational")
-        flags.append("mixed_historical_and_current")
-        effective_relevance = "needs_review"
-        reasons.append(
-            "Contains old completed milestones and current operational bridge rule content."
-        )
-        recommendations.append(
-            {
-                "type": "split_record",
-                "record_id": record.record_id,
-                "approval_required": True,
-                "reason": "Split historical milestones from current operational behavior.",
-                "steps": [
-                    "Mark existing record as historical or superseded via runtime override",
-                    "Create a smaller current operational rule record via runtime override",
-                ],
-            }
-        )
-
-    if record.valid_until:
-        try:
-            until = datetime.fromisoformat(record.valid_until.replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
-            if until < now and record.relevance_state in {"current", "needs_review"}:
-                flags.append("expired_window")
-                effective_relevance = "expired"
-        except Exception:
-            pass
-
-    return {
-        "effective_relevance_state": effective_relevance,
-        "flags": flags,
-        "recommended_actions": recommendations,
-        "reason": " ".join(dict.fromkeys(reasons)),
-    }
-
-
 def _serialize_brain_record(
     *,
     record: BrainRecord,
     source: str,
     path: Path,
 ) -> dict[str, Any]:
-    hygiene = _brain_hygiene_classification(record)
-    return {
-        "record_id": record.record_id,
-        "layer": record.layer.value,
-        "title": record.title,
-        "summary": record.summary,
-        "body": record.body,
-        "status": record.status,
-        "status_label": _status_label(record.status),
-        "relevance_state": record.relevance_state,
-        "effective_relevance_state": hygiene["effective_relevance_state"],
-        "superseded_by": record.superseded_by,
-        "valid_from": record.valid_from,
-        "valid_until": record.valid_until,
-        "applies_when": record.applies_when,
-        "review_reason": record.review_reason,
-        "last_reviewed_at": record.last_reviewed_at,
-        "priority": record.priority,
-        "tags": list(record.tags),
-        "source": source,
-        "writable": source == "runtime_override",
-        "source_label": "runtime_override" if source == "runtime_override" else "seed",
-        "hygiene_flags": hygiene["flags"],
-        "hygiene_recommendations": hygiene["recommended_actions"],
-        "hygiene_reason": hygiene.get("reason", ""),
-        "updated_at": brain_context_manager.loader.record_updated_at(path),
-        "raw_record": record.model_dump(mode="json"),
-    }
+    return _serialize_brain_record_payload(
+        record=record,
+        source=source,
+        path=path,
+        updated_at=brain_context_manager.loader.record_updated_at(path),
+    )
 
 
 def _layer_token(layer: BrainLayer) -> str:
