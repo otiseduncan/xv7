@@ -2442,7 +2442,10 @@ async def add_session_message(
         MemoryDecisionState.ask_clarification,
         MemoryDecisionState.reject_protected,
     }:
-        if auto_decision.state == MemoryDecisionState.save_active and auto_decision.candidate is not None:
+        if (
+            auto_decision.state == MemoryDecisionState.save_active
+            and auto_decision.candidate is not None
+        ):
             saved_record = persistent_memory_manager.upsert_active_memory(
                 content=auto_decision.candidate.content,
                 source="user_explicit",
@@ -2457,7 +2460,9 @@ async def add_session_message(
             auto_receipt = persistent_memory_manager.compact_receipt([saved_record])
             assistant_payload = build_assistant_payload(
                 visible_text=visible_text,
-                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                context_receipt=_merge_focus_context_receipt(
+                    {}, session_state.metadata
+                ),
                 operator_receipts=[],
                 memory_receipts=[auto_receipt],
                 model_use_receipt={},
@@ -2514,7 +2519,10 @@ async def add_session_message(
             await memory_manager.update_session(updated_state)
             return updated_state
 
-        if auto_decision.state == MemoryDecisionState.save_pending_review and auto_decision.candidate is not None:
+        if (
+            auto_decision.state == MemoryDecisionState.save_pending_review
+            and auto_decision.candidate is not None
+        ):
             pending_record = persistent_memory_manager.create_pending_memory(
                 content=auto_decision.candidate.content,
                 source="user_explicit",
@@ -2528,7 +2536,9 @@ async def add_session_message(
             auto_receipt = persistent_memory_manager.compact_receipt([pending_record])
             assistant_payload = build_assistant_payload(
                 visible_text=visible_text,
-                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                context_receipt=_merge_focus_context_receipt(
+                    {}, session_state.metadata
+                ),
                 operator_receipts=[],
                 memory_receipts=[auto_receipt],
                 model_use_receipt={},
@@ -2576,10 +2586,15 @@ async def add_session_message(
             MemoryDecisionState.ask_clarification,
             MemoryDecisionState.reject_protected,
         }:
-            visible_text = auto_decision.visible_text or "I need more detail before I can save that."
+            visible_text = (
+                auto_decision.visible_text
+                or "I need more detail before I can save that."
+            )
             assistant_payload = build_assistant_payload(
                 visible_text=visible_text,
-                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                context_receipt=_merge_focus_context_receipt(
+                    {}, session_state.metadata
+                ),
                 operator_receipts=[],
                 memory_receipts=[],
                 model_use_receipt={},

@@ -1365,10 +1365,15 @@ class OperatorManager:
 
         active_export = session_metadata.get("active_exported_artifact")
         if isinstance(active_export, dict):
+            # Use only the first valid path from the exported artifact to avoid
+            # generating multiple candidates (host, container, relative) for the
+            # same project, which would incorrectly trigger a path-ambiguity prompt.
+            # Prefer relative_project_path because it resolves via the sandbox root
+            # and produces a clean project slug on any OS.
             for key in (
-                "host_project_path",
-                "container_project_path",
                 "relative_project_path",
+                "container_project_path",
+                "host_project_path",
                 "entry_file",
                 "project_slug",
             ):
@@ -1377,6 +1382,7 @@ class OperatorManager:
                     normalized_candidate = _normalized_candidate_path(value)
                     if normalized_candidate:
                         candidates.append(normalized_candidate)
+                        break
 
         last_payload = session_metadata.get("last_assistant_payload")
         if isinstance(last_payload, dict):
