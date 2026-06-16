@@ -3827,6 +3827,79 @@ async def add_session_message(
         )
 
     learned_records = brain_context_manager.loader.load_records()
+    if "session_metadata_learned_rule_records" not in session_state.metadata:
+        session_rule_records: list[BrainRecord] = []
+        for previous_message in session_state.messages:
+            previous_metadata = getattr(previous_message, "metadata", {})
+            if not isinstance(previous_metadata, dict):
+                continue
+
+            learned_record_id = str(
+                previous_metadata.get("learned_record_id", "")
+            ).strip()
+            learning_status = str(previous_metadata.get("learning_status", "")).strip()
+            speech_act = str(previous_metadata.get("speech_act", "")).strip()
+            source_user_message = str(
+                previous_metadata.get("source_user_message", "")
+            ).strip()
+
+            if (
+                not learned_record_id
+                or learning_status != "active"
+                or not source_user_message
+                or speech_act
+                not in {
+                    "user_correction",
+                    "communication_preference",
+                    "workflow_habit_learning",
+                    "hallucination_guard",
+                    "answer_style_preference",
+                    "diagnostic_rule",
+                }
+            ):
+                continue
+
+            source_norm = _normalize_intent_text(source_user_message)
+            proof_required = speech_act in {
+                "hallucination_guard",
+                "diagnostic_rule",
+            } or (
+                (
+                    "proof" in source_norm
+                    or "do not guess" in source_norm
+                    or "don't guess" in source_norm
+                )
+                and any(token in source_norm for token in ("ci", "github", "status"))
+            )
+
+            session_rule_records.append(
+                BrainRecord(
+                    record_id=learned_record_id,
+                    layer=_speech_act_to_learning_layer(speech_act),
+                    title=_learning_rule_title(speech_act, source_user_message),
+                    summary=source_user_message,
+                    body=f"Learned rule from session metadata: {source_user_message}",
+                    memory_type=(
+                        "diagnostic_rule"
+                        if speech_act == "diagnostic_rule"
+                        else "hallucination_guard"
+                        if speech_act == "hallucination_guard"
+                        else "answer_style"
+                        if speech_act == "answer_style_preference"
+                        else "workflow_rule"
+                        if speech_act == "workflow_habit_learning"
+                        else "preference"
+                    ),
+                    status="active",
+                    tags=_learning_rule_tags(speech_act, proof_required),
+                )
+            )
+
+        if session_rule_records:
+            learned_records = [*learned_records, *session_rule_records]
+        session_state.metadata["session_metadata_learned_rule_records"] = [
+            record.record_id for record in session_rule_records
+        ]
     learned_prompt = _learned_rules_prompt(learned_records)
     if learned_prompt:
         inference_state.messages.insert(
