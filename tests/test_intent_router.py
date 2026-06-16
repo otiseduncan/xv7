@@ -250,3 +250,15 @@ def test_operator_project_command_detection_for_verbal_and_slash() -> None:
         )
         is False
     )
+    assert (
+        IntentRouter.is_operator_project_command_request(
+            IntentRouter.normalize("create a new repo named github poop project")
+        )
+        is True
+    )
+    assert (
+        IntentRouter.is_operator_project_command_request(
+            IntentRouter.normalize("push to github new repo x push proof")
+        )
+        is True
+    )

@@ -1,5 +1,5 @@
-# =============================================================================
-# xv7 — System Configuration
+﻿# =============================================================================
+# xv7 â€” System Configuration
 # =============================================================================
 # Loaded by the Core service at startup via pydantic-settings.
 # Values here are defaults; override via environment variables or .env.
@@ -42,3 +42,13 @@ cache:
 security:
   token_algorithm: HS256
   access_token_expire_minutes: 1440  # 24 hours
+
+github_publish_profile:
+  github_owner: otiseduncan
+  git_user_name: Otis Duncan
+  git_user_email: otiseduncan@gmail.com
+  sandbox_root_host: "X:\xoduz-sandbox"
+  sandbox_root_container: /app/generated-sites
+  proof_repo_pattern: xv7-sandbox-export-proof-YYYYMMDD
+  proof_repo_url: https://github.com/otiseduncan/xv7-sandbox-export-proof-20260614
+

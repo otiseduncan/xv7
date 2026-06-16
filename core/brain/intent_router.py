@@ -121,14 +121,18 @@ class IntentRouter:
     OPERATOR_MODE_PREFIX_PATTERN = re.compile(r"^operator\s+mode\s*:\s*", re.IGNORECASE)
     OPERATOR_GITHUB_PROJECT_PATTERN = re.compile(
         r"\b(build and push|push to github|create a github repo|create a new repository on github|"
+        r"create a new repo|create new repo|create a new repo named|push to github new repo|"
         r"initialize git|git init|commit and push|real github proof project|real build and push|"
         r"not a preview|not a patch)\b"
     )
     OPERATOR_PROJECT_COMMAND_PATTERN = re.compile(
         r"\b(build and push a real github proof project|"
         r"initialize the new repository and push to github|"
+        r"push to github new repo|"
         r"create a new repository on github and push|"
         r"create a new repository on github|"
+        r"create a new repo named|"
+        r"create a new repo|"
         r"finish the github push|"
         r"commit and push this project|"
         r"push to github|"

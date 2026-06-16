@@ -30,7 +30,7 @@ class SandboxWriteManager:
         if os.name != "nt" and cls._is_windows_style_path(configured):
             container_root = (
                 str(os.getenv("XV7_SANDBOX_ROOT_CONTAINER", "")).strip()
-                or "/xoduz-sandbox"
+                or "/app/generated-sites"
             )
             return Path(container_root).resolve()
 
