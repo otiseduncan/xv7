@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,3 +22,32 @@ class AddMessageRequest(BaseModel):
 
     raw_text: str = Field(min_length=1)
     operator_mode: bool = False
+
+
+class OperatorStageRequest(BaseModel):
+    """Payload for staging a command action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    command_text: str = Field(min_length=1)
+    operator_mode: bool = False
+
+
+class OperatorConfirmRequest(BaseModel):
+    """Payload for confirming a staged command action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    action_id: str = Field(min_length=1)
+    typed_confirmation: str | None = None
+
+
+class OperatorCancelRequest(BaseModel):
+    """Payload for canceling a staged command action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    action_id: str = Field(min_length=1)
