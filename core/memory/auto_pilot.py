@@ -115,7 +115,9 @@ class MemoryAutoPilotService:
         signal = self._classify_signal(normalized)
         proof_present = self._has_proof_metadata(metadata)
 
-        if signal == MemorySignal.verified_status_candidate and str(message or "").strip().endswith("?"):
+        if signal == MemorySignal.verified_status_candidate and str(
+            message or ""
+        ).strip().endswith("?"):
             signal = MemorySignal.no_memory
 
         if signal == MemorySignal.emotional_feedback_unclear:
@@ -246,15 +248,24 @@ class MemoryAutoPilotService:
                 continue
             haystack = f"{record.content} {' '.join(record.tags)}".lower()
             if signal == MemorySignal.answer_style_preference and not any(
-                token in haystack for token in ("concise", "direct", "proof", "dump", "short")
+                token in haystack
+                for token in ("concise", "direct", "proof", "dump", "short")
             ):
                 continue
             if signal == MemorySignal.workflow_habit and not any(
-                token in haystack for token in ("preview", "website", "generate", "write files only", "when i say")
+                token in haystack
+                for token in (
+                    "preview",
+                    "website",
+                    "generate",
+                    "write files only",
+                    "when i say",
+                )
             ):
                 continue
             if signal == MemorySignal.communication_preference and not any(
-                token in haystack for token in ("guess", "verify", "direct", "preview", "files only")
+                token in haystack
+                for token in ("guess", "verify", "direct", "preview", "files only")
             ):
                 continue
             if signal == MemorySignal.verified_status_candidate:
@@ -263,7 +274,9 @@ class MemoryAutoPilotService:
             selected.append(record)
 
         if not selected and signal == MemorySignal.no_memory:
-            selected = [record for record in records if record.memory_type in relevant_types]
+            selected = [
+                record for record in records if record.memory_type in relevant_types
+            ]
 
         priority_types: list[str] = []
         if "verified" in text or "status" in text:
@@ -292,7 +305,9 @@ class MemoryAutoPilotService:
             ]
 
         if priority_types:
-            type_priority = {memory_type: index for index, memory_type in enumerate(priority_types)}
+            type_priority = {
+                memory_type: index for index, memory_type in enumerate(priority_types)
+            }
             selected = sorted(
                 selected,
                 key=lambda record: (
@@ -349,25 +364,6 @@ class MemoryAutoPilotService:
                 for record in records
             ],
         }
-
-    def build_context_prompt(
-        self,
-        message: str,
-        records: list[MemoryRecord],
-        *,
-        session_metadata: dict[str, Any] | None = None,
-    ) -> str:
-        if not records:
-            return ""
-
-        lines = ["--- AUTO MEMORY CONTEXT ---"]
-        focus = self._active_focus_summary(session_metadata or {})
-        if focus:
-            lines.append(f"Active focus: {focus}")
-        for record in records:
-            lines.append(f"Memory {record.id}: {record.content}")
-        lines.append("---------------------------")
-        return "\n".join(lines)
 
     def build_brain_record_payload(self, record: MemoryRecord) -> dict[str, Any]:
         memory_type = {
@@ -498,10 +494,15 @@ class MemoryAutoPilotService:
         if not normalized:
             return MemorySignal.no_memory
 
-        if normalized.startswith("remember this:") or normalized.startswith("remember this "):
+        if normalized.startswith("remember this:") or normalized.startswith(
+            "remember this "
+        ):
             return MemorySignal.no_memory
 
-        if normalized.startswith("correction:") or "remember this workflow correction" in normalized:
+        if (
+            normalized.startswith("correction:")
+            or "remember this workflow correction" in normalized
+        ):
             return MemorySignal.no_memory
 
         if normalized.startswith("going forward"):
@@ -531,7 +532,9 @@ class MemoryAutoPilotService:
         if normalized.endswith("?"):
             return MemorySignal.no_memory
 
-        if normalized.startswith(("no, that is wrong", "no that is wrong", "that's not what i meant")):
+        if normalized.startswith(
+            ("no, that is wrong", "no that is wrong", "that's not what i meant")
+        ):
             if len(normalized.split()) <= 4:
                 return MemorySignal.emotional_feedback_unclear
             return MemorySignal.user_correction
@@ -567,7 +570,10 @@ class MemoryAutoPilotService:
         if MemoryAutoPilotService.TEMPORARY_PATTERN.search(normalized):
             return MemorySignal.temporary_context
 
-        if any(token in normalized for token in ("repo", "branch", "workspace", "project", "status")):
+        if any(
+            token in normalized
+            for token in ("repo", "branch", "workspace", "project", "status")
+        ):
             return MemorySignal.project_fact
 
         return MemorySignal.no_memory
@@ -585,7 +591,10 @@ class MemoryAutoPilotService:
         tool_results = session_metadata.get("tool_results")
         if isinstance(tool_results, list):
             for item in tool_results:
-                if isinstance(item, dict) and str(item.get("type", "")).lower() == "repo_check":
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("type", "")).lower() == "repo_check"
+                ):
                     return True
         proof = session_metadata.get("proof_metadata")
         return isinstance(proof, dict) and bool(proof)
@@ -621,8 +630,19 @@ class MemoryAutoPilotService:
         hints: dict[str, Any] = {}
         if "preview first" in lower_content or "preview first" in lower_message:
             hints["preview_first"] = True
-        if any(token in lower_content for token in ("don't guess", "do not guess", "verify repo status first", "proof first")):
+        if any(
+            token in lower_content
+            for token in (
+                "don't guess",
+                "do not guess",
+                "verify repo status first",
+                "proof first",
+            )
+        ):
             hints["require_proof"] = True
-        if any(token in lower_content for token in ("be direct", "short answers", "keep it short", "unless i ask")):
+        if any(
+            token in lower_content
+            for token in ("be direct", "short answers", "keep it short", "unless i ask")
+        ):
             hints["answer_style"] = "concise"
         return hints
