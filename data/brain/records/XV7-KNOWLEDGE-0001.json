@@ -3,7 +3,7 @@
   "layer": "knowledge",
   "title": "XV7 architecture summary",
   "summary": "XV7 uses a core API, frontend, Open WebUI, and Ollama in a local Docker stack.",
-  "body": "Stable architecture: core FastAPI service handles sessions, runtime model routing, and auth-protected mutation routes; frontend provides local UI and API bridge; Open WebUI provides browser chat UI; Ollama provides local model inference. Runtime includes model profile/effective model endpoints and safe model-use receipts.",
+  "body": "Architecture summary from repo structure: core FastAPI service handles sessions, runtime model routing, and auth-protected mutation routes; frontend provides local UI and API bridge; Open WebUI provides browser chat UI; Ollama provides local model inference. Runtime includes model profile/effective model endpoints and safe model-use receipts. Service reachability and overall system stability must be treated as unverified until a fresh readiness check or live proof is available in the current session.",
   "status": "archived",
   "priority": 90,
   "tags": ["architecture", "runtime"],
@@ -17,9 +17,14 @@
       "statement": "Open WebUI and frontend are separate services in the Docker stack.",
       "source_type": "inferred",
       "source_detail": "docker-compose and docs"
+    },
+    {
+      "statement": "Repo structure can be described from source, but runtime service health and system stability require fresh proof in the current session.",
+      "source_type": "inferred",
+      "source_detail": "Status correction pass"
     }
   ],
   "evidence": [
-    "Stable repo structure and compose services."
+    "Repo structure and compose services are visible in source; runtime status requires fresh proof."
   ]
 }

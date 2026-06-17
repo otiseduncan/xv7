@@ -98,6 +98,17 @@ class MemoryAutoPilotService:
         r"\b(for now|temporary|just for this session|right now|today only|for this chat)\b",
         flags=re.IGNORECASE,
     )
+    COMMAND_MEMORY_EXCLUSION_PATTERN = re.compile(
+        r"\b("
+        r"inspect repo branch|check repo branch|what branch are we on|git status|"
+        r"repo status|check the repo|is the working tree clean|"
+        r"what is the gpu status|gpu status|check gpu|nvidia-smi|"
+        r"how many drives do i have|how many disks do i have|drive count|"
+        r"disk status|are containers running|what processor am i running|"
+        r"can you scan my system"
+        r")\b",
+        flags=re.IGNORECASE,
+    )
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -509,6 +520,9 @@ class MemoryAutoPilotService:
             return MemorySignal.no_memory
 
         if "code artifact" in normalized or "previewable true" in normalized:
+            return MemorySignal.no_memory
+
+        if MemoryAutoPilotService.COMMAND_MEMORY_EXCLUSION_PATTERN.search(normalized):
             return MemorySignal.no_memory
 
         if any(

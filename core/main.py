@@ -910,6 +910,71 @@ async def add_session_message(
     for key, value in auto_decision.metadata_updates.items():
         session_state.metadata[key] = value
 
+    normalized_fast_policy_text = _normalize_intent_text(payload.raw_text)
+    if normalized_fast_policy_text in {
+        "what is your name?",
+        "what is your name",
+        "whats your name?",
+        "whats your name",
+        "what's your name?",
+        "what's your name",
+        "your name?",
+        "your name",
+        "who is otis duncan?",
+        "who is otis duncan",
+        "what is xv7?",
+        "what is xv7",
+        "can you read github repos?",
+        "can you read github repos",
+    }:
+        visible_text = brain_context_manager.answer_from_records(
+            payload.raw_text,
+            session_metadata=session_state.metadata,
+        )
+        if visible_text is None:
+            visible_text = "My name is Xoduz."
+        visible_text = sanitize_visible_answer_text(visible_text.strip())
+        policy_provenance = {
+            "answer_source": "brain_policy",
+            "policy_source": "answer_contract",
+            "brain_answer_source": "deterministic_identity",
+            "intent_class": "identity_question",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt(
+                {}, session_state.metadata
+            ),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=[],
+            action_history_refs=[],
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        updated_state.metadata["answer_provenance"] = policy_provenance
+        updated_state.metadata["vector_memory"] = {
+            "status": "skipped",
+            "reason": "fast_policy_identity",
+        }
+        updated_state.metadata["context_receipt"] = assistant_payload[
+            "context_receipt"
+        ]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        updated_state.metadata["model_used"] = "policy_only"
+        updated_state.metadata["fallback_used"] = False
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     if auto_decision.state in {
         MemoryDecisionState.save_active,
         MemoryDecisionState.save_pending_review,

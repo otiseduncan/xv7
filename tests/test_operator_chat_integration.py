@@ -1091,6 +1091,167 @@ def test_processor_prompt_routes_to_scan_cpu_and_reports_bridge_unavailable_with
     assert operator_receipts[0].get("status") == "failed"
 
 
+@pytest.mark.parametrize(
+    "prompt,expected_action",
+    [
+        ("inspect repo branch", "operator_status_report"),
+        ("what is the gpu status", "scan_gpu"),
+        ("how many drives do I have", "scan_disk"),
+    ],
+)
+def test_live_status_prompts_route_to_operator_not_memory_learning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    prompt: str,
+    expected_action: str,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+    runtime_dir = tmp_path / "brain_runtime_records"
+    knowledge_before = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
+    memory_before = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
+    calls: list[str] = []
+
+    def _run_action_status_or_bridge_unavailable(
+        action_name: str,
+        *,
+        action_id: str,
+        repo_root: Path,
+        target: str | None = None,
+    ) -> OperatorActionResult:
+        assert action_name == expected_action
+        calls.append(action_name)
+        now = datetime.now(UTC)
+        if action_name == "operator_status_report":
+            return OperatorActionResult(
+                action_id=action_id,
+                action_name=action_name,
+                status="success",
+                started_at=now,
+                completed_at=now,
+                command_or_operation="git status",
+                target=str(repo_root),
+                stdout_summary="ok",
+                stderr_summary="",
+                exit_code=0,
+                data={
+                    "branch": "main",
+                    "clean": True,
+                    "sync": "in_sync",
+                    "upstream": "origin/main",
+                },
+                safety=OperatorSafety(allowed=True),
+                receipt_label=f"{action_name} {action_id}",
+            )
+        scan_name = "gpu" if action_name == "scan_gpu" else "disk"
+        return OperatorActionResult(
+            action_id=action_id,
+            action_name=action_name,
+            status="failed",
+            started_at=now,
+            completed_at=now,
+            command_or_operation=(
+                f"POST http://host.docker.internal:8765/scan/{scan_name}"
+            ),
+            target=str(repo_root),
+            stdout_summary="",
+            stderr_summary="Local host scan bridge is not running.",
+            exit_code=503,
+            data={
+                "bridge_available": False,
+                "bridge_url": "http://host.docker.internal:8765",
+                "limitation": "Local host scan bridge is not running.",
+            },
+            safety=OperatorSafety(allowed=True),
+            receipt_label=f"{action_name} {action_id}",
+        )
+
+    monkeypatch.setattr(
+        "core.operator.manager.run_action", _run_action_status_or_bridge_unavailable
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+
+    assert calls == [expected_action]
+    assert "got it" not in answer
+    assert "keep that preference" not in answer
+    assert "saved that as" not in answer
+    assert metadata.get("policy_provenance", {}).get("intent_class") not in {
+        "communication_preference",
+        "workflow_habit_learning",
+    }
+    assert not metadata.get("memory_receipts")
+    operator_receipts = metadata.get("operator_receipts") or []
+    assert operator_receipts
+    assert operator_receipts[0].get("action_name") == expected_action
+    if expected_action in {"scan_gpu", "scan_disk"}:
+        assert "local host scan bridge is not running" in answer
+        assert "bridge url: http://host.docker.internal:8765" in answer
+
+    knowledge_after = {path.name for path in runtime_dir.glob("XV7-KNOWLEDGE-*.json")}
+    memory_after = {path.name for path in runtime_dir.glob("XV7-MEMORY-*.json")}
+    assert knowledge_after == knowledge_before
+    assert memory_after == memory_before
+
+
+@pytest.mark.parametrize(
+    "prompt,expected_fragment",
+    [
+        ("whats your name", "xoduz"),
+        ("who is otis duncan", "otis duncan"),
+        ("what is XV7", "xv7"),
+        ("can you read github repos?", "github"),
+    ],
+)
+def test_basic_policy_prompts_answer_without_model_or_vector_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    prompt: str,
+    expected_fragment: str,
+) -> None:
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    async def _fail_vector_memory_round_trip(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("identity policy answer should not persist vector memory")
+
+    monkeypatch.setattr(
+        "core.main.persist_vector_memory_round_trip",
+        _fail_vector_memory_round_trip,
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    answer = payload["messages"][-1]["content"].lower()
+    assistant_payload = payload.get("metadata", {}).get("last_assistant_payload", {})
+
+    assert expected_fragment in answer
+    assert "failed" not in answer
+    assert "timed out" not in answer
+    assert "keep that preference" not in answer
+    assert not assistant_payload.get("memory_receipts")
+    assert payload.get("metadata", {}).get("model_used") == "policy_only"
+    assert payload.get("metadata", {}).get("vector_memory", {}).get("status") == (
+        "skipped"
+    )
+
+
 def test_can_you_scan_my_system_routes_to_scan_system_and_not_context_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -69,6 +69,12 @@ class IntentRouter:
     PREVIEW_ARTIFACT_PATTERN = re.compile(
         r"\b(preview|show|render|display|mock\s*up|mockup)\b"
     )
+    CHAT_DISPLAY_PATTERN = re.compile(
+        r"\b("
+        r"display in chat|display it in the chat|show in chat|show it here|"
+        r"display here|preview here|chat preview|show me a preview"
+        r")\b"
+    )
     SANDBOX_BUILD_ACTION_PATTERN = re.compile(
         r"\b(build|write|create|export|save|scaffold)\b|"
         r"\bmake\s+(?:a\s+)?project\b|\bgenerate\s+files\b|\bwrite\s+files\b|"
@@ -322,6 +328,18 @@ class IntentRouter:
         )
 
     @classmethod
+    def is_explicit_chat_site_display_request(cls, normalized_text: str) -> bool:
+        if not normalized_text:
+            return False
+        if not cls.CHAT_DISPLAY_PATTERN.search(normalized_text):
+            return False
+        if "show me a preview" in normalized_text and not re.search(
+            r"\b(website|site|design)\b", normalized_text
+        ):
+            return False
+        return bool(cls.SANDBOX_BUILD_TARGET_PATTERN.search(normalized_text))
+
+    @classmethod
     def is_repo_mutation_build_prompt(cls, normalized_text: str) -> bool:
         if not normalized_text:
             return False
@@ -343,6 +361,8 @@ class IntentRouter:
         if cls.is_conceptual_website_question(normalized_text):
             return False
         if cls.has_explicit_artifact_intent(normalized_text):
+            return False
+        if cls.is_explicit_chat_site_display_request(normalized_text):
             return False
         if cls.is_repo_mutation_build_prompt(normalized_text):
             return False
@@ -383,6 +403,7 @@ class IntentRouter:
         return (
             cls.has_explicit_artifact_intent(normalized_text)
             or sb.is_site_bundle_request(normalized_text)
+            or cls.is_explicit_chat_site_display_request(normalized_text)
         ) and not cls.is_repo_mutation_build_prompt(normalized_text)
 
     @classmethod
@@ -390,7 +411,8 @@ class IntentRouter:
         normalized = cls.normalize(text)
         explicit_artifact = cls.has_explicit_artifact_intent(normalized)
         repo_mutation = cls.is_repo_mutation_build_prompt(normalized)
-        site_bundle = sb.is_site_bundle_request(normalized)
+        chat_site_display = cls.is_explicit_chat_site_display_request(normalized)
+        site_bundle = sb.is_site_bundle_request(normalized) or chat_site_display
         sandbox_build = cls.is_sandbox_build_request(normalized)
         artifact_edit = cls.looks_like_artifact_edit(normalized)
         preview_artifact = cls.is_preview_artifact_request(normalized)

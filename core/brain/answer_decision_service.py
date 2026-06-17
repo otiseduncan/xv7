@@ -27,6 +27,12 @@ class AnswerDecisionService:
         if normalized in {
             "what is your name?",
             "what is your name",
+            "whats your name?",
+            "whats your name",
+            "what's your name?",
+            "what's your name",
+            "your name?",
+            "your name",
         }:
             return "My name is Xoduz."
 
@@ -68,6 +74,8 @@ class AnswerDecisionService:
             )
 
         if normalized in {
+            "what is xv7?",
+            "what is xv7",
             "what does xv7 mean?",
             "what does xv7 mean",
             "what project are you?",
@@ -160,8 +168,19 @@ class AnswerDecisionService:
             )
 
         if normalized in {
+            "can you read github repos?",
+            "can you read github repos",
+        }:
+            return (
+                "I can help inspect GitHub repositories only through configured GitHub or approved Operator Mode tooling. "
+                "I should not claim live GitHub access unless a tool actually runs and returns proof."
+            )
+
+        if normalized in {
             "who is otis?",
             "who is otis",
+            "who is otis duncan?",
+            "who is otis duncan",
         }:
             return "Otis Duncan is my creator/operator and the human directing XV7."
 

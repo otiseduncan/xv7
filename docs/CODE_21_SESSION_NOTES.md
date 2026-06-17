@@ -27,6 +27,8 @@ This docs mop-up pass created:
 
 Next implementation should start with:
 
-- CODE-01 Workspace Context Map
+- CODE-06 Commit Helper
 
-Then continue with CODE-02 and CODE-03 before running the gauntlet in `docs/CODE_OPERATOR_GAUNTLET.md`.
+CODE-01 through CODE-05 are already implemented per [docs/CODE_LANE_INDEX.md](docs/CODE_LANE_INDEX.md).
+
+Planning context is already past CODE-09 prompt-writing. Use [docs/CODE_LANE_INDEX.md](docs/CODE_LANE_INDEX.md) as the source of truth for current CODE-lane ordering and status.

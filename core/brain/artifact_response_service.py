@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from core.brain import site_bundle as sb
+from core.brain.intent_router import IntentRouter
 from core.brain.sandbox_writer import SandboxWriteManager
 from core.runtime.model_registry import (
     configured_ollama_base_url_candidates,
@@ -33,7 +34,10 @@ class ArtifactResponseService:
             "latest session artifact" if latest_artifact is not None else None
         )
         is_generation = contract.is_code_artifact_request(normalized)
-        is_site_bundle_generation = sb.is_site_bundle_request(normalized)
+        is_site_bundle_generation = (
+            sb.is_site_bundle_request(normalized)
+            or IntentRouter.is_explicit_chat_site_display_request(normalized)
+        )
         is_sandbox_build = contract._is_sandbox_build_request(normalized)
         has_artifact_edit_intent = contract._looks_like_artifact_edit(normalized)
         has_explicit_artifact_generation_language = bool(

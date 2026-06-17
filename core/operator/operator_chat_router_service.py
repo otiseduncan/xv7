@@ -70,6 +70,8 @@ class OperatorChatRouterService:
             "give me repo status",
             "repo status.",
             "repo status",
+            "inspect repo branch.",
+            "inspect repo branch",
             "what is git status?",
             "what is git status",
         }:

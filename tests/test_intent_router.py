@@ -212,6 +212,31 @@ def test_website_command_semantics_routing_matrix() -> None:
         assert decision.is_sandbox_build_request is True
 
 
+def test_explicit_chat_display_overrides_build_sandbox_routing() -> None:
+    decision = IntentRouter.classify(
+        "build me a website called pickles and display it in the chat green and yellow colors"
+    )
+
+    assert decision.kind == IntentKind.SITE_BUNDLE
+    assert decision.is_site_bundle_request is True
+    assert decision.is_sandbox_build_request is False
+
+
+def test_explicit_sandbox_build_phrases_still_route_to_sandbox() -> None:
+    assert (
+        IntentRouter.classify("build me a website for Harry's Hot Dog Cart").kind
+        == IntentKind.SANDBOX_BUILD
+    )
+    assert (
+        IntentRouter.classify("write the website to sandbox").kind
+        == IntentKind.SANDBOX_BUILD
+    )
+    assert (
+        IntentRouter.classify("export the approved website").kind
+        == IntentKind.SANDBOX_BUILD
+    )
+
+
 def test_saved_preview_preference_does_not_override_current_explicit_build_command() -> (
     None
 ):

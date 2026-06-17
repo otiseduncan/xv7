@@ -64,6 +64,14 @@ def build_operator_answer(action_name: str, result: OperatorActionResult) -> str
             "bridge is not running" in limitation_lower
             or "local host scan bridge" in limitation_lower
         ):
+            if action_name in {"scan_gpu", "scan_disk"}:
+                bridge_url = str(result.data.get("bridge_url") or "").strip()
+                detail = (
+                    "The local host scan bridge is not running, so I cannot read GPU/disk status right now."
+                )
+                if bridge_url:
+                    detail = f"{detail}\nBridge URL: {bridge_url}"
+                return detail
             return "I can check that through the local host scan bridge, but the bridge is not running yet."
         if limitation:
             return f"Host scan failed: {limitation}"

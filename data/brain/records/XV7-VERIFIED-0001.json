@@ -2,8 +2,8 @@
   "record_id": "XV7-VERIFIED-0001",
   "layer": "verified_status",
   "title": "Verified milestones and current phase status",
-  "summary": "Verified: B9.5 identity cleanup and B9.7 Operator Mode confirmation layer. Current in progress: B9.8 local scan bridge hardening.",
-  "body": "Verified status contains proven facts and current phase flags. Proven: B3.2 launch baseline checks pass; B9.5 personal-assistant identity repair passed; B9.5.1/B9.5.2 removed bad companion wording from normal identity/purpose answers; B9.7 Operator Mode slash confirmation layer passed (default OFF, mutation requires Operator Mode, stage first, confirm before execute, high-risk typed confirmation). Current in progress: B9.8 local scan routing/bridge hardening. Local scan behavior is wired for operator actions, but host bridge runtime availability remains environment-dependent and should be reported honestly as unavailable when not running.",
+  "summary": "Verified: B9.5 identity cleanup and B9.7 Operator Mode confirmation layer. Active focus remains B9.8 local scan bridge hardening; runtime service, GitHub, model, and browser status require fresh proof by domain.",
+  "body": "Verified status contains proven facts and current phase flags. Proven: B3.2 launch baseline checks pass; B9.5 personal-assistant identity repair passed; B9.5.1/B9.5.2 removed bad companion wording from normal identity/purpose answers; B9.7 Operator Mode slash confirmation layer passed (default OFF, mutation requires explicit operator command, stage first, confirm before execute, high-risk typed confirmation). Active focus remains B9.8 local scan routing/bridge hardening unless a newer active focus record supersedes it. Local scan behavior is wired for operator actions, but host bridge runtime availability remains environment-dependent and should be reported honestly as unavailable when not running. Historical readiness or model proofs must not be blended with current GitHub/repo, local Windows path, Docker/service, Ollama/model, browser smoke/test, or memory/focus status unless each part has fresh proof in the current session.",
   "status": "active",
   "priority": 210,
   "tags": ["verified", "b3.2", "b9.5", "b9.7", "b9.8", "proof", "in-progress"],
@@ -29,17 +29,17 @@
       "source_detail": "Command output validated"
     },
     {
-      "statement": "Core API, frontend, Open WebUI, and Ollama are reachable.",
+      "statement": "A prior operator readiness proof showed Core API, frontend, Open WebUI, and Ollama reachable in that session.",
       "source_type": "verified_output",
       "source_detail": "Operator readiness report"
     },
     {
-      "statement": "Auth enforcement passes and chat proof passes.",
+      "statement": "A prior operator readiness proof showed auth enforcement and chat proof passing in that session.",
       "source_type": "verified_output",
       "source_detail": "Operator readiness report"
     },
     {
-      "statement": "metadata.model_use_receipt is present and model_use_receipt.model_tag matches effective chat model.",
+      "statement": "A prior operator readiness proof showed metadata.model_use_receipt present and model_use_receipt.model_tag matching the effective chat model in that session.",
       "source_type": "verified_output",
       "source_detail": "Operator readiness report"
     },
@@ -72,6 +72,11 @@
       "statement": "B9.8 local scan routing/bridge is current and in progress.",
       "source_type": "verified_output",
       "source_detail": "B9.8 phase status marker"
+    },
+    {
+      "statement": "Current runtime GitHub, local path, Docker/service, Ollama/model, browser smoke, and memory/focus claims must be reported separately unless each has fresh proof.",
+      "source_type": "user_confirmed",
+      "source_detail": "Status correction pass"
     }
   ],
   "evidence": [

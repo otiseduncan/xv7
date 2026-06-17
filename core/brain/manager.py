@@ -63,6 +63,12 @@ class BrainContextManager:
             "who are you",
             "what is your name?",
             "what is your name",
+            "whats your name?",
+            "whats your name",
+            "what's your name?",
+            "what's your name",
+            "your name?",
+            "your name",
             "how do you pronounce your name?",
             "how do you pronounce your name",
             "how is your name pronounced?",
@@ -71,6 +77,8 @@ class BrainContextManager:
             "how do you spell your name",
             "how is your name spelled?",
             "how is your name spelled",
+            "what is xv7?",
+            "what is xv7",
             "what does xv7 mean?",
             "what does xv7 mean",
             "what project are you?",
@@ -93,6 +101,8 @@ class BrainContextManager:
             "what is your purpose",
             "what are you supposed to become?",
             "what are you supposed to become",
+            "can you read github repos?",
+            "can you read github repos",
         }:
             return [BrainLayer.KNOWLEDGE]
 
@@ -128,7 +138,12 @@ class BrainContextManager:
         ):
             return [BrainLayer.KNOWLEDGE]
 
-        if normalized in {"who is otis?", "who is otis"}:
+        if normalized in {
+            "who is otis?",
+            "who is otis",
+            "who is otis duncan?",
+            "who is otis duncan",
+        }:
             return [BrainLayer.MEMORY]
 
         if normalized in {"what are we working on?", "what are we working on"}:
