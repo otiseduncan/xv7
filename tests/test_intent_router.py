@@ -237,6 +237,41 @@ def test_explicit_sandbox_build_phrases_still_route_to_sandbox() -> None:
     )
 
 
+def test_fresh_website_build_with_colors_does_not_route_to_refinement() -> None:
+    decision = IntentRouter.classify(
+        "build a website Smokey Joe's CBD and vape using red grey and black colors"
+    )
+
+    assert decision.kind in {IntentKind.SANDBOX_BUILD, IntentKind.SITE_BUNDLE}
+    assert decision.kind != IntentKind.ARTIFACT_EDIT
+    assert decision.is_artifact_edit_request is False
+
+
+def test_plain_artifact_generation_routes_to_code_artifact_even_with_user_typo() -> (
+    None
+):
+    for prompt in [
+        "generate a artifact Smokey Joe's CBD and vape using red grey and black colors",
+        "generate an artifact Smokey Joe's CBD and vape using red grey and black colors",
+    ]:
+        decision = IntentRouter.classify(prompt)
+
+        assert decision.kind == IntentKind.CODE_ARTIFACT
+        assert decision.is_code_artifact_request is True
+        assert decision.is_artifact_edit_request is False
+
+
+def test_true_refinement_without_active_artifact_still_classifies_as_edit() -> None:
+    for prompt in [
+        "revise this site and make the colors red grey and black",
+        "change the website colors to red grey and black",
+        "undo the last change",
+        "what changed?",
+    ]:
+        decision = IntentRouter.classify(prompt)
+        assert decision.kind == IntentKind.ARTIFACT_EDIT
+
+
 def test_saved_preview_preference_does_not_override_current_explicit_build_command() -> (
     None
 ):

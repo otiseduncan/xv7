@@ -109,6 +109,11 @@ class IntentRouter:
     ARTIFACT_TARGETED_PATTERN = re.compile(
         r"\b(only|keep the layout|keep the content|preserve)\b"
     )
+    ACTIVE_ARTIFACT_REFERENCE_PATTERN = re.compile(
+        r"\b(this|current|existing|previous|latest)\s+"
+        r"(site|website|artifact|page|design|preview)\b|"
+        r"\b(the active|active)\s+(site|website|artifact|page|design|preview)\b"
+    )
     TYPOGRAPHY_BLACKLETTER_PATTERN = re.compile(
         r"\b(old english font|blackletter|gothic font|fraktur|medieval font|biker-bar style font|biker bar style font)\b"
     )
@@ -236,7 +241,12 @@ class IntentRouter:
         style = bool(cls.ARTIFACT_STYLE_PATTERN.search(normalized_text))
         content = bool(cls.ARTIFACT_CONTENT_PATTERN.search(normalized_text))
         has_target = bool(cls.ARTIFACT_EDIT_TARGET_PATTERN.search(normalized_text))
+        has_active_reference = bool(
+            cls.ACTIVE_ARTIFACT_REFERENCE_PATTERN.search(normalized_text)
+        )
         if not has_action and not (style or content or targeted):
+            return None
+        if not has_action and not has_active_reference:
             return None
         if not has_action and not has_target:
             return None
@@ -386,6 +396,8 @@ class IntentRouter:
             return False
         has_hint = bool(cls.CODE_ARTIFACT_HINT_PATTERN.search(normalized_text))
         has_action = bool(cls.CODE_ARTIFACT_PATTERN.search(normalized_text))
+        if cls.has_explicit_artifact_intent(normalized_text) and has_action:
+            return True
         if has_hint and has_action:
             return True
         if cls.WEBSITE_BUILD_ARTIFACT_PATTERN.search(normalized_text):

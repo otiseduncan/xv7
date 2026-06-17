@@ -1252,6 +1252,41 @@ def test_basic_policy_prompts_answer_without_model_or_vector_timeout(
     )
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "build a website Smokey Joe's CBD and vape using red grey and black colors",
+        "generate a artifact Smokey Joe's CBD and vape using red grey and black colors",
+    ],
+)
+def test_fresh_artifact_generation_prompts_do_not_require_active_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    prompt: str,
+) -> None:
+    monkeypatch.setenv("XV7_SANDBOX_ROOT_WRITE", str(tmp_path / "sandbox"))
+    client = _setup_client(monkeypatch, tmp_path)
+    session_id = _new_session(client)
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers={"X-XV7-API-Key": "test-secret"},
+        json={"raw_text": prompt},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    message = payload["messages"][-1]
+    answer = str(message["content"]).lower()
+    metadata = message["metadata"]
+    provenance = metadata.get("policy_provenance", {})
+
+    assert "active artifact to refine" not in answer
+    assert "generate or provide an artifact first" not in answer
+    assert provenance.get("artifact_generation") != "artifact_refinement_unavailable"
+    assert metadata.get("site_bundle") or metadata.get("code_artifact")
+
+
 def test_can_you_scan_my_system_routes_to_scan_system_and_not_context_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
