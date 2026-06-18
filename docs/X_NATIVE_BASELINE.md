@@ -56,7 +56,7 @@ Planner:
 Inspect your runtime and propose the next repair needed to make this baseline production-ready. Stage only. Do not apply or write files.
 ```
 
-The runtime can inspect, plan, stage, preview, create review bundles, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
+The runtime can inspect, plan, stage, preview, create review bundles, generate Codex-ready prompt drafts, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
 
 ## Current safety state
 
@@ -76,6 +76,7 @@ Not allowed:
 - repo apply
 - repo writes
 - shell execution from prompts
+- using generated Codex prompts without external human authorization
 
 Every planned/drafted action must keep:
 

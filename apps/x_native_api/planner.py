@@ -69,9 +69,10 @@ def build_repair_proposal(
     elif git_unavailable:
         probable_cause += " Git metadata is unavailable inside the container, which is acceptable for runtime planning but not for git-dependent operations."
     return {
-        "kind": "x_native_planner_v0",
+        "kind": "x_native_planner_v1",
         "created_at": utc_iso(),
         "request": raw_text,
+        "title": "X Native Planner v1 review-bundle baseline",
         "problem_summary": (
             "X Native needs reviewable Planner v1 bundles so Otis can inspect proposed repairs, validation, "
             "rollback, and safety state before any future authority decision."
@@ -91,6 +92,10 @@ def build_repair_proposal(
             "surface those proposals in the UI, create sandbox-only workspace drafts under "
             f"{data_root}/workspace, and keep the next milestone focused on review quality before any repo write capability is considered."
         ),
+        "expected_behavior_after_fix": (
+            "X Native returns a staged planner proposal, review bundle, and Codex-ready prompt draft while "
+            "keeping repo writes, apply, shell execution, and promotion locked."
+        ),
         "affected_files": affected_files,
         "validation_commands": [
             "python -m py_compile apps/x_native_api/main.py apps/x_native_api/planner.py",
@@ -103,6 +108,8 @@ def build_repair_proposal(
             "and apps/x_native_ui/public/index.html from git, and delete sandbox-only files under data/x_native/workspace."
         ),
         "risk": "low_to_medium_sandbox_only",
+        "risk_level": "low_to_medium_sandbox_only",
+        "human_authorization_required": True,
         "stage_id": plan_id if staged else None,
         "receipt_path": receipt_path,
         "staged": staged,

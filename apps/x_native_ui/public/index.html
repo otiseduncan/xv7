@@ -141,6 +141,9 @@
         <button id="workspace-draft" class="warn">Create Workspace Draft</button>
         <button id="review-create" class="warn">Create Review Bundle</button>
 
+        <label for="codex-prompt">Recommended Codex prompt draft</label>
+        <textarea id="codex-prompt" readonly placeholder="Planner review bundles will place a copy-friendly prompt here."></textarea>
+
         <div class="statusline" id="statusline">ready</div>
         <div style="margin-top:10px">
           <span class="pill">API: /x-native</span>
@@ -163,6 +166,7 @@
     const consoleEl = $('console');
     const statusLine = $('statusline');
     let lastPlannerProposal = null;
+    let lastReviewBundle = null;
 
     function now() { return new Date().toISOString(); }
     function setStatus(text) { statusLine.textContent = text; }
@@ -208,7 +212,7 @@
           if (data.planner_proposal.stage_id) $('stage-id').value = data.planner_proposal.stage_id;
           log('Planner Proposal', data.planner_proposal);
         }
-        if (data.review_bundle) log('Review Bundle', data.review_bundle);
+        if (data.review_bundle) setReviewBundle(data.review_bundle);
         setStatus(data.status || 'done');
       } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
     }
@@ -288,19 +292,37 @@
           })
         });
         if (data.review_bundle?.stage_id) $('stage-id').value = data.review_bundle.stage_id;
-        log('Review Bundle', data);
+        if (data.review_bundle) setReviewBundle(data.review_bundle);
+        log('Review Bundle Response', data);
         setStatus(data.status || 'done');
       } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
     }
     async function latestReviewBundle() {
       setStatus('latest review bundle...');
-      try { const data = await api('/x-native/review-bundles/latest'); log('Latest Review Bundle', data); setStatus(data.status || 'done'); }
+      try {
+        const data = await api('/x-native/review-bundles/latest');
+        if (data.review_bundle) setReviewBundle(data.review_bundle);
+        log('Latest Review Bundle', data);
+        setStatus(data.status || 'done');
+      }
       catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
     }
     async function listReviewBundles() {
       setStatus('review bundles...');
       try { const data = await api('/x-native/review-bundles'); log('Review Bundles', data); setStatus(data.status || 'done'); }
       catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    function setReviewBundle(bundle) {
+      lastReviewBundle = bundle;
+      if (bundle.stage_id) $('stage-id').value = bundle.stage_id;
+      $('codex-prompt').value = bundle.recommended_codex_prompt_draft || '';
+      log('Review Bundle', {
+        bundle_id: bundle.bundle_id,
+        stage_id: bundle.stage_id,
+        receipt_path: bundle.receipt_path,
+        human_authorization_required: bundle.human_authorization_required,
+        safety_flags: bundle.safety_flags
+      });
     }
     $('send').addEventListener('click', sendMessage);
     $('state').addEventListener('click', getState);

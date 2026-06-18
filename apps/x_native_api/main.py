@@ -9,7 +9,7 @@ from diagnostics import APP_NAME, APP_VERSION, build_state, diagnose_response
 from models import AttachContentRequest, NativeMessageRequest, ReviewBundleRequest, WorkspaceDraftRequest
 from planner import build_repair_proposal, planner_keywords, should_stage_plan
 from receipts import STAGES_DIR, ensure_data_dirs, locked_flags, utc_iso, write_json
-from review_bundles import create_review_bundle, latest_review_bundle, list_review_bundles
+from review_bundles import create_review_bundle, get_review_bundle, latest_review_bundle, list_review_bundles
 from stages import attach_draft, latest_draft, latest_stage, preview_stage, stage_response
 from workspace import create_workspace_draft, list_workspace
 
@@ -79,6 +79,7 @@ def render_planner(proposal: dict[str, Any], bundle: dict[str, Any] | None = Non
     if bundle:
         review = bundle["review_bundle"]
         bundle_text = f"\n\nReview bundle: {review.get('receipt_path')}\nHuman decision: {review.get('human_decision_required')}"
+        bundle_text += f"\nCodex prompt draft:\n{review.get('recommended_codex_prompt_draft')}"
     return (
         "X Native Planner v1 proposal.\n\n"
         f"Problem: {proposal['problem_summary']}\n\n"
@@ -181,3 +182,8 @@ def x_native_review_bundles() -> dict[str, Any]:
 @app.get("/x-native/review-bundles/latest")
 def x_native_latest_review_bundle() -> dict[str, Any]:
     return latest_review_bundle()
+
+
+@app.get("/x-native/review-bundles/{bundle_id}")
+def x_native_get_review_bundle(bundle_id: str) -> dict[str, Any]:
+    return get_review_bundle(bundle_id)

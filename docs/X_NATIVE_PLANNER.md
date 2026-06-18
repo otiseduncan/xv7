@@ -41,12 +41,16 @@ They include:
 - rollback checklist
 - human decision required
 - safety flags
+- recommended Codex prompt draft
 
 Endpoints:
 
 - `POST /x-native/review-bundle`
 - `GET /x-native/review-bundles`
 - `GET /x-native/review-bundles/latest`
+- `GET /x-native/review-bundles/{bundle_id}`
+
+The generated Codex prompt draft is copy-friendly task material only. Otis must paste the prompt/results to ChatGPT or another explicit authorization channel before any future implementation work is applied outside X Native.
 
 ## Sandbox Workspace
 
