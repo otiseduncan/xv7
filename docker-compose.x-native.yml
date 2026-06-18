@@ -1,0 +1,37 @@
+# =============================================================================
+# X Native — clean baseline runtime
+# =============================================================================
+# This stack intentionally does NOT start the legacy xv7-core session/memory bridge.
+# Services:
+#   x-native-api  -> http://localhost:3101
+#   x-native-ui   -> http://localhost:3100
+# State:
+#   ./data/x_native -> /data/x_native
+# =============================================================================
+
+services:
+  x-native-api:
+    build:
+      context: .
+      dockerfile: apps/x_native_api/Dockerfile
+    container_name: x-native-api
+    restart: unless-stopped
+    ports:
+      - "3101:3101"
+    volumes:
+      - ./:/workspace:ro
+      - ./data/x_native:/data/x_native:rw
+    environment:
+      - X_NATIVE_REPO_ROOT=/workspace
+      - X_NATIVE_DATA_ROOT=/data/x_native
+
+  x-native-ui:
+    build:
+      context: .
+      dockerfile: apps/x_native_ui/Dockerfile
+    container_name: x-native-ui
+    restart: unless-stopped
+    ports:
+      - "3100:80"
+    depends_on:
+      - x-native-api
