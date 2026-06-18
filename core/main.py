@@ -921,6 +921,84 @@ async def add_session_message(
             "reasons": ["x_kernel_exception"],
         }
 
+    x_kernel_visible_intents = {"state", "diagnose", "readiness", "proof", "x_prompt_package"}
+    x_kernel_decision_metadata = session_state.metadata.get("x_kernel_decision")
+    if (
+        isinstance(x_kernel_decision_metadata, dict)
+        and x_kernel_decision_metadata.get("intent") in x_kernel_visible_intents
+    ):
+        x_kernel_intent = str(x_kernel_decision_metadata.get("intent") or "unknown")
+        x_kernel_risk = str(x_kernel_decision_metadata.get("risk") or "unknown")
+        x_kernel_route = str(x_kernel_decision_metadata.get("route") or "unknown")
+        x_kernel_summary = str(x_kernel_decision_metadata.get("summary") or "")
+        x_kernel_package_action = str(
+            x_kernel_decision_metadata.get("package_action") or "none"
+        )
+        x_kernel_command = x_kernel_decision_metadata.get("command") or []
+        if isinstance(x_kernel_command, list):
+            x_kernel_command_text = " ".join(str(part) for part in x_kernel_command)
+        else:
+            x_kernel_command_text = str(x_kernel_command)
+
+        if x_kernel_intent == "x_prompt_package":
+            visible_text = (
+                "X Kernel detected a structured X prompt package.\n\n"
+                f"Intent: {x_kernel_intent}\n"
+                f"Risk: {x_kernel_risk}\n"
+                f"Route: {x_kernel_route}\n"
+                f"Package action: {x_kernel_package_action}\n\n"
+                "The package should be routed through X Prompt Inbox for preview/apply receipts. "
+                "Direct UI execution is intentionally not enabled in this bridge yet."
+            )
+        else:
+            visible_text = (
+                "X Kernel handled this request before model inference.\n\n"
+                f"Intent: {x_kernel_intent}\n"
+                f"Risk: {x_kernel_risk}\n"
+                f"Route: {x_kernel_route}\n"
+                f"Summary: {x_kernel_summary}\n"
+                f"Planned command: {x_kernel_command_text or 'none'}\n\n"
+                "This bridge is metadata/visible-response only. Tool execution from the UI "
+                "will be enabled in the next controlled step after receipts are wired."
+            )
+
+        policy_provenance = {
+            "answer_source": "x_kernel",
+            "policy_source": "x_kernel_v0",
+            "brain_answer_source": "x_kernel_visible_bridge",
+            "intent_class": f"x_kernel_{x_kernel_intent}",
+            "request_id": str(uuid4()),
+            "session_id": str(session_id),
+            "runtime_model_inference_proven": False,
+        }
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt=_merge_focus_context_receipt(
+                {}, session_state.metadata
+            ),
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance=policy_provenance,
+            warnings=[],
+            action_history_refs=[],
+        )
+        assistant_payload["x_kernel_decision"] = x_kernel_decision_metadata
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        updated_state.metadata["answer_provenance"] = policy_provenance
+        updated_state.metadata["x_kernel_decision"] = x_kernel_decision_metadata
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        updated_state.metadata["model_used"] = "x_kernel_v0"
+        updated_state.metadata["fallback_used"] = False
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
     auto_decision = memory_auto_pilot.intake(
         payload.raw_text,
         session_metadata=session_state.metadata,
