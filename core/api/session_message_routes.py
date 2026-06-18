@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends
 from core.api.schemas import AddMessageRequest
 from core.runtime.auth import require_api_key
 from core.runtime.schemas import SessionState
-from core.x_kernel.action_stager import apply_x_kernel_action_stage_to_session_state
+from core.x_kernel.action_stager import (
+    apply_x_kernel_action_stage_to_session_state,
+    get_latest_x_kernel_action_stage,
+    get_x_kernel_action_stage,
+    list_x_kernel_action_stages,
+)
 from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
 router = APIRouter()
@@ -36,6 +41,36 @@ def _copy_session_state(session_state: SessionState, **updates: object) -> Sessi
     if callable(model_copy):
         return model_copy(update=updates)
     return session_state.copy(update=updates)
+
+
+@router.get(
+    "/x-kernel/stages",
+    dependencies=[Depends(require_api_key)],
+)
+async def list_x_kernel_stages(limit: int = 20) -> dict[str, Any]:
+    """List recent X Kernel staged-action receipts."""
+
+    return list_x_kernel_action_stages(limit=limit)
+
+
+@router.get(
+    "/x-kernel/stages/latest",
+    dependencies=[Depends(require_api_key)],
+)
+async def get_latest_x_kernel_stage() -> dict[str, Any]:
+    """Return the latest X Kernel staged-action receipt."""
+
+    return get_latest_x_kernel_action_stage()
+
+
+@router.get(
+    "/x-kernel/stages/{stage_id}",
+    dependencies=[Depends(require_api_key)],
+)
+async def get_x_kernel_stage(stage_id: str) -> dict[str, Any]:
+    """Return one X Kernel staged-action receipt."""
+
+    return get_x_kernel_action_stage(stage_id)
 
 
 @router.post(
