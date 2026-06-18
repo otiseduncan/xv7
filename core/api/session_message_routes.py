@@ -10,6 +10,7 @@ from core.runtime.auth import require_api_key
 from core.runtime.schemas import SessionState
 from core.x_kernel.action_stager import (
     apply_x_kernel_action_stage_to_session_state,
+    cancel_x_kernel_action_stage,
     get_latest_x_kernel_action_stage,
     get_x_kernel_action_stage,
     list_x_kernel_action_stages,
@@ -71,6 +72,19 @@ async def get_x_kernel_stage(stage_id: str) -> dict[str, Any]:
     """Return one X Kernel staged-action receipt."""
 
     return get_x_kernel_action_stage(stage_id)
+
+
+@router.post(
+    "/x-kernel/stages/{stage_id}/cancel",
+    dependencies=[Depends(require_api_key)],
+)
+async def cancel_x_kernel_stage(
+    stage_id: str,
+    reason: str = "operator_cancelled",
+) -> dict[str, Any]:
+    """Cancel one staged action without executing it."""
+
+    return cancel_x_kernel_action_stage(stage_id, reason=reason)
 
 
 @router.post(
