@@ -60,6 +60,8 @@ The runtime can inspect, plan, stage, preview, and draft to sandbox workspace. A
 
 ## Current safety state
 
+See `docs/X_NATIVE_GUARDRAILS.md` for the active hard guardrails.
+
 Allowed:
 
 - inspect
