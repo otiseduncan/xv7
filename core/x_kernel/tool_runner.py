@@ -30,6 +30,18 @@ def _tail(text: str | None, limit: int = 8000) -> str:
     return value[-limit:]
 
 
+def _copy_model(model: Any, **updates: Any) -> Any:
+    """Copy a Pydantic model across v1/v2 runtimes."""
+
+    model_copy = getattr(model, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(update=updates)
+    copy = getattr(model, "copy", None)
+    if callable(copy):
+        return copy(update=updates)
+    raise TypeError(f"Object does not support Pydantic-style copy: {type(model)!r}")
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -248,8 +260,10 @@ def apply_x_kernel_tool_result_to_session_state(session_state: SessionState) -> 
     next_metadata["x_kernel_tool_result"] = tool_result
 
     messages = list(session_state.messages)
-    messages[-1] = last_message.model_copy(
-        update={"content": next_content, "metadata": next_metadata}
+    messages[-1] = _copy_model(
+        last_message,
+        content=next_content,
+        metadata=next_metadata,
     )
 
     updated_metadata = dict(session_state.metadata)
@@ -259,4 +273,4 @@ def apply_x_kernel_tool_result_to_session_state(session_state: SessionState) -> 
         "mode": "allowlisted_read_only_direct_functions",
         "status": tool_result.get("status"),
     }
-    return session_state.model_copy(update={"messages": messages, "metadata": updated_metadata})
+    return _copy_model(session_state, messages=messages, metadata=updated_metadata)
