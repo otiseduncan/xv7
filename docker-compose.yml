@@ -5,14 +5,12 @@
 # Network   : xv7-network  (private bridge — services talk by name)
 # Volumes   : ollama_data | open_webui_data | core_data | xv7_shared
 #
-# Prerequisites for GPU acceleration:
-#   - NVIDIA driver installed on the host
-#   - nvidia-container-toolkit installed and daemon restarted
-#   - Verify with: docker run --rm --gpus all nvidia/cuda:12-base nvidia-smi
+# Rescue branch default: CPU-first, local-first, no paid editor credits required.
+# For GPU machines, add a GPU override later instead of making the field laptop fail.
 #
 # Usage:
 #   cp .env.example .env        # then fill in secrets
-#   docker compose up -d
+#   docker compose up -d --build
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -60,23 +58,12 @@ services:
     ports:
       - "${OLLAMA_PORT:-11434}:11434"   # REST API reachable from host
     volumes:
-      - C:\Users\otisd\.ollama:/root/.ollama  # Host Ollama library bind mount
+      - ${OLLAMA_MODELS_PATH:-ollama_data}:/root/.ollama
     networks:
       - xv7-network
     environment:
       - OLLAMA_HOST=0.0.0.0             # Listen on all interfaces inside container
       - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
-    # -----------------------------------------------------------------------
-    # GPU acceleration block — NVIDIA only.
-    # Remove or comment out this entire `deploy` section to run CPU-only.
-    # -----------------------------------------------------------------------
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all               # Pass through all available GPUs
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
