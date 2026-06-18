@@ -14,6 +14,7 @@ from core.x_kernel.action_stager import (
     get_latest_x_kernel_action_stage,
     get_x_kernel_action_stage,
     list_x_kernel_action_stages,
+    prepare_x_kernel_action_stage_preview,
 )
 from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
@@ -85,6 +86,19 @@ async def cancel_x_kernel_stage(
     """Cancel one staged action without executing it."""
 
     return cancel_x_kernel_action_stage(stage_id, reason=reason)
+
+
+@router.post(
+    "/x-kernel/stages/{stage_id}/preview",
+    dependencies=[Depends(require_api_key)],
+)
+async def preview_x_kernel_stage(
+    stage_id: str,
+    reason: str = "operator_requested_preview",
+) -> dict[str, Any]:
+    """Prepare one staged action for preview without executing it."""
+
+    return prepare_x_kernel_action_stage_preview(stage_id, reason=reason)
 
 
 @router.post(
