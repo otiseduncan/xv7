@@ -99,6 +99,11 @@ def _safe_filename_from_request(source_text: str) -> str | None:
     return name
 
 
+def _approval_phrase(stage_id: str) -> str:
+    safe_stage_id = str(stage_id or "").strip()
+    return f"APPROVE_STAGE_{safe_stage_id}"
+
+
 def _build_preview_package(stage: dict[str, Any]) -> dict[str, Any]:
     """Build an inert preview package from a staged action.
 
@@ -197,6 +202,7 @@ def stage_x_kernel_action(
         "execution_allowed": False,
         "approval_required": True,
         "approval_mode": "explicit_future_authority_flow",
+        "approval_phrase_required": _approval_phrase(stage_id),
         "intent": str(decision.get("intent") or "unknown"),
         "risk": str(decision.get("risk") or "unknown"),
         "route": str(decision.get("route") or "unknown"),
@@ -447,6 +453,7 @@ def prepare_x_kernel_action_stage_preview(
     preview["preview_package"] = preview_package
     preview["execution_allowed"] = False
     preview["approval_required"] = True
+    preview["approval_phrase_required"] = _approval_phrase(str(preview.get("stage_id") or ""))
     preview["next_step"] = "Inspect preview_package. A separate explicit apply flow is still required."
     preview["safety"] = dict(preview.get("safety") or {})
     preview["safety"].update(
@@ -476,9 +483,114 @@ def prepare_x_kernel_action_stage_preview(
         "preview_only": True,
         "execution_allowed": False,
         "approval_required": True,
+        "approval_phrase_required": preview.get("approval_phrase_required"),
         "receipt_path": str(preview_receipt),
         "preview_package": preview_package,
         "stage": preview,
+    }
+
+
+def validate_x_kernel_action_stage_approval(
+    stage_id: str,
+    approval_phrase: str,
+    reason: str = "operator_validation_requested",
+) -> dict[str, Any]:
+    """Validate operator approval intent without applying or executing anything."""
+
+    lookup = get_x_kernel_action_stage(stage_id)
+    stage = lookup.get("stage")
+    wanted_stage_id = str(stage_id or "").strip()
+    if not isinstance(stage, dict):
+        return {
+            "receipt_type": "x_kernel_action_stage_approval_validation",
+            "status": "not_found",
+            "stage_id": wanted_stage_id,
+            "approval_validated": False,
+            "execution_allowed": False,
+            "apply_allowed": False,
+        }
+
+    required_phrase = _approval_phrase(str(stage.get("stage_id") or wanted_stage_id))
+    provided_phrase = str(approval_phrase or "").strip()
+    if provided_phrase != required_phrase:
+        return {
+            "receipt_type": "x_kernel_action_stage_approval_validation",
+            "status": "rejected_phrase_mismatch",
+            "stage_id": stage.get("stage_id"),
+            "approval_validated": False,
+            "execution_allowed": False,
+            "apply_allowed": False,
+            "approval_phrase_required": required_phrase,
+            "reason": "approval_phrase_mismatch",
+            "stage": stage,
+        }
+
+    if stage.get("cancelled") or stage.get("status") == "cancelled":
+        return {
+            "receipt_type": "x_kernel_action_stage_approval_validation",
+            "status": "rejected_cancelled",
+            "stage_id": stage.get("stage_id"),
+            "approval_validated": False,
+            "execution_allowed": False,
+            "apply_allowed": False,
+            "reason": "stage_cancelled",
+            "stage": stage,
+        }
+
+    if not stage.get("preview_ready") or not isinstance(stage.get("preview_package"), dict):
+        return {
+            "receipt_type": "x_kernel_action_stage_approval_validation",
+            "status": "rejected_preview_required",
+            "stage_id": stage.get("stage_id"),
+            "approval_validated": False,
+            "execution_allowed": False,
+            "apply_allowed": False,
+            "reason": "preview_required_before_approval_validation",
+            "stage": stage,
+        }
+
+    validated = dict(stage)
+    validated["status"] = "approval_validated_preview_only"
+    validated["approval_validated"] = True
+    validated["approval_validated_at"] = _utc_now()
+    validated["approval_validation_reason"] = str(reason or "operator_validation_requested")
+    validated["approval_phrase_required"] = required_phrase
+    validated["approval_phrase_matched"] = True
+    validated["execution_allowed"] = False
+    validated["apply_allowed"] = False
+    validated["approval_required"] = True
+    validated["next_step"] = "Approval intent validated. A separate explicit apply endpoint is still required and is not implemented in this layer."
+    validated["safety"] = dict(validated.get("safety") or {})
+    validated["safety"].update(
+        {
+            "direct_execution": False,
+            "repo_write": False,
+            "system_control": False,
+            "network_control": False,
+            "preview_only": True,
+            "approval_validation_only": True,
+            "note": "Approval validation records operator intent only. It does not execute, apply, or mutate repository files.",
+        }
+    )
+
+    receipts = _receipt_root()
+    approval_receipt = receipts / f"{_stamp()}_action_stage_approval_validation_{validated.get('stage_id')}.json"
+    latest_approval = receipts / "latest_action_stage_approval_validation.json"
+    latest_stage = receipts / "latest_action_stage.json"
+    _save_json(approval_receipt, validated)
+    _save_json(latest_approval, validated)
+    _save_json(latest_stage, validated)
+
+    return {
+        "receipt_type": "x_kernel_action_stage_approval_validation",
+        "status": "approval_validated_preview_only",
+        "stage_id": validated.get("stage_id"),
+        "approval_validated": True,
+        "execution_allowed": False,
+        "apply_allowed": False,
+        "approval_required": True,
+        "receipt_path": str(approval_receipt),
+        "stage": validated,
     }
 
 
