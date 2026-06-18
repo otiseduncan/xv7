@@ -7,6 +7,7 @@ The next milestones require product, authority, or security decisions from Otis.
 - Whether to allow repo-write sandbox promotion in a future milestone.
 - What authority model is acceptable before any apply/write path exists.
 - Whether generated Codex prompt drafts may be used for implementation after ChatGPT/human authorization.
+- What evidence ChatGPT/human authorization must require before accepting an X Native result review.
 - Whether to extract memory tools from old XV7.
 - Which old XV7 assets or tools to mine first.
 - Whether X Native should remain separate or eventually replace the old XV7 UI.
@@ -18,5 +19,7 @@ These should stay automated by X Native work:
 - Running smoke checks.
 - Rebuilding the X Native compose stack.
 - Writing sandbox-only review bundles.
+- Generating Codex prompts from review bundles.
+- Reviewing pasted Codex results without applying them.
 - Creating workspace drafts under `data/x_native/workspace`.
 - Updating receipts under `data/x_native/receipts`.

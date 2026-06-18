@@ -25,3 +25,9 @@ class ReviewBundleRequest(BaseModel):
     raw_text: str = Field(default="Create a review bundle for the latest X Native planner proposal.")
     stage_id: str | None = None
     planner_proposal: dict[str, Any] | None = None
+
+
+class ResultIntakeRequest(BaseModel):
+    raw_text: str = Field(default="")
+    source_prompt_id: str | None = None
+    source_bundle_id: str | None = None

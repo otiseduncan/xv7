@@ -1,6 +1,6 @@
 # X Native Planner
 
-X Native Planner v1 turns inspection or repair-style requests into structured sandbox-only repair proposals and review bundles.
+X Native Planner v1 turns inspection or repair-style requests into structured sandbox-only repair proposals, review bundles, Codex prompts, and result reviews.
 
 UI URL: `http://localhost:3100`
 
@@ -51,6 +51,48 @@ Endpoints:
 - `GET /x-native/review-bundles/{bundle_id}`
 
 The generated Codex prompt draft is copy-friendly task material only. Otis must paste the prompt/results to ChatGPT or another explicit authorization channel before any future implementation work is applied outside X Native.
+
+## Prompt Factory and Result Intake
+
+The operator loop is:
+
+```text
+X Native plan -> review bundle -> Codex prompt -> Codex result -> X Native review -> ChatGPT authorization -> human decision
+```
+
+Prompt Factory outputs include:
+
+- prompt id
+- source bundle id
+- Codex-ready prompt
+- guardrails summary
+- expected files
+- expected validation
+- stop conditions
+- `human_authorization_required=true`
+- `execution_allowed=false`
+- `apply_allowed=false`
+- `repo_write=false`
+
+Result Intake accepts pasted Codex completion text and extracts branch, commit, files changed, validation results, dirty files, safety claims, URLs, and next milestone. It compares the pasted report against the source bundle, expected files, denied paths, guardrails, and validation expectations.
+
+Result Intake verdicts are:
+
+- `pass`
+- `fail`
+- `needs_human_decision`
+- `incomplete`
+
+Endpoints:
+
+- `POST /x-native/prompt-factory/from-latest`
+- `POST /x-native/prompt-factory/from-bundle/{bundle_id}`
+- `GET /x-native/prompts/latest`
+- `GET /x-native/prompts`
+- `POST /x-native/result-intake`
+- `GET /x-native/result-intake/latest`
+
+X Native result reviews are review-only. They do not authorize apply/write behavior. The generated authorization summary must be copied to ChatGPT or another external human authorization channel before any future write/apply decision.
 
 ## Sandbox Workspace
 

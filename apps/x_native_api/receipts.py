@@ -16,10 +16,21 @@ STAGES_DIR = DATA_ROOT / "stages"
 DRAFTS_DIR = DATA_ROOT / "drafts"
 WORKSPACE_DIR = DATA_ROOT / "workspace"
 REVIEW_BUNDLES_DIR = STAGES_DIR / "review_bundles"
+PROMPTS_DIR = STAGES_DIR / "prompts"
+RESULT_INTAKE_DIR = STAGES_DIR / "result_intake"
 
 
 def ensure_data_dirs() -> None:
-    for directory in (DATA_ROOT, RECEIPTS_DIR, STAGES_DIR, DRAFTS_DIR, WORKSPACE_DIR, REVIEW_BUNDLES_DIR):
+    for directory in (
+        DATA_ROOT,
+        RECEIPTS_DIR,
+        STAGES_DIR,
+        DRAFTS_DIR,
+        WORKSPACE_DIR,
+        REVIEW_BUNDLES_DIR,
+        PROMPTS_DIR,
+        RESULT_INTAKE_DIR,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
 
 

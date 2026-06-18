@@ -140,9 +140,19 @@
         <input id="workspace-path" value="planner/x_native_plan.txt" />
         <button id="workspace-draft" class="warn">Create Workspace Draft</button>
         <button id="review-create" class="warn">Create Review Bundle</button>
+        <button id="prompt-create" class="warn">Generate Codex Prompt</button>
+        <button id="prompt-latest" class="secondary">Latest Codex Prompt</button>
 
         <label for="codex-prompt">Recommended Codex prompt draft</label>
         <textarea id="codex-prompt" readonly placeholder="Planner review bundles will place a copy-friendly prompt here."></textarea>
+
+        <label for="codex-result">Paste Codex result</label>
+        <textarea id="codex-result" placeholder="Paste Codex final report here for X Native review only."></textarea>
+        <button id="result-review" class="warn">Review Result</button>
+        <button id="result-latest" class="secondary">Latest Result Review</button>
+
+        <label for="authorization-summary">Copy this to ChatGPT for authorization</label>
+        <textarea id="authorization-summary" readonly placeholder="Result intake will place the authorization summary here."></textarea>
 
         <div class="statusline" id="statusline">ready</div>
         <div style="margin-top:10px">
@@ -152,6 +162,8 @@
           <span class="pill">SANDBOX ONLY</span>
           <span class="pill">NO REPO WRITE</span>
           <span class="pill">NO APPLY</span>
+          <span class="pill">REVIEW ONLY</span>
+          <span class="pill">HUMAN AUTHORIZATION REQUIRED</span>
           <span class="pill">Apply: locked</span>
         </div>
       </div>
@@ -167,6 +179,8 @@
     const statusLine = $('statusline');
     let lastPlannerProposal = null;
     let lastReviewBundle = null;
+    let lastPrompt = null;
+    let lastResultReview = null;
 
     function now() { return new Date().toISOString(); }
     function setStatus(text) { statusLine.textContent = text; }
@@ -312,6 +326,54 @@
       try { const data = await api('/x-native/review-bundles'); log('Review Bundles', data); setStatus(data.status || 'done'); }
       catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
     }
+    async function createPrompt() {
+      setStatus('prompt factory...');
+      try {
+        const path = lastReviewBundle?.bundle_id
+          ? `/x-native/prompt-factory/from-bundle/${encodeURIComponent(lastReviewBundle.bundle_id)}`
+          : '/x-native/prompt-factory/from-latest';
+        const data = await api(path, { method: 'POST', body: '{}' });
+        if (data.prompt) setPrompt(data.prompt);
+        log('Prompt Factory', data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function latestPrompt() {
+      setStatus('latest prompt...');
+      try {
+        const data = await api('/x-native/prompts/latest');
+        if (data.prompt) setPrompt(data.prompt);
+        log('Latest Prompt', data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function reviewResult() {
+      const raw = $('codex-result').value.trim();
+      if (!raw) return log('Error', 'Paste a Codex result before review.', 'err');
+      setStatus('reviewing result...');
+      try {
+        const data = await api('/x-native/result-intake', {
+          method: 'POST',
+          body: JSON.stringify({
+            raw_text: raw,
+            source_prompt_id: lastPrompt?.prompt_id || null,
+            source_bundle_id: lastReviewBundle?.bundle_id || lastPrompt?.source_bundle_id || null
+          })
+        });
+        if (data.result_review) setResultReview(data.result_review);
+        log('Result Intake', data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function latestResultReview() {
+      setStatus('latest result review...');
+      try {
+        const data = await api('/x-native/result-intake/latest');
+        if (data.result_review) setResultReview(data.result_review);
+        log('Latest Result Review', data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
     function setReviewBundle(bundle) {
       lastReviewBundle = bundle;
       if (bundle.stage_id) $('stage-id').value = bundle.stage_id;
@@ -322,6 +384,27 @@
         receipt_path: bundle.receipt_path,
         human_authorization_required: bundle.human_authorization_required,
         safety_flags: bundle.safety_flags
+      });
+    }
+    function setPrompt(prompt) {
+      lastPrompt = prompt;
+      $('codex-prompt').value = prompt.codex_prompt || '';
+      log('Codex Prompt', {
+        prompt_id: prompt.prompt_id,
+        source_bundle_id: prompt.source_bundle_id,
+        expected_files: prompt.expected_files,
+        human_authorization_required: prompt.human_authorization_required
+      });
+    }
+    function setResultReview(result) {
+      lastResultReview = result;
+      $('authorization-summary').value = result.copy_to_chatgpt_authorization_summary || '';
+      log('Result Verdict', {
+        result_id: result.result_id,
+        verdict: result.verdict,
+        reasons: result.reasons,
+        missing_evidence: result.missing_evidence,
+        guardrail_violations: result.guardrail_violations
       });
     }
     $('send').addEventListener('click', sendMessage);
@@ -335,6 +418,10 @@
     $('review-create').addEventListener('click', createReviewBundle);
     $('review-latest').addEventListener('click', latestReviewBundle);
     $('review-list').addEventListener('click', listReviewBundles);
+    $('prompt-create').addEventListener('click', createPrompt);
+    $('prompt-latest').addEventListener('click', latestPrompt);
+    $('result-review').addEventListener('click', reviewResult);
+    $('result-latest').addEventListener('click', latestResultReview);
     $('message').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
     });

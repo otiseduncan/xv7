@@ -6,9 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from diagnostics import APP_NAME, APP_VERSION, build_state, diagnose_response
-from models import AttachContentRequest, NativeMessageRequest, ReviewBundleRequest, WorkspaceDraftRequest
+from models import AttachContentRequest, NativeMessageRequest, ResultIntakeRequest, ReviewBundleRequest, WorkspaceDraftRequest
 from planner import build_repair_proposal, planner_keywords, should_stage_plan
+from prompt_factory import create_prompt_from_bundle, create_prompt_from_latest, latest_prompt, list_prompts
 from receipts import STAGES_DIR, ensure_data_dirs, locked_flags, utc_iso, write_json
+from result_intake import latest_result_intake, review_codex_result
 from review_bundles import create_review_bundle, get_review_bundle, latest_review_bundle, list_review_bundles
 from stages import attach_draft, latest_draft, latest_stage, preview_stage, stage_response
 from workspace import create_workspace_draft, list_workspace
@@ -187,3 +189,33 @@ def x_native_latest_review_bundle() -> dict[str, Any]:
 @app.get("/x-native/review-bundles/{bundle_id}")
 def x_native_get_review_bundle(bundle_id: str) -> dict[str, Any]:
     return get_review_bundle(bundle_id)
+
+
+@app.post("/x-native/prompt-factory/from-latest")
+def x_native_prompt_from_latest() -> dict[str, Any]:
+    return create_prompt_from_latest()
+
+
+@app.post("/x-native/prompt-factory/from-bundle/{bundle_id}")
+def x_native_prompt_from_bundle(bundle_id: str) -> dict[str, Any]:
+    return create_prompt_from_bundle(bundle_id)
+
+
+@app.get("/x-native/prompts/latest")
+def x_native_latest_prompt() -> dict[str, Any]:
+    return latest_prompt()
+
+
+@app.get("/x-native/prompts")
+def x_native_prompts() -> dict[str, Any]:
+    return list_prompts()
+
+
+@app.post("/x-native/result-intake")
+def x_native_result_intake(payload: ResultIntakeRequest) -> dict[str, Any]:
+    return review_codex_result(payload.raw_text, payload.source_prompt_id, payload.source_bundle_id)
+
+
+@app.get("/x-native/result-intake/latest")
+def x_native_latest_result_intake() -> dict[str, Any]:
+    return latest_result_intake()

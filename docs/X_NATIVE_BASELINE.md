@@ -56,7 +56,15 @@ Planner:
 Inspect your runtime and propose the next repair needed to make this baseline production-ready. Stage only. Do not apply or write files.
 ```
 
-The runtime can inspect, plan, stage, preview, create review bundles, generate Codex-ready prompt drafts, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
+The runtime can inspect, plan, stage, preview, create review bundles, generate Codex-ready prompt drafts, ingest pasted Codex results, review results, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
+
+## Operator loop
+
+```text
+X Native -> Codex prompt -> Codex result -> X Native review -> ChatGPT authorization -> human decision
+```
+
+X Native may generate prompts and review pasted Codex reports. It may return pass/fail/needs-human-decision/incomplete review judgments, but those judgments are not write authorization. The user must copy the X Native authorization summary to ChatGPT or another external authorization channel before any future apply/write decision exists.
 
 ## Current safety state
 
@@ -69,6 +77,8 @@ Allowed:
 - stage
 - preview
 - create review bundles
+- generate Codex prompts
+- ingest and review pasted Codex results
 - draft to sandbox workspace under `data/x_native/workspace`
 
 Not allowed:
@@ -77,6 +87,7 @@ Not allowed:
 - repo writes
 - shell execution from prompts
 - using generated Codex prompts without external human authorization
+- treating X Native result reviews as repo-write approval
 
 Every planned/drafted action must keep:
 
@@ -94,7 +105,7 @@ From repo root after starting the stack:
 .\scripts\x_native_full_check.ps1
 ```
 
-The checks cover health, state, diagnosis, planner proposals, review bundles, sandbox workspace draft/list behavior, UI availability, and line-count guardrails.
+The checks cover health, state, diagnosis, planner proposals, review bundles, prompt factory, result intake, sandbox workspace draft/list behavior, UI availability, and line-count guardrails.
 
 ## What this stack does not use
 
