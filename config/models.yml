@@ -3,6 +3,10 @@
 # =============================================================================
 # Raw Ollama model tags are defined only in this file.
 # Runtime selection happens via XV7_MODEL_PROFILE.
+#
+# Rescue default: low_resource is intentionally tiny so the field laptop can boot,
+# talk, diagnose, and help repair XV7 without paid VS Code credits or a GPU.
+# Switch XV7_MODEL_PROFILE to balanced/local_test/large_code on stronger machines.
 # =============================================================================
 
 ollama:
@@ -10,7 +14,7 @@ ollama:
   timeout_seconds: 2.0
 
 registry:
-  active_profile: balanced
+  active_profile: low_resource
 
   role_aliases:
     default: chat
@@ -31,9 +35,9 @@ registry:
 
   profiles:
     low_resource:
-      chat: qwen3:1.7b
-      reasoning: qwen3:8b
-      code: qwen3:8b
+      chat: qwen3:0.6b
+      reasoning: qwen3:0.6b
+      code: qwen3:0.6b
       embedding: nomic-embed-text:latest
 
     balanced:
