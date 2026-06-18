@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>X Kernel Control Panel</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              xv7: {
+                ink: '#050812',
+                panel: '#08111F',
+                panelSoft: '#0A1628',
+                line: '#007BFF',
+                primary: '#00A3FF',
+                glow: '#4DB8FF',
+                amber: '#F4B860',
+                danger: '#FF5D5D',
+              },
+            },
+            fontFamily: {
+              mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="min-h-screen bg-xv7-ink text-slate-100 antialiased">
+    <div class="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 p-4">
+      <header class="rounded-2xl border border-xv7-line/60 bg-xv7-panel/90 p-4 shadow-xl">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p class="font-mono text-xs uppercase tracking-[0.22em] text-xv7-glow">XV7 Native</p>
+            <h1 class="mt-1 text-2xl font-bold">X Kernel Control Panel</h1>
+            <p class="mt-2 max-w-3xl text-sm text-slate-400">
+              Browser control surface for the proven X Kernel chain: stage, review, preview, validate approval intent,
+              prepare package draft, inspect draft, and attach operator-reviewed content. Apply/write execution is still blocked.
+            </p>
+          </div>
+          <a href="./" class="rounded-xl border border-xv7-line bg-xv7-panelSoft px-4 py-2 font-mono text-xs uppercase tracking-[0.14em] text-xv7-glow hover:border-xv7-glow">Back to Chat</a>
+        </div>
+      </header>
+
+      <main class="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1fr_420px]">
+        <section class="flex min-h-[600px] flex-col rounded-2xl border border-xv7-line/60 bg-xv7-panel/85 p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p class="font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Conversation / Staging</p>
+              <p id="sessionLabel" class="mt-1 font-mono text-xs text-xv7-glow">session: not started</p>
+            </div>
+            <button id="newSessionButton" class="rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-slate-200 hover:border-xv7-glow">New Session</button>
+          </div>
+
+          <div id="messages" class="mb-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-xv7-line/40 bg-black/20 p-3 text-sm">
+            <article class="rounded-xl border border-dashed border-xv7-line/50 bg-slate-950/40 p-3 text-slate-400">Send a request to X. Write/control intents stage only; safe diagnostic intents can run through the allowlisted tool runner.</article>
+          </div>
+
+          <div class="grid gap-3">
+            <textarea id="requestText" rows="4" class="w-full resize-none rounded-xl border border-xv7-line bg-xv7-panelSoft p-3 text-sm text-slate-100 outline-none focus:border-xv7-glow" placeholder="Example: create file ui_test.txt"></textarea>
+            <div class="flex flex-wrap gap-2">
+              <button id="sendButton" class="rounded-xl border border-xv7-primary/70 bg-xv7-primary/20 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-xv7-glow hover:bg-xv7-primary/30">Send to X</button>
+              <button data-fill="diagnose yourself" class="quick-fill rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-2 font-mono text-xs text-slate-300 hover:border-xv7-glow">diagnose yourself</button>
+              <button data-fill="what is your current state" class="quick-fill rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-2 font-mono text-xs text-slate-300 hover:border-xv7-glow">current state</button>
+              <button data-fill="create file ui_test.txt" class="quick-fill rounded-xl border border-xv7-line bg-xv7-panelSoft px-3 py-2 font-mono text-xs text-slate-300 hover:border-xv7-glow">stage file</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="flex flex-col gap-4">
+          <section class="rounded-2xl border border-xv7-line/60 bg-xv7-panel/85 p-4">
+            <p class="font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Authority Chain</p>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <button id="refreshStageButton" class="kernel-button">Latest Stage</button>
+              <button id="refreshDraftButton" class="kernel-button">Latest Draft</button>
+              <button id="previewButton" class="kernel-button">Preview</button>
+              <button id="validateButton" class="kernel-button">Validate</button>
+              <button id="preparePackageButton" class="kernel-button">Prepare Draft</button>
+              <button id="cancelStageButton" class="kernel-button kernel-danger">Cancel Stage</button>
+            </div>
+            <p id="activeStageLabel" class="mt-3 font-mono text-xs text-xv7-glow">stage: none</p>
+          </section>
+
+          <section class="rounded-2xl border border-xv7-line/60 bg-xv7-panel/85 p-4">
+            <label for="operatorContent" class="font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Operator Content</label>
+            <textarea id="operatorContent" rows="5" class="mt-2 w-full resize-none rounded-xl border border-xv7-line bg-xv7-panelSoft p-3 text-sm text-slate-100 outline-none focus:border-xv7-glow" placeholder="Content to attach to the current package draft. This remains review-only."></textarea>
+            <button id="attachContentButton" class="mt-2 w-full rounded-xl border border-xv7-primary/70 bg-xv7-primary/20 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-xv7-glow hover:bg-xv7-primary/30">Attach Content</button>
+          </section>
+
+          <section class="min-h-[300px] flex-1 rounded-2xl border border-xv7-line/60 bg-xv7-panel/85 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Kernel Output</p>
+              <button id="copyOutputButton" class="rounded-lg border border-xv7-line bg-xv7-panelSoft px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-slate-300 hover:border-xv7-glow">Copy</button>
+            </div>
+            <pre id="kernelOutput" class="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-xl border border-xv7-line/40 bg-black/30 p-3 font-mono text-xs leading-relaxed text-slate-200">Ready.</pre>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <style>
+      .kernel-button {
+        border: 1px solid rgba(0, 123, 255, 0.75);
+        border-radius: 0.75rem;
+        background: rgba(10, 22, 40, 0.9);
+        padding: 0.65rem 0.75rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #cbd5e1;
+      }
+      .kernel-button:hover { border-color: #4DB8FF; color: #4DB8FF; }
+      .kernel-danger { border-color: rgba(255, 93, 93, 0.65); color: #fecaca; }
+      .kernel-danger:hover { border-color: #FF5D5D; color: #fff; }
+    </style>
+
+    <script type="module" src="./x-kernel.js?v=20260618-1"></script>
+  </body>
+</html>
