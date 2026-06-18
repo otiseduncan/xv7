@@ -14,6 +14,7 @@ It is the operating layer that the existing XV7/X chat route calls before decidi
 * core/x_kernel/decision.py
 * core/x_kernel/tool_runner.py
 * core/x_kernel/action_stager.py
+* core/x_kernel/package_handoff.py
 * scripts/xv7_kernel_probe.py
 
 ## Current decision object
@@ -172,6 +173,34 @@ Approval validation writes a receipt and marks the stage approval_validated_prev
 * execution_allowed: false
 * apply_allowed: false
 * safety.approval_validation_only: true
+
+Package handoff route:
+
+```text
+POST /x-kernel/stages/{stage_id}/prepare-package
+```
+
+Package handoff converts an approval-validated preview stage into a draft prompt-package review artifact. It writes draft JSON under:
+
+```text
+data/x_inbox/drafts
+```
+
+It deliberately does not write to:
+
+```text
+data/x_inbox/pending
+```
+
+That means the existing prompt runner cannot accidentally apply the draft with run-next. Package handoff keeps:
+
+* draft_only: true
+* not_in_pending_queue: true
+* is_executor_ready: false
+* execution_allowed: false
+* apply_allowed: false
+
+The package handoff route must reject stages that are not previewed and approval-validated first.
 
 ## Current proof commands
 
