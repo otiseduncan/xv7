@@ -8,6 +8,7 @@ commands, or mutate repository files.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -82,6 +83,78 @@ def _clean_source_text(source_text: str | None) -> str:
     if len(text) > 4000:
         return text[:4000] + "\n...[truncated]"
     return text
+
+
+def _safe_filename_from_request(source_text: str) -> str | None:
+    """Extract a conservative file name from a natural-language request."""
+
+    text = _clean_source_text(source_text)
+    match = re.search(r"\b([A-Za-z0-9_.-]+\.(?:txt|md|json|yaml|yml|py|js|ts|tsx|jsx|css|html))\b", text)
+    if not match:
+        return None
+    candidate = match.group(1).strip().replace("\\", "/")
+    name = Path(candidate).name
+    if not name or name in {".", ".."}:
+        return None
+    return name
+
+
+def _build_preview_package(stage: dict[str, Any]) -> dict[str, Any]:
+    """Build an inert preview package from a staged action.
+
+    The returned payload is intentionally not executor-ready. It is a review
+    artifact only. A later authority flow must convert an approved preview into
+    a structured prompt package or another explicit apply mechanism.
+    """
+
+    source_text = _clean_source_text(
+        str(stage.get("source_text") or stage.get("user_request") or "")
+    )
+    safe_name = _safe_filename_from_request(source_text) or "operator_review_required.txt"
+    safe_preview_path = f"data/x_runtime/tmp/{safe_name}"
+    preview_lines = [
+        "X PACKAGE PREVIEW ONLY",
+        "",
+        "This preview was generated from a staged X Kernel action.",
+        "It is not executor-ready and cannot be applied by itself.",
+        "",
+        f"Stage ID: {stage.get('stage_id') or 'unknown'}",
+        f"Intent: {stage.get('intent') or 'unknown'}",
+        f"Risk: {stage.get('risk') or 'unknown'}",
+        f"Route: {stage.get('route') or 'unknown'}",
+        f"Source request: {source_text or 'none'}",
+        "",
+        "Proposed safe draft:",
+        "- Action kind: create_or_update_file_review",
+        f"- Suggested path: {safe_preview_path}",
+        "- Content: operator must review and fill final content before approval.",
+        "",
+        "Safety:",
+        "- preview_only: true",
+        "- execution_allowed: false",
+        "- repo_write: false",
+        "- system_control: false",
+        "- network_control: false",
+    ]
+    return {
+        "kind": "x_prompt_package_preview_v0",
+        "stage_id": stage.get("stage_id"),
+        "source_text": source_text,
+        "is_executor_ready": False,
+        "preview_only": True,
+        "execution_allowed": False,
+        "approval_required": True,
+        "suggested_path": safe_preview_path,
+        "draft_steps": [
+            {
+                "action_kind": "create_or_update_file_review",
+                "path": safe_preview_path,
+                "content_required": True,
+                "requires_operator_review": True,
+            }
+        ],
+        "rendered_preview": "\n".join(preview_lines),
+    }
 
 
 def should_stage_x_kernel_action(decision: dict[str, Any]) -> bool:
@@ -365,14 +438,16 @@ def prepare_x_kernel_action_stage_preview(
         }
 
     preview = dict(stage)
+    preview_package = _build_preview_package(preview)
     preview["status"] = "preview_ready"
     preview["preview_ready"] = True
     preview["preview_only"] = True
     preview["preview_requested_at"] = _utc_now()
     preview["preview_reason"] = str(reason or "operator_requested_preview")
+    preview["preview_package"] = preview_package
     preview["execution_allowed"] = False
     preview["approval_required"] = True
-    preview["next_step"] = "Generate or inspect a preview package. A separate explicit apply flow is still required."
+    preview["next_step"] = "Inspect preview_package. A separate explicit apply flow is still required."
     preview["safety"] = dict(preview.get("safety") or {})
     preview["safety"].update(
         {
@@ -402,6 +477,7 @@ def prepare_x_kernel_action_stage_preview(
         "execution_allowed": False,
         "approval_required": True,
         "receipt_path": str(preview_receipt),
+        "preview_package": preview_package,
         "stage": preview,
     }
 
