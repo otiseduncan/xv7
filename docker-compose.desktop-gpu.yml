@@ -1,0 +1,32 @@
+# =============================================================================
+# xv7 — Desktop GPU Override
+# =============================================================================
+# Purpose: run Xoduz on the stronger local desktop with GPU acceleration and
+# larger model profiles when those models are installed.
+# Use with:
+#   docker compose --env-file .env -f docker-compose.yml -f docker-compose.desktop-gpu.yml up -d --build
+# =============================================================================
+
+services:
+  ollama:
+    environment:
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-2}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  xv7-core:
+    environment:
+      - XV7_MACHINE_PROFILE=desktop-gpu
+      - XV7_MODEL_PROFILE=${XV7_MODEL_PROFILE:-balanced}
+      - XV7_OPERATOR_FAST_GIT_STATUS=1
+      - XV7_RESCUE_MODE=0
+
+  open-webui:
+    environment:
+      - DEFAULT_MODELS=${DEFAULT_MODELS:-qwen3:8b}
