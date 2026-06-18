@@ -64,6 +64,10 @@ def _save_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _write_stage_receipt(stage: dict[str, Any]) -> tuple[Path, Path]:
     receipts = _receipt_root()
     latest = receipts / "latest_action_stage.json"
@@ -143,6 +147,138 @@ def render_action_stage(stage: dict[str, Any]) -> str:
         f"Proof: {stage.get('receipt_path') or 'none'}\n\n"
         f"Next step: {stage.get('next_step') or 'Review staged plan.'}"
     )
+
+
+def _stage_receipt_files() -> list[Path]:
+    receipts = _receipt_root()
+    if not receipts.is_dir():
+        return []
+    files = [path for path in receipts.glob("*_action_stage.json") if path.name != "latest_action_stage.json"]
+    return sorted(files, key=lambda path: path.name, reverse=True)
+
+
+def list_x_kernel_action_stages(limit: int = 20) -> dict[str, Any]:
+    """Return recent staged-action receipts without executing anything."""
+
+    safe_limit = max(1, min(int(limit or 20), 100))
+    stages: list[dict[str, Any]] = []
+    for path in _stage_receipt_files():
+        try:
+            stage = _load_json(path)
+        except Exception:
+            continue
+        stage.setdefault("source_path", str(path))
+        stages.append(stage)
+        if len(stages) >= safe_limit:
+            break
+    return {
+        "receipt_type": "x_kernel_action_stage_list",
+        "status": "completed",
+        "count": len(stages),
+        "limit": safe_limit,
+        "stages": stages,
+        "execution_allowed": False,
+    }
+
+
+def get_latest_x_kernel_action_stage() -> dict[str, Any]:
+    """Return the latest staged-action receipt, if present."""
+
+    latest = _receipt_root() / "latest_action_stage.json"
+    if not latest.is_file():
+        return {
+            "receipt_type": "x_kernel_action_stage_latest",
+            "status": "not_found",
+            "stage": None,
+            "execution_allowed": False,
+        }
+    stage = _load_json(latest)
+    stage.setdefault("source_path", str(latest))
+    return {
+        "receipt_type": "x_kernel_action_stage_latest",
+        "status": "completed",
+        "stage": stage,
+        "execution_allowed": False,
+    }
+
+
+def get_x_kernel_action_stage(stage_id: str) -> dict[str, Any]:
+    """Return one staged-action receipt by stage id, if present."""
+
+    wanted = str(stage_id or "").strip()
+    if not wanted:
+        return {"status": "not_found", "stage": None, "execution_allowed": False}
+
+    for path in _stage_receipt_files():
+        try:
+            stage = _load_json(path)
+        except Exception:
+            continue
+        if str(stage.get("stage_id") or "") == wanted:
+            stage.setdefault("source_path", str(path))
+            return {
+                "receipt_type": "x_kernel_action_stage_lookup",
+                "status": "completed",
+                "stage": stage,
+                "execution_allowed": False,
+            }
+    latest = get_latest_x_kernel_action_stage().get("stage")
+    if isinstance(latest, dict) and str(latest.get("stage_id") or "") == wanted:
+        return {
+            "receipt_type": "x_kernel_action_stage_lookup",
+            "status": "completed",
+            "stage": latest,
+            "execution_allowed": False,
+        }
+    return {
+        "receipt_type": "x_kernel_action_stage_lookup",
+        "status": "not_found",
+        "stage": None,
+        "execution_allowed": False,
+    }
+
+
+def cancel_x_kernel_action_stage(stage_id: str, reason: str = "operator_cancelled") -> dict[str, Any]:
+    """Cancel a staged action without executing it."""
+
+    lookup = get_x_kernel_action_stage(stage_id)
+    stage = lookup.get("stage")
+    if not isinstance(stage, dict):
+        return {
+            "receipt_type": "x_kernel_action_stage_cancel",
+            "status": "not_found",
+            "stage_id": str(stage_id or ""),
+            "execution_allowed": False,
+            "cancelled": False,
+        }
+
+    cancelled = dict(stage)
+    cancelled["status"] = "cancelled"
+    cancelled["cancelled"] = True
+    cancelled["cancelled_at"] = _utc_now()
+    cancelled["cancel_reason"] = str(reason or "operator_cancelled")
+    cancelled["execution_allowed"] = False
+    cancelled["approval_required"] = False
+    cancelled["next_step"] = "Stage cancelled. Create a new staged plan if action is still needed."
+
+    receipts = _receipt_root()
+    cancel_receipt = receipts / f"{_stamp()}_action_stage_cancel_{cancelled.get('stage_id')}.json"
+    latest_cancel = receipts / "latest_action_stage_cancel.json"
+    latest_stage = receipts / "latest_action_stage.json"
+    _save_json(cancel_receipt, cancelled)
+    _save_json(latest_cancel, cancelled)
+    _save_json(latest_stage, cancelled)
+
+    return {
+        "receipt_type": "x_kernel_action_stage_cancel",
+        "status": "cancelled",
+        "stage_id": cancelled.get("stage_id"),
+        "cancelled": True,
+        "execution_allowed": False,
+        "approval_required": False,
+        "receipt_path": str(cancel_receipt),
+        "stage": cancelled,
+    }
 
 
 def apply_x_kernel_action_stage_to_session_state(session_state: SessionState) -> SessionState:
