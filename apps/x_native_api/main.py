@@ -6,9 +6,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from diagnostics import APP_NAME, APP_VERSION, build_state, diagnose_response
-from models import AttachContentRequest, NativeMessageRequest, WorkspaceDraftRequest
+from models import AttachContentRequest, NativeMessageRequest, ReviewBundleRequest, WorkspaceDraftRequest
 from planner import build_repair_proposal, planner_keywords, should_stage_plan
 from receipts import STAGES_DIR, ensure_data_dirs, locked_flags, utc_iso, write_json
+from review_bundles import create_review_bundle, latest_review_bundle, list_review_bundles
 from stages import attach_draft, latest_draft, latest_stage, preview_stage, stage_response
 from workspace import create_workspace_draft, list_workspace
 
@@ -46,7 +47,13 @@ def planner_response(raw_text: str, *, save_stage: bool) -> dict[str, Any]:
     proposal = build_repair_proposal(raw_text, state, staged=save_stage, stage_id=stage_id)
     if save_stage:
         proposal = save_planner_stage(raw_text, stage_id or "", proposal)
-    return {"content": render_planner(proposal), "state": state, "planner_proposal": proposal}
+        bundle = create_review_bundle(raw_text, proposal, stage_id)
+    else:
+        bundle = None
+    payload = {"content": render_planner(proposal, bundle), "state": state, "planner_proposal": proposal}
+    if bundle:
+        payload["review_bundle"] = bundle["review_bundle"]
+    return payload
 
 
 def save_planner_stage(raw_text: str, stage_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
@@ -67,16 +74,23 @@ def save_planner_stage(raw_text: str, stage_id: str, proposal: dict[str, Any]) -
     return proposal
 
 
-def render_planner(proposal: dict[str, Any]) -> str:
+def render_planner(proposal: dict[str, Any], bundle: dict[str, Any] | None = None) -> str:
+    bundle_text = ""
+    if bundle:
+        review = bundle["review_bundle"]
+        bundle_text = f"\n\nReview bundle: {review.get('receipt_path')}\nHuman decision: {review.get('human_decision_required')}"
     return (
-        "X Native Planner v0 proposal.\n\n"
+        "X Native Planner v1 proposal.\n\n"
         f"Problem: {proposal['problem_summary']}\n\n"
+        f"Current limitation: {proposal.get('current_limitation')}\n\n"
         f"Probable cause: {proposal['probable_cause']}\n\n"
+        f"Next repair: {proposal.get('proposed_next_repair')}\n\n"
         f"Proposed fix: {proposal['proposed_fix']}\n\nAffected files:\n"
         + "\n".join(f"- {path}" for path in proposal["affected_files"])
         + "\n\nValidation commands:\n"
         + "\n".join(f"- {command}" for command in proposal["validation_commands"])
         + "\n\nSafety: execution_allowed=false, apply_allowed=false, repo_write=false"
+        + bundle_text
     )
 
 
@@ -152,3 +166,18 @@ def x_native_workspace_draft(payload: WorkspaceDraftRequest) -> dict[str, Any]:
 @app.get("/x-native/workspace")
 def x_native_workspace() -> dict[str, Any]:
     return list_workspace()
+
+
+@app.post("/x-native/review-bundle")
+def x_native_review_bundle(payload: ReviewBundleRequest) -> dict[str, Any]:
+    return create_review_bundle(payload.raw_text, payload.planner_proposal, payload.stage_id)
+
+
+@app.get("/x-native/review-bundles")
+def x_native_review_bundles() -> dict[str, Any]:
+    return list_review_bundles()
+
+
+@app.get("/x-native/review-bundles/latest")
+def x_native_latest_review_bundle() -> dict[str, Any]:
+    return latest_review_bundle()

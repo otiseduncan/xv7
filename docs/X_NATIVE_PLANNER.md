@@ -1,6 +1,6 @@
 # X Native Planner
 
-X Native Planner v0 turns inspection or repair-style requests into structured sandbox-only repair proposals.
+X Native Planner v1 turns inspection or repair-style requests into structured sandbox-only repair proposals and review bundles.
 
 UI URL: `http://localhost:3100`
 
@@ -13,6 +13,8 @@ The old XV7 core is intentionally bypassed. X Native is the new control baseline
 Planner proposals include:
 
 - problem summary
+- exact current limitation
+- proposed next repair
 - probable cause
 - proposed fix
 - affected files
@@ -25,6 +27,26 @@ Planner proposals include:
 - `apply_allowed=false`
 - `repo_write=false`
 - `sandbox_only=true`
+
+## Review Bundles
+
+Review bundles are sandbox-only artifacts under `data/x_native/stages/review_bundles`.
+
+They include:
+
+- planner proposal
+- intended file paths
+- pseudo-diff preview text
+- validation checklist
+- rollback checklist
+- human decision required
+- safety flags
+
+Endpoints:
+
+- `POST /x-native/review-bundle`
+- `GET /x-native/review-bundles`
+- `GET /x-native/review-bundles/latest`
 
 ## Sandbox Workspace
 
@@ -65,4 +87,5 @@ docker compose -f docker-compose.x-native.yml up -d --build
 Invoke-RestMethod http://localhost:3101/health
 Invoke-RestMethod http://localhost:3101/x-native/state
 .\scripts\x_native_smoke.ps1
+.\scripts\x_native_full_check.ps1
 ```

@@ -56,7 +56,7 @@ Planner:
 Inspect your runtime and propose the next repair needed to make this baseline production-ready. Stage only. Do not apply or write files.
 ```
 
-The runtime can inspect, plan, stage, preview, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
+The runtime can inspect, plan, stage, preview, create review bundles, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
 
 ## Current safety state
 
@@ -68,6 +68,7 @@ Allowed:
 - plan
 - stage
 - preview
+- create review bundles
 - draft to sandbox workspace under `data/x_native/workspace`
 
 Not allowed:
@@ -89,9 +90,10 @@ From repo root after starting the stack:
 
 ```powershell
 .\scripts\x_native_smoke.ps1
+.\scripts\x_native_full_check.ps1
 ```
 
-The smoke checks health, state, diagnosis, planner proposal, and sandbox workspace draft/list behavior against `http://localhost:3101`.
+The checks cover health, state, diagnosis, planner proposals, review bundles, sandbox workspace draft/list behavior, UI availability, and line-count guardrails.
 
 ## What this stack does not use
 

@@ -51,6 +51,8 @@ All staged, planned, and draft outputs must include:
 - `promoted_to_repo=false`
 - `sandbox_only=true`
 
+Review bundles are also sandbox-only and must stay under `data/x_native/stages/review_bundles`.
+
 ## Size limits
 
 - Source files stay under 500 lines.

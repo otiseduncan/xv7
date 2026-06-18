@@ -19,3 +19,9 @@ class WorkspaceDraftRequest(BaseModel):
     content: str = Field(default="")
     stage_id: str | None = None
     plan: dict[str, Any] | None = None
+
+
+class ReviewBundleRequest(BaseModel):
+    raw_text: str = Field(default="Create a review bundle for the latest X Native planner proposal.")
+    stage_id: str | None = None
+    planner_proposal: dict[str, Any] | None = None

@@ -50,10 +50,12 @@ def build_repair_proposal(
     data_root = state.get("data_root") or "data/x_native"
     affected_files = [
         "apps/x_native_api/planner.py",
+        "apps/x_native_api/review_bundles.py",
         "apps/x_native_api/main.py",
         "apps/x_native_ui/public/index.html",
         "docs/X_NATIVE_BASELINE.md",
         "docs/X_NATIVE_PLANNER.md",
+        "docs/X_NATIVE_NEXT_HUMAN_DECISIONS.md",
         "data/x_native/workspace",
     ]
     probable_cause = (
@@ -71,10 +73,19 @@ def build_repair_proposal(
         "created_at": utc_iso(),
         "request": raw_text,
         "problem_summary": (
-            "X Native needs Planner v0 quality and sandbox workspace output so Otis can inspect, "
-            "stage, preview, and draft useful repair work from the clean UI without using legacy XV7 routes."
+            "X Native needs reviewable Planner v1 bundles so Otis can inspect proposed repairs, validation, "
+            "rollback, and safety state before any future authority decision."
+        ),
+        "current_limitation": (
+            "Planner v0 can stage a proposal and create sandbox drafts, but it does not yet package the plan "
+            "into a review artifact with intended paths, pseudo-diff, validation checklist, rollback checklist, "
+            "and explicit human-decision fields."
         ),
         "probable_cause": probable_cause,
+        "proposed_next_repair": (
+            "Create a sandbox-only review bundle for each production-readiness or repair request, expose it "
+            "through API/UI controls, and keep all repo apply/write authority locked."
+        ),
         "proposed_fix": (
             "Keep old XV7 isolated, improve diagnostics wording, add structured planner proposals, "
             "surface those proposals in the UI, create sandbox-only workspace drafts under "
@@ -98,5 +109,6 @@ def build_repair_proposal(
         "execution_allowed": False,
         "apply_allowed": False,
         "repo_write": False,
+        "promoted_to_repo": False,
         "sandbox_only": True,
     }
