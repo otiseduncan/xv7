@@ -15,6 +15,7 @@ from core.x_kernel.action_stager import (
     get_x_kernel_action_stage,
     list_x_kernel_action_stages,
     prepare_x_kernel_action_stage_preview,
+    validate_x_kernel_action_stage_approval,
 )
 from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
@@ -99,6 +100,24 @@ async def preview_x_kernel_stage(
     """Prepare one staged action for preview without executing it."""
 
     return prepare_x_kernel_action_stage_preview(stage_id, reason=reason)
+
+
+@router.post(
+    "/x-kernel/stages/{stage_id}/validate-approval",
+    dependencies=[Depends(require_api_key)],
+)
+async def validate_x_kernel_stage_approval(
+    stage_id: str,
+    approval_phrase: str,
+    reason: str = "operator_validation_requested",
+) -> dict[str, Any]:
+    """Validate stage approval intent without executing or applying it."""
+
+    return validate_x_kernel_action_stage_approval(
+        stage_id,
+        approval_phrase=approval_phrase,
+        reason=reason,
+    )
 
 
 @router.post(
