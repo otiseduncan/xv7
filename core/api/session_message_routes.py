@@ -17,6 +17,7 @@ from core.x_kernel.action_stager import (
     prepare_x_kernel_action_stage_preview,
     validate_x_kernel_action_stage_approval,
 )
+from core.x_kernel.package_draft_content import attach_operator_content_to_package_draft
 from core.x_kernel.package_draft_review import (
     get_latest_x_kernel_prompt_package_draft,
     get_x_kernel_prompt_package_draft,
@@ -167,6 +168,25 @@ async def get_x_kernel_package_draft(stage_id: str) -> dict[str, Any]:
     """Return one package draft review artifact by stage id."""
 
     return get_x_kernel_prompt_package_draft(stage_id)
+
+
+@router.post(
+    "/x-kernel/package-drafts/{stage_id}/attach-content",
+    dependencies=[Depends(require_api_key)],
+)
+async def attach_x_kernel_package_draft_content(
+    stage_id: str,
+    payload: dict[str, Any],
+    reason: str = "operator_attached_content",
+) -> dict[str, Any]:
+    """Attach operator content to a package draft without enqueueing or applying it."""
+
+    content = payload.get("content") if isinstance(payload, dict) else ""
+    return attach_operator_content_to_package_draft(
+        stage_id,
+        content=str(content or ""),
+        reason=reason,
+    )
 
 
 @router.post(
