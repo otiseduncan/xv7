@@ -146,7 +146,7 @@ def render_action_stage(stage: dict[str, Any]) -> str:
 
 
 def apply_x_kernel_action_stage_to_session_state(session_state: SessionState) -> SessionState:
-    """Attach staged-action metadata and visible text to the returned SessionState."""
+    """Attach staged-action metadata and replace visible text with the authority stage receipt."""
 
     decision = session_state.metadata.get("x_kernel_decision")
     if not isinstance(decision, dict):
@@ -165,16 +165,18 @@ def apply_x_kernel_action_stage_to_session_state(session_state: SessionState) ->
         return session_state
 
     stage = stage_x_kernel_action(decision)
-    next_content = f"{last_message.content.rstrip()}\n\n{render_action_stage(stage)}"
+    next_content = render_action_stage(stage)
 
     next_metadata = dict(last_message.metadata)
     next_metadata["x_kernel_action_stage"] = stage
+    next_metadata["x_kernel_visible_override"] = "action_stage_authoritative"
 
     messages = list(session_state.messages)
     messages[-1] = _copy_model(last_message, content=next_content, metadata=next_metadata)
 
     updated_metadata = dict(session_state.metadata)
     updated_metadata["x_kernel_action_stage"] = stage
+    updated_metadata["x_kernel_visible_override"] = "action_stage_authoritative"
     updated_metadata["x_kernel_action_stager"] = {
         "version": "v0",
         "mode": "receipt_backed_pending_approval_only",
