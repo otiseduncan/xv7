@@ -231,6 +231,7 @@ def diagnose_response(raw_text: str) -> dict[str, Any]:
         "execution_allowed": False,
         "apply_allowed": False,
         "repo_write": False,
+        "sandbox_only": True,
         "next_safe_step": "Ask X Native for a planner proposal or create a sandbox workspace draft. Repo apply remains locked.",
     }
     paths = write_json(RECEIPTS_DIR, "diagnosis", receipt, "latest_diagnosis.json")
@@ -269,6 +270,7 @@ def planner_response(raw_text: str, *, save_stage: bool) -> dict[str, Any]:
             "execution_allowed": False,
             "apply_allowed": False,
             "repo_write": False,
+            "sandbox_only": True,
             "next_step": "Preview the staged plan or create a sandbox workspace draft. Repo apply remains locked.",
         }
         paths = write_json(STAGES_DIR, f"planner_stage_{stage_id}", stage, "latest_stage.json")
@@ -287,7 +289,7 @@ def planner_response(raw_text: str, *, save_stage: bool) -> dict[str, Any]:
         + "\n".join(f"- {command}" for command in proposal["validation_commands"])
         + "\n\nSafety: execution_allowed=false, apply_allowed=false, repo_write=false"
     )
-    return {"content": content, "planner_proposal": proposal}
+    return {"content": content, "state": state, "planner_proposal": proposal}
 
 
 def stage_response(raw_text: str, decision: dict[str, Any]) -> dict[str, Any]:
@@ -303,10 +305,11 @@ def stage_response(raw_text: str, decision: dict[str, Any]) -> dict[str, Any]:
         "risk": decision["risk"],
         "route": decision["route"],
         "summary": decision["summary"],
-        "suggested_path": f"data/x_runtime/tmp/{Path(suggested_path).name}",
+        "suggested_path": f"data/x_native/workspace/{Path(suggested_path).name}",
         "execution_allowed": False,
         "apply_allowed": False,
         "repo_write": False,
+        "sandbox_only": True,
         "preview_ready": False,
         "next_step": "Preview the staged action, then attach operator-reviewed content. Apply remains locked.",
     }
@@ -403,34 +406,47 @@ def x_native_message(payload: NativeMessageRequest) -> dict[str, Any]:
 @app.get("/x-native/stages/latest")
 def x_native_latest_stage() -> dict[str, Any]:
     stage = read_latest_json(STAGES_DIR, "latest_stage.json")
-    return {"status": "completed" if stage else "empty", "stage": stage, "execution_allowed": False, "apply_allowed": False}
+    return {"status": "completed" if stage else "empty", "stage": stage, "execution_allowed": False, "apply_allowed": False, "repo_write": False, "sandbox_only": True}
 
 
 @app.post("/x-native/stages/{stage_id}/preview")
 def x_native_preview(stage_id: str) -> dict[str, Any]:
     stage = read_latest_json(STAGES_DIR, "latest_stage.json")
     if not stage or stage.get("stage_id") != stage_id:
-        return {"status": "not_found", "stage_id": stage_id, "execution_allowed": False, "apply_allowed": False}
-    preview = {
-        "kind": "x_native_preview_v0",
-        "stage_id": stage_id,
-        "source_text": stage.get("source_text"),
-        "suggested_path": stage.get("suggested_path"),
-        "preview_only": True,
-        "is_executor_ready": False,
-        "execution_allowed": False,
-        "apply_allowed": False,
-        "rendered_preview": (
+        return {"status": "not_found", "stage_id": stage_id, "execution_allowed": False, "apply_allowed": False, "repo_write": False, "sandbox_only": True}
+    planner_proposal = stage.get("planner_proposal") if isinstance(stage.get("planner_proposal"), dict) else None
+    rendered_preview = (
+        "X NATIVE PLANNER PREVIEW ONLY\n\n"
+        f"Stage ID: {stage_id}\n"
+        f"Problem: {planner_proposal.get('problem_summary')}\n\n"
+        f"Proposed fix: {planner_proposal.get('proposed_fix')}\n\n"
+        "No apply path is enabled in this baseline."
+        if planner_proposal
+        else (
             "X NATIVE PREVIEW ONLY\n\n"
             f"Stage ID: {stage_id}\n"
             f"Source request: {stage.get('source_text')}\n"
             f"Suggested path: {stage.get('suggested_path')}\n\n"
             "No apply path is enabled in this baseline."
-        ),
+        )
+    )
+    preview = {
+        "kind": "x_native_preview_v0",
+        "stage_id": stage_id,
+        "source_text": stage.get("source_text"),
+        "suggested_path": stage.get("suggested_path"),
+        "planner_proposal": planner_proposal,
+        "preview_only": True,
+        "is_executor_ready": False,
+        "execution_allowed": False,
+        "apply_allowed": False,
+        "repo_write": False,
+        "sandbox_only": True,
+        "rendered_preview": rendered_preview,
     }
     stage.update({"status": "preview_ready", "preview_ready": True, "preview": preview})
     paths = write_json(STAGES_DIR, f"preview_{stage_id}", stage, "latest_stage.json")
-    return {"status": "preview_ready", "stage_id": stage_id, "preview": preview, "receipt_path": paths["path"], "execution_allowed": False, "apply_allowed": False}
+    return {"status": "preview_ready", "stage_id": stage_id, "preview": preview, "receipt_path": paths["path"], "execution_allowed": False, "apply_allowed": False, "repo_write": False, "sandbox_only": True}
 
 
 @app.post("/x-native/stages/{stage_id}/draft")
@@ -450,6 +466,8 @@ def x_native_draft(stage_id: str, payload: AttachContentRequest) -> dict[str, An
         "is_executor_ready": False,
         "execution_allowed": False,
         "apply_allowed": False,
+        "repo_write": False,
+        "sandbox_only": True,
         "rendered_draft": (
             "X NATIVE DRAFT ONLY\n\n"
             f"Stage ID: {stage_id}\n"
@@ -462,13 +480,13 @@ def x_native_draft(stage_id: str, payload: AttachContentRequest) -> dict[str, An
     receipt_paths = write_json(RECEIPTS_DIR, f"draft_{stage_id}", receipt, "latest_draft_receipt.json")
     stage.update({"status": "draft_ready", "draft_ready": True, "draft_path": draft_paths["path"]})
     write_json(STAGES_DIR, f"draft_stage_{stage_id}", stage, "latest_stage.json")
-    return {"status": "draft_ready", "draft": draft, "draft_path": draft_paths["path"], "receipt_path": receipt_paths["path"], "execution_allowed": False, "apply_allowed": False}
+    return {"status": "draft_ready", "draft": draft, "draft_path": draft_paths["path"], "receipt_path": receipt_paths["path"], "execution_allowed": False, "apply_allowed": False, "repo_write": False, "sandbox_only": True}
 
 
 @app.get("/x-native/drafts/latest")
 def x_native_latest_draft() -> dict[str, Any]:
     draft = read_latest_json(DRAFTS_DIR, "latest_draft.json")
-    return {"status": "completed" if draft else "empty", "draft": draft, "execution_allowed": False, "apply_allowed": False}
+    return {"status": "completed" if draft else "empty", "draft": draft, "execution_allowed": False, "apply_allowed": False, "repo_write": False, "sandbox_only": True}
 
 
 @app.post("/x-native/workspace/draft")
@@ -484,6 +502,7 @@ def x_native_workspace_draft(payload: WorkspaceDraftRequest) -> dict[str, Any]:
             "apply_allowed": False,
             "execution_allowed": False,
             "promoted_to_repo": False,
+            "sandbox_only": True,
         }
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(payload.content, encoding="utf-8")
@@ -498,6 +517,7 @@ def x_native_workspace_draft(payload: WorkspaceDraftRequest) -> dict[str, Any]:
         "apply_allowed": False,
         "execution_allowed": False,
         "promoted_to_repo": False,
+        "sandbox_only": True,
     }
     paths = write_json(RECEIPTS_DIR, "workspace_draft", receipt, "latest_workspace_draft_receipt.json")
     return {
@@ -510,6 +530,7 @@ def x_native_workspace_draft(payload: WorkspaceDraftRequest) -> dict[str, Any]:
         "apply_allowed": False,
         "execution_allowed": False,
         "promoted_to_repo": False,
+        "sandbox_only": True,
     }
 
 

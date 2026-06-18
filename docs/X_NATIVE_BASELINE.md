@@ -33,6 +33,7 @@ docker compose -f docker-compose.x-native.yml down
 ```powershell
 Invoke-RestMethod http://localhost:3101/health
 Invoke-RestMethod http://localhost:3101/x-native/state
+.\scripts\x_native_smoke.ps1
 ```
 
 ## Message examples
@@ -78,6 +79,17 @@ Every planned/drafted action must keep:
 - `execution_allowed=false`
 - `apply_allowed=false`
 - `repo_write=false`
+- `sandbox_only=true`
+
+## One-command smoke
+
+From repo root after starting the stack:
+
+```powershell
+.\scripts\x_native_smoke.ps1
+```
+
+The smoke checks health, state, diagnosis, planner proposal, and sandbox workspace draft/list behavior against `http://localhost:3101`.
 
 ## What this stack does not use
 

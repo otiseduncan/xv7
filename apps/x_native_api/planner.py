@@ -46,6 +46,7 @@ def build_repair_proposal(
     plan_id = stage_id or str(uuid4())
     branch = state.get("branch") or "unknown"
     dirty_files = state.get("dirty_files") or ""
+    git_unavailable = str(dirty_files).startswith("git metadata unavailable") or str(dirty_files).startswith("git status unavailable")
     data_root = state.get("data_root") or "data/x_native"
     affected_files = [
         "apps/x_native_api/planner.py",
@@ -61,8 +62,10 @@ def build_repair_proposal(
         "diagnostic wording should treat legacy-core isolation as healthy, and drafts "
         "need a sandbox workspace before any future repo write path exists."
     )
-    if dirty_files:
+    if dirty_files and not git_unavailable:
         probable_cause += f" Current branch {branch} also has uncommitted source changes, so repo apply must remain locked."
+    elif git_unavailable:
+        probable_cause += " Git metadata is unavailable inside the container, which is acceptable for runtime planning but not for git-dependent operations."
     return {
         "kind": "x_native_planner_v0",
         "created_at": utc_iso(),
@@ -74,8 +77,8 @@ def build_repair_proposal(
         "probable_cause": probable_cause,
         "proposed_fix": (
             "Keep old XV7 isolated, improve diagnostics wording, add structured planner proposals, "
-            "surface those proposals in the UI, and create sandbox-only workspace drafts under "
-            f"{data_root}/workspace before any repo write capability is considered."
+            "surface those proposals in the UI, create sandbox-only workspace drafts under "
+            f"{data_root}/workspace, and keep the next milestone focused on review quality before any repo write capability is considered."
         ),
         "affected_files": affected_files,
         "validation_commands": [
@@ -95,4 +98,5 @@ def build_repair_proposal(
         "execution_allowed": False,
         "apply_allowed": False,
         "repo_write": False,
+        "sandbox_only": True,
     }

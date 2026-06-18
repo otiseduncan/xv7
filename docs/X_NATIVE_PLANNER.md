@@ -24,6 +24,7 @@ Planner proposals include:
 - `execution_allowed=false`
 - `apply_allowed=false`
 - `repo_write=false`
+- `sandbox_only=true`
 
 ## Sandbox Workspace
 
@@ -63,4 +64,5 @@ python -m py_compile apps/x_native_api/main.py apps/x_native_api/planner.py
 docker compose -f docker-compose.x-native.yml up -d --build
 Invoke-RestMethod http://localhost:3101/health
 Invoke-RestMethod http://localhost:3101/x-native/state
+.\scripts\x_native_smoke.ps1
 ```
