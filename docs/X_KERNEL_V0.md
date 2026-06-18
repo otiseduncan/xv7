@@ -16,6 +16,7 @@ It is the operating layer that the existing XV7/X chat route calls before decidi
 * core/x_kernel/action_stager.py
 * core/x_kernel/package_handoff.py
 * core/x_kernel/package_draft_review.py
+* core/x_kernel/package_draft_content.py
 * scripts/xv7_kernel_probe.py
 
 ## Current decision object
@@ -227,6 +228,48 @@ They deliberately do not write to the executor queue and do not apply drafts. Dr
 * is_executor_ready: false
 * execution_allowed: false
 * apply_allowed: false
+
+## Package draft content attachment
+
+Content-attachment route:
+
+```text
+POST /x-kernel/package-drafts/{stage_id}/attach-content
+```
+
+This route attaches operator-provided content to a draft package review artifact. The request body must include:
+
+```json
+{
+  "content": "operator reviewed content"
+}
+```
+
+Content attachment writes only to:
+
+```text
+data/x_inbox/drafts
+data/x_inbox/receipts
+```
+
+It deliberately does not write to:
+
+```text
+data/x_inbox/pending
+```
+
+It does not execute, apply, or mutate repository target files. Content-attached drafts keep:
+
+* status: content_attached_review_only
+* content_attached: true
+* draft_only: true
+* review_only: true
+* not_in_pending_queue: true
+* is_executor_ready: false
+* execution_allowed: false
+* apply_allowed: false
+
+A later separate promotion/apply flow is still required before any executor can touch repository files.
 
 ## Current proof commands
 
