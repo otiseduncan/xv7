@@ -141,6 +141,14 @@ POST /x-kernel/stages/{stage_id}/cancel
 
 Cancellation writes a cancellation receipt and does not execute the staged action.
 
+Preview-preparation route:
+
+```text
+POST /x-kernel/stages/{stage_id}/preview
+```
+
+Preview preparation marks a staged action as preview_ready and writes a preview receipt. It still does not execute, apply, or mutate repository files. It is a handoff step before a future explicit apply flow.
+
 ## Current proof commands
 
 Run these from the repo root:
