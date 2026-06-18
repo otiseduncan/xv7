@@ -17,6 +17,11 @@ from core.x_kernel.action_stager import (
     prepare_x_kernel_action_stage_preview,
     validate_x_kernel_action_stage_approval,
 )
+from core.x_kernel.package_draft_review import (
+    get_latest_x_kernel_prompt_package_draft,
+    get_x_kernel_prompt_package_draft,
+    list_x_kernel_prompt_package_drafts,
+)
 from core.x_kernel.package_handoff import prepare_x_kernel_prompt_package_handoff
 from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
@@ -132,6 +137,36 @@ async def prepare_x_kernel_stage_package(
     """Prepare a draft prompt-package handoff without enqueueing or applying it."""
 
     return prepare_x_kernel_prompt_package_handoff(stage_id, reason=reason)
+
+
+@router.get(
+    "/x-kernel/package-drafts",
+    dependencies=[Depends(require_api_key)],
+)
+async def list_x_kernel_package_drafts(limit: int = 20) -> dict[str, Any]:
+    """List package draft review artifacts without applying them."""
+
+    return list_x_kernel_prompt_package_drafts(limit=limit)
+
+
+@router.get(
+    "/x-kernel/package-drafts/latest",
+    dependencies=[Depends(require_api_key)],
+)
+async def get_latest_x_kernel_package_draft() -> dict[str, Any]:
+    """Return the latest package draft review artifact."""
+
+    return get_latest_x_kernel_prompt_package_draft()
+
+
+@router.get(
+    "/x-kernel/package-drafts/{stage_id}",
+    dependencies=[Depends(require_api_key)],
+)
+async def get_x_kernel_package_draft(stage_id: str) -> dict[str, Any]:
+    """Return one package draft review artifact by stage id."""
+
+    return get_x_kernel_prompt_package_draft(stage_id)
 
 
 @router.post(
