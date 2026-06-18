@@ -1,0 +1,9 @@
+services:
+  xv7-core:
+    environment:
+      - X_NATIVE_MODE=1
+      - X_HOST_PROFILE=${X_HOST_PROFILE:-omega}
+      - X_REPO_ROOT=/workspace
+      - X_ALLOW_REPO_WRITE=${X_ALLOW_REPO_WRITE:-1}
+      - X_ALLOW_TEST_RUNS=${X_ALLOW_TEST_RUNS:-1}
+      - X_ALLOW_PROMPT_INBOX=${X_ALLOW_PROMPT_INBOX:-1}

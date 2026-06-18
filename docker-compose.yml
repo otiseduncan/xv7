@@ -155,7 +155,7 @@ services:
       - ./core:/app/core                 # Live-reload: source changes apply instantly
       - ./config:/app/config             # Persona and system configuration files
       - ${XV7_HOST_SANDBOX:-./generated-sites}:/app/generated-sites
-      - ./:/workspace:ro                 # Full repo mount for read-only operator git/file checks
+      - ./:/workspace:rw                 # Full repo mount for operator git/file checks
       - core_data:/app/data:rw           # Persistent DB, vectors, memory logs
       - ./data/brain/records:/app/data/brain/records:ro
       - xv7_shared:/app/shared           # Write 3D assets & state for open-webui

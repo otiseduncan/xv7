@@ -34,6 +34,17 @@ data/*
 data/brain/*
 !data/brain/records/
 !data/brain/records/*.json
+!data/knowledge/
+!data/knowledge/**/
+!data/knowledge/**/*.md
+!data/x_inbox/
+!data/x_inbox/**/
+data/x_inbox/**/*.json
+!data/x_inbox/**/.gitkeep
+!data/x_runtime/
+!data/x_runtime/tmp/
+data/x_runtime/tmp/*
+!data/x_runtime/tmp/.gitkeep
 
 # Logs
 *.log
