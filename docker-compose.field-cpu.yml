@@ -1,0 +1,24 @@
+# =============================================================================
+# xv7 — Field Laptop CPU Override
+# =============================================================================
+# Purpose: boot Xoduz reliably on the low-power field laptop first.
+# Use with:
+#   docker compose --env-file .env -f docker-compose.yml -f docker-compose.field-cpu.yml up -d --build
+# =============================================================================
+
+services:
+  ollama:
+    environment:
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+
+  xv7-core:
+    environment:
+      - XV7_MACHINE_PROFILE=field-cpu
+      - XV7_MODEL_PROFILE=${XV7_MODEL_PROFILE:-low_resource}
+      - XV7_OPERATOR_FAST_GIT_STATUS=1
+      - XV7_RESCUE_MODE=1
+
+  open-webui:
+    environment:
+      - DEFAULT_MODELS=${DEFAULT_MODELS:-qwen3:0.6b}
