@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from core.api.schemas import AddMessageRequest
 from core.runtime.auth import require_api_key
 from core.runtime.schemas import SessionState
+from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
 router = APIRouter()
 
@@ -39,4 +40,5 @@ async def add_session_message_route(
     if _add_message_handler_getter is None:
         raise RuntimeError("session message routes are not configured")
     handler = _add_message_handler_getter()
-    return await handler(session_id, payload)
+    session_state = await handler(session_id, payload)
+    return apply_x_kernel_tool_result_to_session_state(session_state)
