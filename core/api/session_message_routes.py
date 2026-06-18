@@ -15,8 +15,12 @@ from core.x_kernel.action_stager import (
     get_x_kernel_action_stage,
     list_x_kernel_action_stages,
     prepare_x_kernel_action_stage_preview,
+    render_action_stage,
+    should_stage_x_kernel_action,
+    stage_x_kernel_action,
     validate_x_kernel_action_stage_approval,
 )
+from core.x_kernel.decision import XDecisionKernel
 from core.x_kernel.package_draft_content import attach_operator_content_to_package_draft
 from core.x_kernel.package_draft_review import (
     get_latest_x_kernel_prompt_package_draft,
@@ -24,7 +28,11 @@ from core.x_kernel.package_draft_review import (
     list_x_kernel_prompt_package_drafts,
 )
 from core.x_kernel.package_handoff import prepare_x_kernel_prompt_package_handoff
-from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
+from core.x_kernel.tool_runner import (
+    apply_x_kernel_tool_result_to_session_state,
+    render_tool_result,
+    run_x_kernel_tool,
+)
 
 router = APIRouter()
 
@@ -51,6 +59,74 @@ def _copy_session_state(session_state: SessionState, **updates: object) -> Sessi
     if callable(model_copy):
         return model_copy(update=updates)
     return session_state.copy(update=updates)
+
+
+@router.post(
+    "/x-kernel/messages",
+    dependencies=[Depends(require_api_key)],
+)
+async def x_kernel_direct_message(payload: AddMessageRequest) -> dict[str, Any]:
+    """Handle one X Kernel UI message without the legacy session-visible bridge.
+
+    This endpoint is the browser control-panel path. It directly returns the
+    receipt-backed safe tool output for read-only intents or a staged action for
+    write/control intents. It does not run model inference, shell commands, or
+    unrestricted repo mutation.
+    """
+
+    raw_text = str(payload.raw_text or "")
+    try:
+        decision = XDecisionKernel().decide(raw_text).to_dict()
+    except Exception as exc:
+        decision = {
+            "intent": "kernel_error",
+            "risk": "none",
+            "route": "answer_only",
+            "summary": str(exc),
+            "requires_confirmation": False,
+            "command": [],
+            "package_action": "none",
+            "reasons": ["x_kernel_exception"],
+        }
+
+    response: dict[str, Any] = {
+        "receipt_type": "x_kernel_direct_message",
+        "status": "completed",
+        "content": "",
+        "x_kernel_decision": decision,
+        "metadata": {
+            "x_kernel_decision": decision,
+            "x_kernel_ui_route": "direct_receipt_backed_v0",
+        },
+        "execution_allowed": False,
+        "apply_allowed": False,
+    }
+
+    if should_stage_x_kernel_action(decision):
+        stage = stage_x_kernel_action(decision, source_text=raw_text)
+        content = render_action_stage(stage)
+        response["content"] = content
+        response["x_kernel_action_stage"] = stage
+        response["metadata"]["x_kernel_action_stage"] = stage
+        return response
+
+    tool_result = run_x_kernel_tool(decision)
+    content = (
+        "X Kernel direct tool response.\n\n"
+        f"Intent: {decision.get('intent') or 'unknown'}\n"
+        f"Risk: {decision.get('risk') or 'unknown'}\n"
+        f"Route: {decision.get('route') or 'unknown'}\n\n"
+        f"{render_tool_result(tool_result)}"
+    )
+    response["content"] = content
+    response["x_kernel_tool_result"] = tool_result
+    response["metadata"]["x_kernel_tool_result"] = tool_result
+    response["metadata"]["x_kernel_tool_runner"] = {
+        "version": "v0",
+        "mode": "direct_ui_allowlisted_receipt_backed",
+        "status": tool_result.get("status"),
+    }
+    return response
 
 
 @router.get(
