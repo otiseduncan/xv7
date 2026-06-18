@@ -902,6 +902,25 @@ async def add_session_message(
     if isinstance(resolved_focus, dict):
         session_state.metadata["active_focus"] = resolved_focus
 
+    # X Kernel v0 bridge: classify the incoming message on the existing UI path.
+    # Metadata-only for now; normal chat behavior continues unchanged.
+    try:
+        from core.x_kernel.decision import XDecisionKernel
+
+        x_kernel_decision = XDecisionKernel().decide(payload.raw_text)
+        session_state.metadata["x_kernel_decision"] = x_kernel_decision.to_dict()
+    except Exception as exc:
+        session_state.metadata["x_kernel_decision"] = {
+            "intent": "kernel_error",
+            "risk": "none",
+            "route": "answer_only",
+            "summary": str(exc),
+            "requires_confirmation": False,
+            "command": [],
+            "package_action": "none",
+            "reasons": ["x_kernel_exception"],
+        }
+
     auto_decision = memory_auto_pilot.intake(
         payload.raw_text,
         session_metadata=session_state.metadata,
