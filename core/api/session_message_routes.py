@@ -17,6 +17,7 @@ from core.x_kernel.action_stager import (
     prepare_x_kernel_action_stage_preview,
     validate_x_kernel_action_stage_approval,
 )
+from core.x_kernel.package_handoff import prepare_x_kernel_prompt_package_handoff
 from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
 router = APIRouter()
@@ -118,6 +119,19 @@ async def validate_x_kernel_stage_approval(
         approval_phrase=approval_phrase,
         reason=reason,
     )
+
+
+@router.post(
+    "/x-kernel/stages/{stage_id}/prepare-package",
+    dependencies=[Depends(require_api_key)],
+)
+async def prepare_x_kernel_stage_package(
+    stage_id: str,
+    reason: str = "operator_requested_package_handoff",
+) -> dict[str, Any]:
+    """Prepare a draft prompt-package handoff without enqueueing or applying it."""
+
+    return prepare_x_kernel_prompt_package_handoff(stage_id, reason=reason)
 
 
 @router.post(
