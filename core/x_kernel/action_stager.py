@@ -157,26 +157,61 @@ def _stage_receipt_files() -> list[Path]:
     return sorted(files, key=lambda path: path.name, reverse=True)
 
 
+def _latest_stage_or_none() -> dict[str, Any] | None:
+    latest = _receipt_root() / "latest_action_stage.json"
+    if not latest.is_file():
+        return None
+    stage = _load_json(latest)
+    stage.setdefault("source_path", str(latest))
+    return stage
+
+
+def _load_stage_file(path: Path) -> dict[str, Any] | None:
+    try:
+        stage = _load_json(path)
+    except Exception:
+        return None
+    stage.setdefault("source_path", str(path))
+    return stage
+
+
 def list_x_kernel_action_stages(limit: int = 20) -> dict[str, Any]:
-    """Return recent staged-action receipts without executing anything."""
+    """Return recent staged-action receipts without executing anything.
+
+    Latest state takes precedence over older stamped receipts so cancellation or
+    preview-preparation status cannot be hidden by an older pending receipt.
+    """
 
     safe_limit = max(1, min(int(limit or 20), 100))
     stages: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    latest = _latest_stage_or_none()
+    if isinstance(latest, dict):
+        stage_id = str(latest.get("stage_id") or "")
+        if stage_id:
+            stages.append(latest)
+            seen.add(stage_id)
+
     for path in _stage_receipt_files():
-        try:
-            stage = _load_json(path)
-        except Exception:
+        stage = _load_stage_file(path)
+        if not isinstance(stage, dict):
             continue
-        stage.setdefault("source_path", str(path))
+        stage_id = str(stage.get("stage_id") or "")
+        if stage_id in seen:
+            continue
         stages.append(stage)
+        if stage_id:
+            seen.add(stage_id)
         if len(stages) >= safe_limit:
             break
+
     return {
         "receipt_type": "x_kernel_action_stage_list",
         "status": "completed",
-        "count": len(stages),
+        "count": len(stages[:safe_limit]),
         "limit": safe_limit,
-        "stages": stages,
+        "stages": stages[:safe_limit],
         "execution_allowed": False,
     }
 
@@ -184,45 +219,34 @@ def list_x_kernel_action_stages(limit: int = 20) -> dict[str, Any]:
 def get_latest_x_kernel_action_stage() -> dict[str, Any]:
     """Return the latest staged-action receipt, if present."""
 
-    latest = _receipt_root() / "latest_action_stage.json"
-    if not latest.is_file():
+    latest = _latest_stage_or_none()
+    if not isinstance(latest, dict):
         return {
             "receipt_type": "x_kernel_action_stage_latest",
             "status": "not_found",
             "stage": None,
             "execution_allowed": False,
         }
-    stage = _load_json(latest)
-    stage.setdefault("source_path", str(latest))
     return {
         "receipt_type": "x_kernel_action_stage_latest",
         "status": "completed",
-        "stage": stage,
+        "stage": latest,
         "execution_allowed": False,
     }
 
 
 def get_x_kernel_action_stage(stage_id: str) -> dict[str, Any]:
-    """Return one staged-action receipt by stage id, if present."""
+    """Return one staged-action receipt by stage id, if present.
+
+    Latest state is checked first so cancellation or preview-preparation status
+    wins over older stamped stage receipts.
+    """
 
     wanted = str(stage_id or "").strip()
     if not wanted:
         return {"status": "not_found", "stage": None, "execution_allowed": False}
 
-    for path in _stage_receipt_files():
-        try:
-            stage = _load_json(path)
-        except Exception:
-            continue
-        if str(stage.get("stage_id") or "") == wanted:
-            stage.setdefault("source_path", str(path))
-            return {
-                "receipt_type": "x_kernel_action_stage_lookup",
-                "status": "completed",
-                "stage": stage,
-                "execution_allowed": False,
-            }
-    latest = get_latest_x_kernel_action_stage().get("stage")
+    latest = _latest_stage_or_none()
     if isinstance(latest, dict) and str(latest.get("stage_id") or "") == wanted:
         return {
             "receipt_type": "x_kernel_action_stage_lookup",
@@ -230,6 +254,18 @@ def get_x_kernel_action_stage(stage_id: str) -> dict[str, Any]:
             "stage": latest,
             "execution_allowed": False,
         }
+
+    for path in _stage_receipt_files():
+        stage = _load_stage_file(path)
+        if not isinstance(stage, dict):
+            continue
+        if str(stage.get("stage_id") or "") == wanted:
+            return {
+                "receipt_type": "x_kernel_action_stage_lookup",
+                "status": "completed",
+                "stage": stage,
+                "execution_allowed": False,
+            }
     return {
         "receipt_type": "x_kernel_action_stage_lookup",
         "status": "not_found",
@@ -278,6 +314,76 @@ def cancel_x_kernel_action_stage(stage_id: str, reason: str = "operator_cancelle
         "approval_required": False,
         "receipt_path": str(cancel_receipt),
         "stage": cancelled,
+    }
+
+
+def prepare_x_kernel_action_stage_preview(
+    stage_id: str,
+    reason: str = "operator_requested_preview",
+) -> dict[str, Any]:
+    """Mark a staged action as ready for preview without executing it."""
+
+    lookup = get_x_kernel_action_stage(stage_id)
+    stage = lookup.get("stage")
+    if not isinstance(stage, dict):
+        return {
+            "receipt_type": "x_kernel_action_stage_preview",
+            "status": "not_found",
+            "stage_id": str(stage_id or ""),
+            "execution_allowed": False,
+            "preview_ready": False,
+        }
+
+    if stage.get("cancelled") or stage.get("status") == "cancelled":
+        return {
+            "receipt_type": "x_kernel_action_stage_preview",
+            "status": "rejected_cancelled",
+            "stage_id": stage.get("stage_id"),
+            "execution_allowed": False,
+            "preview_ready": False,
+            "reason": "stage_cancelled",
+            "stage": stage,
+        }
+
+    preview = dict(stage)
+    preview["status"] = "preview_ready"
+    preview["preview_ready"] = True
+    preview["preview_only"] = True
+    preview["preview_requested_at"] = _utc_now()
+    preview["preview_reason"] = str(reason or "operator_requested_preview")
+    preview["execution_allowed"] = False
+    preview["approval_required"] = True
+    preview["next_step"] = "Generate or inspect a preview package. A separate explicit apply flow is still required."
+    preview["safety"] = dict(preview.get("safety") or {})
+    preview["safety"].update(
+        {
+            "direct_execution": False,
+            "repo_write": False,
+            "system_control": False,
+            "network_control": False,
+            "preview_only": True,
+            "note": "Preview preparation does not execute, apply, or mutate repository files.",
+        }
+    )
+
+    receipts = _receipt_root()
+    preview_receipt = receipts / f"{_stamp()}_action_stage_preview_{preview.get('stage_id')}.json"
+    latest_preview = receipts / "latest_action_stage_preview.json"
+    latest_stage = receipts / "latest_action_stage.json"
+    _save_json(preview_receipt, preview)
+    _save_json(latest_preview, preview)
+    _save_json(latest_stage, preview)
+
+    return {
+        "receipt_type": "x_kernel_action_stage_preview",
+        "status": "preview_ready",
+        "stage_id": preview.get("stage_id"),
+        "preview_ready": True,
+        "preview_only": True,
+        "execution_allowed": False,
+        "approval_required": True,
+        "receipt_path": str(preview_receipt),
+        "stage": preview,
     }
 
 
