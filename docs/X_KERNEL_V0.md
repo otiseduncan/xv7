@@ -149,6 +149,30 @@ POST /x-kernel/stages/{stage_id}/preview
 
 Preview preparation marks a staged action as preview_ready and writes a preview receipt. It still does not execute, apply, or mutate repository files. It is a handoff step before a future explicit apply flow.
 
+Preview packages are inert review artifacts. They include source_text, suggested_path, draft_steps, and rendered_preview, but remain:
+
+* is_executor_ready: false
+* preview_only: true
+* execution_allowed: false
+
+Approval-validation route:
+
+```text
+POST /x-kernel/stages/{stage_id}/validate-approval
+```
+
+Approval validation records operator approval intent only. It requires a stage-specific phrase:
+
+```text
+APPROVE_STAGE_<stage_id>
+```
+
+Approval validation writes a receipt and marks the stage approval_validated_preview_only. It still does not execute, apply, or mutate repository files. It keeps:
+
+* execution_allowed: false
+* apply_allowed: false
+* safety.approval_validation_only: true
+
 ## Current proof commands
 
 Run these from the repo root:
