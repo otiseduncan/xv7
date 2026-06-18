@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from core.api.schemas import AddMessageRequest
 from core.runtime.auth import require_api_key
 from core.runtime.schemas import SessionState
+from core.x_kernel.action_stager import apply_x_kernel_action_stage_to_session_state
 from core.x_kernel.tool_runner import apply_x_kernel_tool_result_to_session_state
 
 router = APIRouter()
@@ -50,8 +51,9 @@ async def add_session_message_route(
         raise RuntimeError("session message routes are not configured")
     handler = _add_message_handler_getter()
     session_state = await handler(session_id, payload)
+
     try:
-        return apply_x_kernel_tool_result_to_session_state(session_state)
+        session_state = apply_x_kernel_tool_result_to_session_state(session_state)
     except Exception as exc:
         metadata = dict(session_state.metadata)
         metadata["x_kernel_tool_result"] = {
@@ -65,7 +67,29 @@ async def add_session_message_route(
         }
         metadata["x_kernel_tool_runner"] = {
             "version": "v0",
-            "mode": "allowlisted_read_only_direct_functions",
+            "mode": "allowlisted_read_only_container_native",
+            "status": "error",
+        }
+        try:
+            session_state = _copy_session_state(session_state, metadata=metadata)
+        except Exception:
+            return session_state
+
+    try:
+        return apply_x_kernel_action_stage_to_session_state(session_state)
+    except Exception as exc:
+        metadata = dict(session_state.metadata)
+        metadata["x_kernel_action_stage"] = {
+            "executed": False,
+            "allowed": False,
+            "status": "error",
+            "reason": str(exc),
+            "approval_required": True,
+            "execution_allowed": False,
+        }
+        metadata["x_kernel_action_stager"] = {
+            "version": "v0",
+            "mode": "receipt_backed_pending_approval_only",
             "status": "error",
         }
         try:
