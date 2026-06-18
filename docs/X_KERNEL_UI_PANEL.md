@@ -7,10 +7,10 @@ This document records the first browser-facing X Kernel control panel.
 When the local Docker stack is running, open:
 
 ```text
-http://localhost:5173/x-kernel.html
+http://localhost:3000/x-kernel.html
 ```
 
-The page is served by the existing XV7 frontend container.
+The page is served by the existing XV7 frontend container. The frontend container is mapped from host port `3000` to container port `80` in `docker-compose.yml`.
 
 ## Auth path
 
