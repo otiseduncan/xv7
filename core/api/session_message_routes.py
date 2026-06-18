@@ -139,7 +139,10 @@ async def add_session_message_route(
             return session_state
 
     try:
-        return apply_x_kernel_action_stage_to_session_state(session_state)
+        return apply_x_kernel_action_stage_to_session_state(
+            session_state,
+            source_text=payload.raw_text,
+        )
     except Exception as exc:
         metadata = dict(session_state.metadata)
         metadata["x_kernel_action_stage"] = {
