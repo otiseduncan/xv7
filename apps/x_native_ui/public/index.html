@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>X Native Runtime</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020814;
+      --panel: #061326;
+      --panel2: #091a33;
+      --line: #16416d;
+      --text: #d8ecff;
+      --muted: #82a7c9;
+      --accent: #16a3ff;
+      --warn: #ffcc66;
+      --good: #63f59f;
+      --bad: #ff6b7a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #08274b, var(--bg) 40%);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Consolas, Monaco, monospace;
+      min-height: 100vh;
+    }
+    header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(2, 8, 20, 0.82);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    h1 { margin: 0; font-size: 18px; letter-spacing: .14em; text-transform: uppercase; }
+    .tag { color: var(--muted); font-size: 12px; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 460px) 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+    section {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(6, 19, 38, 0.92);
+      overflow: hidden;
+    }
+    .section-title {
+      padding: 12px 14px;
+      background: rgba(9, 26, 51, 0.95);
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+    .body { padding: 14px; }
+    textarea, input {
+      width: 100%;
+      background: #020b18;
+      border: 1px solid #1c5a92;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 12px;
+      font: inherit;
+      outline: none;
+    }
+    textarea { min-height: 145px; resize: vertical; }
+    label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 12px; }
+    button {
+      background: linear-gradient(180deg, #0d6faf, #094a78);
+      color: white;
+      border: 1px solid #22a8ff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      cursor: pointer;
+      margin: 6px 6px 0 0;
+    }
+    button.secondary { background: #10233f; border-color: #315c88; }
+    button.warn { background: #6c4a09; border-color: #d69c2f; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .statusline { color: var(--muted); margin-top: 8px; font-size: 12px; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+      line-height: 1.45;
+      font-size: 13px;
+    }
+    .console {
+      height: calc(100vh - 124px);
+      overflow: auto;
+      background: rgba(2, 8, 20, 0.62);
+    }
+    .event { border-bottom: 1px solid rgba(22, 65, 109, 0.6); padding: 12px 14px; }
+    .event .role { color: var(--accent); margin-bottom: 6px; }
+    .event.x .role { color: var(--good); }
+    .event.err .role { color: var(--bad); }
+    .pill { display: inline-block; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 4px 8px; margin: 4px 4px 0 0; font-size: 11px; }
+    @media (max-width: 920px) { main { grid-template-columns: 1fr; } .console { height: 55vh; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>X Native Runtime</h1>
+      <div class="tag">Clean baseline · no legacy session bridge · no old memory core</div>
+    </div>
+    <div id="health" class="tag">checking...</div>
+  </header>
+  <main>
+    <section>
+      <div class="section-title">Operator</div>
+      <div class="body">
+        <label for="message">Message to X Native</label>
+        <textarea id="message">diagnose yourself</textarea>
+        <button id="send">Send</button>
+        <button id="state" class="secondary">State</button>
+        <button id="latest-stage" class="secondary">Latest Stage</button>
+        <button id="latest-draft" class="secondary">Latest Draft</button>
+
+        <label for="stage-id">Stage ID</label>
+        <input id="stage-id" placeholder="filled after staging" />
+        <button id="preview">Preview Stage</button>
+
+        <label for="draft-content">Operator-reviewed draft content</label>
+        <textarea id="draft-content">This file was prepared inside clean X Native baseline. It is still draft-only and not applied.</textarea>
+        <button id="draft" class="warn">Create Draft Only</button>
+
+        <div class="statusline" id="statusline">ready</div>
+        <div style="margin-top:10px">
+          <span class="pill">API: /x-native</span>
+          <span class="pill">UI: :3100</span>
+          <span class="pill">API: :3101</span>
+          <span class="pill">Apply: locked</span>
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="section-title">Conversation / Receipts</div>
+      <div id="console" class="console"></div>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const consoleEl = $('console');
+    const statusLine = $('statusline');
+
+    function now() { return new Date().toISOString(); }
+    function setStatus(text) { statusLine.textContent = text; }
+    function log(role, body, cls = '') {
+      const item = document.createElement('div');
+      item.className = `event ${cls}`;
+      const pre = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+      item.innerHTML = `<div class="role">[${now()}] ${role}</div><pre></pre>`;
+      item.querySelector('pre').textContent = pre;
+      consoleEl.appendChild(item);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options,
+      });
+      const text = await response.text();
+      let data;
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      if (!response.ok) throw new Error(JSON.stringify(data, null, 2));
+      return data;
+    }
+    async function checkHealth() {
+      try {
+        const data = await api('/health');
+        $('health').textContent = `${data.runtime || 'X Native'} · ${data.status}`;
+      } catch (err) {
+        $('health').textContent = 'api unavailable';
+      }
+    }
+    async function sendMessage() {
+      const raw = $('message').value.trim();
+      if (!raw) return;
+      log('Operator', raw);
+      setStatus('sending...');
+      try {
+        const data = await api('/x-native/message', { method: 'POST', body: JSON.stringify({ raw_text: raw, operator_mode: false }) });
+        log('X Native', data.content || data);
+        if (data.stage && data.stage.stage_id) $('stage-id').value = data.stage.stage_id;
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function getState() {
+      setStatus('state...');
+      try { const data = await api('/x-native/state'); log('State', data); setStatus('state complete'); }
+      catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function latestStage() {
+      setStatus('latest stage...');
+      try {
+        const data = await api('/x-native/stages/latest');
+        log('Latest Stage', data);
+        if (data.stage && data.stage.stage_id) $('stage-id').value = data.stage.stage_id;
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function previewStage() {
+      const stageId = $('stage-id').value.trim();
+      if (!stageId) return log('Error', 'No stage ID selected.', 'err');
+      setStatus('preview...');
+      try {
+        const data = await api(`/x-native/stages/${encodeURIComponent(stageId)}/preview`, { method: 'POST', body: '{}' });
+        log('Preview', data.preview?.rendered_preview || data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function createDraft() {
+      const stageId = $('stage-id').value.trim();
+      if (!stageId) return log('Error', 'No stage ID selected.', 'err');
+      setStatus('draft...');
+      try {
+        const data = await api(`/x-native/stages/${encodeURIComponent(stageId)}/draft`, {
+          method: 'POST',
+          body: JSON.stringify({ content: $('draft-content').value })
+        });
+        log('Draft', data.draft?.rendered_draft || data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function latestDraft() {
+      setStatus('latest draft...');
+      try { const data = await api('/x-native/drafts/latest'); log('Latest Draft', data); setStatus(data.status || 'done'); }
+      catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    $('send').addEventListener('click', sendMessage);
+    $('state').addEventListener('click', getState);
+    $('latest-stage').addEventListener('click', latestStage);
+    $('preview').addEventListener('click', previewStage);
+    $('draft').addEventListener('click', createDraft);
+    $('latest-draft').addEventListener('click', latestDraft);
+    $('message').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
+    });
+    checkHealth();
+    log('System', 'X Native UI loaded. This page does not call legacy /sessions routes.');
+  </script>
+</body>
+</html>
