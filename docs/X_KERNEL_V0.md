@@ -15,6 +15,7 @@ It is the operating layer that the existing XV7/X chat route calls before decidi
 * core/x_kernel/tool_runner.py
 * core/x_kernel/action_stager.py
 * core/x_kernel/package_handoff.py
+* core/x_kernel/package_draft_review.py
 * scripts/xv7_kernel_probe.py
 
 ## Current decision object
@@ -201,6 +202,31 @@ That means the existing prompt runner cannot accidentally apply the draft with r
 * apply_allowed: false
 
 The package handoff route must reject stages that are not previewed and approval-validated first.
+
+## Package draft review routes
+
+Draft-review routes:
+
+```text
+GET /x-kernel/package-drafts
+GET /x-kernel/package-drafts/latest
+GET /x-kernel/package-drafts/{stage_id}
+```
+
+These routes read package draft artifacts from:
+
+```text
+data/x_inbox/drafts
+```
+
+They deliberately do not write to the executor queue and do not apply drafts. Draft review responses keep:
+
+* draft_only: true
+* review_only: true
+* not_in_pending_queue: true
+* is_executor_ready: false
+* execution_allowed: false
+* apply_allowed: false
 
 ## Current proof commands
 
