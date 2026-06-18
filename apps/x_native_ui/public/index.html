@@ -124,6 +124,7 @@
         <button id="state" class="secondary">State</button>
         <button id="latest-stage" class="secondary">Latest Stage</button>
         <button id="latest-draft" class="secondary">Latest Draft</button>
+        <button id="workspace-list" class="secondary">Workspace Drafts</button>
 
         <label for="stage-id">Stage ID</label>
         <input id="stage-id" placeholder="filled after staging" />
@@ -133,11 +134,18 @@
         <textarea id="draft-content">This file was prepared inside clean X Native baseline. It is still draft-only and not applied.</textarea>
         <button id="draft" class="warn">Create Draft Only</button>
 
+        <label for="workspace-path">Sandbox workspace path</label>
+        <input id="workspace-path" value="planner/x_native_plan.txt" />
+        <button id="workspace-draft" class="warn">Create Workspace Draft</button>
+
         <div class="statusline" id="statusline">ready</div>
         <div style="margin-top:10px">
           <span class="pill">API: /x-native</span>
           <span class="pill">UI: :3100</span>
           <span class="pill">API: :3101</span>
+          <span class="pill">Sandbox only</span>
+          <span class="pill">No repo write</span>
+          <span class="pill">No apply</span>
           <span class="pill">Apply: locked</span>
         </div>
       </div>
@@ -191,6 +199,10 @@
         const data = await api('/x-native/message', { method: 'POST', body: JSON.stringify({ raw_text: raw, operator_mode: false }) });
         log('X Native', data.content || data);
         if (data.stage && data.stage.stage_id) $('stage-id').value = data.stage.stage_id;
+        if (data.planner_proposal) {
+          if (data.planner_proposal.stage_id) $('stage-id').value = data.planner_proposal.stage_id;
+          log('Planner Proposal', data.planner_proposal);
+        }
         setStatus(data.status || 'done');
       } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
     }
@@ -236,17 +248,41 @@
       try { const data = await api('/x-native/drafts/latest'); log('Latest Draft', data); setStatus(data.status || 'done'); }
       catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
     }
+    async function createWorkspaceDraft() {
+      setStatus('workspace draft...');
+      const path = $('workspace-path').value.trim();
+      if (!path) return log('Error', 'No workspace path selected.', 'err');
+      try {
+        const data = await api('/x-native/workspace/draft', {
+          method: 'POST',
+          body: JSON.stringify({
+            path,
+            content: $('draft-content').value,
+            stage_id: $('stage-id').value.trim() || null
+          })
+        });
+        log('Workspace Draft', data);
+        setStatus(data.status || 'done');
+      } catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
+    async function listWorkspace() {
+      setStatus('workspace list...');
+      try { const data = await api('/x-native/workspace'); log('Workspace Drafts', data); setStatus(data.status || 'done'); }
+      catch (err) { log('Error', err.message, 'err'); setStatus('error'); }
+    }
     $('send').addEventListener('click', sendMessage);
     $('state').addEventListener('click', getState);
     $('latest-stage').addEventListener('click', latestStage);
     $('preview').addEventListener('click', previewStage);
     $('draft').addEventListener('click', createDraft);
     $('latest-draft').addEventListener('click', latestDraft);
+    $('workspace-draft').addEventListener('click', createWorkspaceDraft);
+    $('workspace-list').addEventListener('click', listWorkspace);
     $('message').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
     });
     checkHealth();
-    log('System', 'X Native UI loaded. This page does not call legacy /sessions routes.');
+    log('System', 'X Native UI loaded. Sandbox only. No repo write. No apply. This page does not call legacy /sessions routes.');
   </script>
 </body>
 </html>

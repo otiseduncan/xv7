@@ -1,8 +1,9 @@
 # X Native Baseline
 
-This is the clean X Native runtime baseline.
+This is the clean X Native runtime baseline and the new control baseline for X.
 
 It intentionally avoids the legacy XV7 session bridge, old memory core, Open WebUI integration, and legacy frontend routing.
+The old XV7 core is intentionally bypassed and will be mined later for useful pieces only.
 
 ## Services
 
@@ -48,7 +49,35 @@ Safe staging:
 create file native_test.txt
 ```
 
-The runtime can stage, preview, and draft. Apply/write execution is intentionally locked in this baseline.
+Planner:
+
+```text
+Inspect your runtime and propose the next repair needed to make this baseline production-ready. Stage only. Do not apply or write files.
+```
+
+The runtime can inspect, plan, stage, preview, and draft to sandbox workspace. Apply/write execution is intentionally locked in this baseline.
+
+## Current safety state
+
+Allowed:
+
+- inspect
+- plan
+- stage
+- preview
+- draft to sandbox workspace under `data/x_native/workspace`
+
+Not allowed:
+
+- repo apply
+- repo writes
+- shell execution from prompts
+
+Every planned/drafted action must keep:
+
+- `execution_allowed=false`
+- `apply_allowed=false`
+- `repo_write=false`
 
 ## What this stack does not use
 
