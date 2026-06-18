@@ -77,6 +77,13 @@ def _write_stage_receipt(stage: dict[str, Any]) -> tuple[Path, Path]:
     return latest, stamped
 
 
+def _clean_source_text(source_text: str | None) -> str:
+    text = str(source_text or "").strip()
+    if len(text) > 4000:
+        return text[:4000] + "\n...[truncated]"
+    return text
+
+
 def should_stage_x_kernel_action(decision: dict[str, Any]) -> bool:
     """Return true when a decision should be staged instead of executed."""
 
@@ -98,10 +105,17 @@ def should_stage_x_kernel_action(decision: dict[str, Any]) -> bool:
     )
 
 
-def stage_x_kernel_action(decision: dict[str, Any]) -> dict[str, Any]:
+def stage_x_kernel_action(
+    decision: dict[str, Any],
+    source_text: str | None = None,
+) -> dict[str, Any]:
     """Create a receipt-backed pending-approval stage for a kernel decision."""
 
     stage_id = str(uuid4())
+    clean_source_text = _clean_source_text(
+        source_text
+        or str(decision.get("source_text") or decision.get("user_request") or "")
+    )
     stage = {
         "receipt_type": "x_kernel_action_stage",
         "created_at": _utc_now(),
@@ -114,6 +128,8 @@ def stage_x_kernel_action(decision: dict[str, Any]) -> dict[str, Any]:
         "risk": str(decision.get("risk") or "unknown"),
         "route": str(decision.get("route") or "unknown"),
         "summary": str(decision.get("summary") or ""),
+        "source_text": clean_source_text,
+        "user_request": clean_source_text,
         "package_action": str(decision.get("package_action") or "none"),
         "command": decision.get("command") or [],
         "reasons": decision.get("reasons") or [],
@@ -135,6 +151,8 @@ def stage_x_kernel_action(decision: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_action_stage(stage: dict[str, Any]) -> str:
+    source_text = str(stage.get("source_text") or "").strip()
+    source_line = f"Source request: {source_text}\n" if source_text else ""
     return (
         "Action staging:\n"
         f"Status: {stage.get('status') or 'unknown'}\n"
@@ -142,6 +160,7 @@ def render_action_stage(stage: dict[str, Any]) -> str:
         f"Intent: {stage.get('intent') or 'unknown'}\n"
         f"Risk: {stage.get('risk') or 'unknown'}\n"
         f"Route: {stage.get('route') or 'unknown'}\n"
+        f"{source_line}"
         f"Execution allowed: {stage.get('execution_allowed')}\n"
         f"Approval required: {stage.get('approval_required')}\n"
         f"Proof: {stage.get('receipt_path') or 'none'}\n\n"
@@ -387,7 +406,10 @@ def prepare_x_kernel_action_stage_preview(
     }
 
 
-def apply_x_kernel_action_stage_to_session_state(session_state: SessionState) -> SessionState:
+def apply_x_kernel_action_stage_to_session_state(
+    session_state: SessionState,
+    source_text: str | None = None,
+) -> SessionState:
     """Attach staged-action metadata and replace visible text with the authority stage receipt."""
 
     decision = session_state.metadata.get("x_kernel_decision")
@@ -406,7 +428,7 @@ def apply_x_kernel_action_stage_to_session_state(session_state: SessionState) ->
     if last_message.metadata.get("x_kernel_action_stage"):
         return session_state
 
-    stage = stage_x_kernel_action(decision)
+    stage = stage_x_kernel_action(decision, source_text=source_text)
     next_content = render_action_stage(stage)
 
     next_metadata = dict(last_message.metadata)
