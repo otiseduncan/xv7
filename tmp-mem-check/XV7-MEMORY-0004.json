@@ -1,0 +1,21 @@
+{
+  "id": "XV7-MEMORY-0004",
+  "layer": "memory",
+  "status": "active",
+  "memory_type": "project_preference",
+  "content": "Otis wants no fake repo checks, no fake memory claims, and no hidden reasoning replay.",
+  "source": "user_explicit",
+  "confidence": 0.99,
+  "created_at": "2026-06-19T11:05:25.143439Z",
+  "updated_at": "2026-06-19T11:05:25.143439Z",
+  "supersedes": null,
+  "tags": [
+    "otis",
+    "repo",
+    "memory",
+    "reasoning",
+    "safety"
+  ],
+  "receipt_label": "Memory XV7-MEMORY-0004",
+  "pending_approval": false
+}

@@ -1,0 +1,18 @@
+{
+  "id": "XV7-MEMORY-0005",
+  "layer": "memory",
+  "status": "active",
+  "memory_type": "user_preference",
+  "content": "Otis wants receipts to stay compact.",
+  "source": "user_explicit",
+  "confidence": 0.95,
+  "created_at": "2026-06-19T11:05:25.145326Z",
+  "updated_at": "2026-06-19T11:05:25.145326Z",
+  "supersedes": null,
+  "tags": [
+    "otis",
+    "receipt"
+  ],
+  "receipt_label": "Memory XV7-MEMORY-0005",
+  "pending_approval": false
+}

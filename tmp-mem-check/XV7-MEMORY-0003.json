@@ -1,0 +1,19 @@
+{
+  "id": "XV7-MEMORY-0003",
+  "layer": "memory",
+  "status": "active",
+  "memory_type": "project_preference",
+  "content": "Otis prefers direct, honest, proof-based project updates.",
+  "source": "user_explicit",
+  "confidence": 0.98,
+  "created_at": "2026-06-19T11:05:25.143439Z",
+  "updated_at": "2026-06-19T11:05:25.143439Z",
+  "supersedes": null,
+  "tags": [
+    "otis",
+    "proof",
+    "updates"
+  ],
+  "receipt_label": "Memory XV7-MEMORY-0003",
+  "pending_approval": false
+}

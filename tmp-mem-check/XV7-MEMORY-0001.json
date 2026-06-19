@@ -1,0 +1,20 @@
+{
+  "id": "XV7-MEMORY-0001",
+  "layer": "memory",
+  "status": "active",
+  "memory_type": "project_preference",
+  "content": "Otis wants fresh XV7 knowledge, not copied XV6.1 knowledge.",
+  "source": "user_explicit",
+  "confidence": 0.98,
+  "created_at": "2026-06-19T11:05:25.143439Z",
+  "updated_at": "2026-06-19T11:05:25.143439Z",
+  "supersedes": null,
+  "tags": [
+    "otis",
+    "xv7",
+    "knowledge",
+    "fresh"
+  ],
+  "receipt_label": "Memory XV7-MEMORY-0001",
+  "pending_approval": false
+}

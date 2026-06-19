@@ -1,0 +1,19 @@
+{
+  "id": "XV7-MEMORY-0002",
+  "layer": "memory",
+  "status": "active",
+  "memory_type": "workflow_note",
+  "content": "XV6.1 may be used as historical reference only.",
+  "source": "user_explicit",
+  "confidence": 0.96,
+  "created_at": "2026-06-19T11:05:25.143439Z",
+  "updated_at": "2026-06-19T11:05:25.143439Z",
+  "supersedes": null,
+  "tags": [
+    "xv6.1",
+    "reference",
+    "workflow"
+  ],
+  "receipt_label": "Memory XV7-MEMORY-0002",
+  "pending_approval": false
+}
