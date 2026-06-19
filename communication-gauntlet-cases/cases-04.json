@@ -1,0 +1,544 @@
+{
+  "cases": [
+    {
+      "id": "model_limits-068",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What can a 7B model not do reliably no matter how good the prompt is?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-069",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Where does Qwen Coder beat Llama for this project?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-070",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Where does Llama Instruct beat coder models for conversation?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-071",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "How do we detect model failure versus prompt failure?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-072",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What should the fallback be when the local model gives a dumb answer?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-073",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Can you hear me through the UI?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-074",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Why did the answer stop halfway?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-075",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Did the preview open or did it just say it opened?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-076",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Where should I see the artifact?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-077",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Why is the button stuck after sending?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-078",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What should the UI show while you're thinking?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-079",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "How should errors appear in the browser?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser_ui-080",
+      "category": "browser_ui",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What should happen if speech output fails?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-001",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "It ain't talking right.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-002",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Why does she sound dumb when I ask something simple?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-003",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "I need you to understand context without me spelling every little thing out.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-004",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Don't ask me five questions. Make a best effort.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-005",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "You keep routing me wrong. What lane is this request?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-006",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "The browser proof passed but the brain still feels off. What does that imply?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-007",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me a plan but don't make it a giant essay.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-008",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What would Grok or Claude do differently on this answer?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-009",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "How do we tell the difference between prompt failure and retrieval failure?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-010",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "When should X ask for clarification?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-011",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "When should X stop asking and just do the work?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-012",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Can we make this flexible or do I need to talk like a programmer?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-013",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Why does it miss obvious context?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-014",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What does a good answer look like for a frustrated user?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-015",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What would you log to debug a bad answer?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-016",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "How do we score whether it understood me?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-017",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me the next repair if this answer is vague.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-018",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Tell me whether this is brain, UI, or model.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-019",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Stop saying you did things. Tell me what you can prove.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "realistic-020",
+      "category": "realistic_user_language",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What would be the fastest way to expose weak spots?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -921,9 +921,20 @@ async def add_session_message(
             "reasons": ["x_kernel_exception"],
         }
 
-    x_kernel_visible_intents = {"state", "diagnose", "readiness", "proof", "x_prompt_package"}
+    x_kernel_visible_bridge_enabled = (
+        os.getenv("XV7_X_KERNEL_VISIBLE_BRIDGE", "0") == "1"
+    )
+    x_kernel_visible_intents = {
+        "state",
+        "diagnose",
+        "readiness",
+        "proof",
+        "x_prompt_package",
+    }
     x_kernel_decision_metadata = session_state.metadata.get("x_kernel_decision")
     if (
+        x_kernel_visible_bridge_enabled
+        and
         isinstance(x_kernel_decision_metadata, dict)
         and x_kernel_decision_metadata.get("intent") in x_kernel_visible_intents
     ):
@@ -974,7 +985,20 @@ async def add_session_message(
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=_merge_focus_context_receipt(
-                {}, session_state.metadata
+                {
+                    "compact": "Context receipt: System prompt identity policy.",
+                    "context_receipts": [
+                        {
+                            "layer": "system_prompt",
+                            "record_id": "XV7-SYSTEM-0001",
+                            "source": "brain_policy",
+                            "persistence": "session+runtime",
+                            "status": "active",
+                        }
+                    ],
+                    "record_ids": ["XV7-SYSTEM-0001"],
+                },
+                session_state.metadata,
             ),
             operator_receipts=[],
             memory_receipts=[],
@@ -1043,7 +1067,20 @@ async def add_session_message(
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,
             context_receipt=_merge_focus_context_receipt(
-                {}, session_state.metadata
+                {
+                    "compact": "Context receipt: System prompt identity policy.",
+                    "context_receipts": [
+                        {
+                            "layer": "system_prompt",
+                            "record_id": "XV7-SYSTEM-0001",
+                            "source": "brain_policy",
+                            "persistence": "session+runtime",
+                            "status": "active",
+                        }
+                    ],
+                    "record_ids": ["XV7-SYSTEM-0001"],
+                },
+                session_state.metadata,
             ),
             operator_receipts=[],
             memory_receipts=[],
@@ -1772,7 +1809,10 @@ async def add_session_message(
             if learning_layer == BrainLayer.KNOWLEDGE
             else "communication preference"
         )
-        visible_text = f"Understood. I saved that as a {learning_label} and will apply it going forward."
+        visible_text = (
+            f"Understood. I saved that as a {learning_label}. "
+            "I will keep that preference going forward."
+        )
 
         assistant_payload = build_assistant_payload(
             visible_text=visible_text,

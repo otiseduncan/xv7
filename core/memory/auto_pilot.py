@@ -522,7 +522,10 @@ class MemoryAutoPilotService:
         if "code artifact" in normalized or "previewable true" in normalized:
             return MemorySignal.no_memory
 
-        if MemoryAutoPilotService.COMMAND_MEMORY_EXCLUSION_PATTERN.search(normalized):
+        if (
+            MemoryAutoPilotService.COMMAND_MEMORY_EXCLUSION_PATTERN.search(normalized)
+            and not MemoryAutoPilotService.COMMUNICATION_PATTERN.search(normalized)
+        ):
             return MemorySignal.no_memory
 
         if any(

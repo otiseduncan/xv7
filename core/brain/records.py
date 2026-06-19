@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from core.brain.schema import BrainLayer, BrainRecord
 
@@ -77,14 +78,52 @@ class BrainRecordLoader:
             ) from exc
 
     @staticmethod
-    def _load_dir_records(records_dir: Path) -> dict[str, BrainRecord]:
+    def _normalize_legacy_fact_source_type(source_type: Any) -> Any:
+        if source_type == "repo_verified":
+            return "inferred"
+        return source_type
+
+    @staticmethod
+    def _normalize_legacy_memory_type(memory_type: Any) -> Any:
+        if memory_type == "status_correction":
+            return "diagnostic_rule"
+        return memory_type
+
+    @classmethod
+    def _normalize_legacy_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        normalized["memory_type"] = cls._normalize_legacy_memory_type(
+            normalized.get("memory_type")
+        )
+
+        facts_raw = normalized.get("facts")
+        if isinstance(facts_raw, list):
+            normalized_facts: list[Any] = []
+            for fact in facts_raw:
+                if not isinstance(fact, dict):
+                    normalized_facts.append(fact)
+                    continue
+                fact_copy = dict(fact)
+                fact_copy["source_type"] = cls._normalize_legacy_fact_source_type(
+                    fact_copy.get("source_type")
+                )
+                normalized_facts.append(fact_copy)
+            normalized["facts"] = normalized_facts
+
+        return normalized
+
+    @classmethod
+    def _load_dir_records(
+        cls, records_dir: Path
+    ) -> dict[str, BrainRecord]:
         if not records_dir.exists():
             return {}
 
         records: dict[str, BrainRecord] = {}
         for path in sorted(records_dir.glob("*.json")):
             payload = json.loads(path.read_text(encoding="utf-8"))
-            record = BrainRecord.model_validate(payload)
+            normalized_payload = cls._normalize_legacy_payload(payload)
+            record = BrainRecord.model_validate(normalized_payload)
             records[record.record_id] = record
         return records
 

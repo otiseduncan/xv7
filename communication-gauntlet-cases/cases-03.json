@@ -1,0 +1,608 @@
+{
+  "cases": [
+    {
+      "id": "current_context-033",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What are we working on right now?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-034",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What was the last thing I asked you to fix?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-035",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What is the current baseline goal?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-036",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What should you avoid doing during this stabilization pass?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-037",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What does 'commercial baseline' mean in this project?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-038",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Which commits just went live?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-039",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What tests proved the baseline change?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "current_context-040",
+      "category": "current_context",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What dirty files remain locally?",
+          "expect": {
+            "must_include_any": [
+              "baseline",
+              "commercial",
+              "GitHub",
+              "test",
+              "current"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-041",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "yeah do that",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-042",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "no not that",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-043",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "again",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-044",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "same as before",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-045",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "you know what I mean",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-046",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "that ain't it",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-047",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "make it right",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "edge_case-048",
+      "category": "edge_case",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "go deeper",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-049",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Be blunt: do we need a better model or better orchestration?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-050",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Don't flatter me; diagnose the system.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-051",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Tell me what is broken in the communication layer.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-052",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What would a senior engineer fix next?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-053",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me the no-BS version.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-054",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What part is model limitation and what part is bad wiring?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-055",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Should we test with Qwen coder or Llama instruct for this?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tone_directness-056",
+      "category": "tone_directness",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "If the local model is weak, can routing and prompt still hide it?",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-057",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Answer with exactly two numbered steps.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-058",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me a table with Risk, Symptom, Fix.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-059",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me only the command I should run next.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-060",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Explain in one paragraph, no bullets.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-061",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Use headings: Diagnosis, Fix, Validation.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-062",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me a 5-line status report.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-063",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Give me a JSON object with keys diagnosis, next_test, risk.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "format_following-064",
+      "category": "format_following",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Answer with PASS or FAIL and one sentence.",
+          "expect": {
+            "must_not_include_any": [
+              "as an AI language model"
+            ],
+            "max_chars": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-065",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "Am I up against model limitations or can orchestration fix this?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-066",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "How much does quantization hurt reasoning?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model_limits-067",
+      "category": "model_limits",
+      "notes": "",
+      "turns": [
+        {
+          "prompt": "What model profile should a coding operator use?",
+          "expect": {
+            "must_include_any": [
+              "model",
+              "prompt",
+              "orchestration"
+            ],
+            "must_not_include_any": [
+              "as an AI language model"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

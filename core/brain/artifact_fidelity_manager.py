@@ -362,7 +362,7 @@ class ArtifactFidelityManager:
         retry_requirements = retry_requirements or []
         retry_line = "Output only source code that satisfies all constraints below."
         if strict_retry:
-            retry_line = "This is a retry because the first draft failed validation. Be stricter and fix every missing requirement explicitly."
+            retry_line = "This is a retry because the first draft failed validation. Missing requirements: fix every missing requirement explicitly."
             if retry_requirements:
                 retry_line += (
                     " Missing requirements: " + "; ".join(retry_requirements) + "."

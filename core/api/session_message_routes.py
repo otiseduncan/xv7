@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Awaitable, Callable
 from uuid import UUID
 
@@ -278,6 +279,13 @@ async def add_session_message_route(
         raise RuntimeError("session message routes are not configured")
     handler = _add_message_handler_getter()
     session_state = await handler(session_id, payload)
+
+    x_kernel_route_bridge_enabled = (
+        os.getenv("XV7_X_KERNEL_ROUTE_BRIDGE", "0") == "1"
+    )
+
+    if not x_kernel_route_bridge_enabled:
+        return session_state
 
     try:
         session_state = apply_x_kernel_tool_result_to_session_state(session_state)

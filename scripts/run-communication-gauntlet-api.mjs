@@ -21,6 +21,23 @@ const API_KEY = process.env.XV7_API_KEY || "test-secret";
 const OUT_DIR = process.env.OUT_DIR || path.join(ROOT, "test-results", "communication-gauntlet");
 const LIMIT = Number.parseInt(process.env.LIMIT || "0", 10);
 
+async function loadCaseSuite(casesPath) {
+  const suite = JSON.parse(await fs.readFile(casesPath, "utf8"));
+  if (Array.isArray(suite.cases)) {
+    return suite;
+  }
+  const caseFiles = Array.isArray(suite.case_files) ? suite.case_files : [];
+  const baseDir = path.dirname(casesPath);
+  const chunks = await Promise.all(
+    caseFiles.map(async (caseFile) => {
+      const chunkPath = path.isAbsolute(caseFile) ? caseFile : path.join(baseDir, caseFile);
+      const chunk = JSON.parse(await fs.readFile(chunkPath, "utf8"));
+      return Array.isArray(chunk.cases) ? chunk.cases : [];
+    }),
+  );
+  return { ...suite, cases: chunks.flat() };
+}
+
 function includesAny(text, needles = []) {
   const lower = String(text || "").toLowerCase();
   return needles.some((n) => lower.includes(String(n).toLowerCase()));
@@ -94,7 +111,7 @@ function scoreTurn(text, expect = {}) {
 
 async function main() {
   await fs.mkdir(OUT_DIR, { recursive: true });
-  const suite = JSON.parse(await fs.readFile(CASES_PATH, "utf8"));
+  const suite = await loadCaseSuite(CASES_PATH);
   const cases = LIMIT > 0 ? suite.cases.slice(0, LIMIT) : suite.cases;
   const results = [];
   let pass = 0, fail = 0, error = 0;
