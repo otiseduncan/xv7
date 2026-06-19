@@ -487,10 +487,14 @@ def _is_patch_apply_request(cls, normalized_question: str) -> bool:
 
 @classmethod
 def _is_post_apply_verify_request(cls, normalized_question: str) -> bool:
+    if normalized_question == "verify it":
+        return True
     return bool(cls.ARTIFACT_POST_APPLY_VERIFY_PATTERN.search(normalized_question))
 
 @classmethod
 def _is_post_apply_preview_request(cls, normalized_question: str) -> bool:
+    if normalized_question == "preview it":
+        return True
     return bool(cls.ARTIFACT_POST_APPLY_PREVIEW_PATTERN.search(normalized_question))
 
 @classmethod

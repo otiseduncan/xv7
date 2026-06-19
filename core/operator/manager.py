@@ -344,6 +344,8 @@ class OperatorManager:
         if normalized in {
             "show the last operator receipt.",
             "show the last operator receipt",
+            "show last operator receipt.",
+            "show last operator receipt",
         }:
             latest = latest_action(session_metadata)
             if latest is None:

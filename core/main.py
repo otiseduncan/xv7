@@ -113,6 +113,11 @@ from core.api.session_message_routes import configure_session_message_routes
 from core.agents.base_agent import BaseAgent
 from core.brain.manager import BrainContextManager
 from core.brain.schema import BrainLayer, BrainRecord
+from core.kernel import (
+    KernelModeResolver,
+    KernelRuntimeDependencies,
+    XoduzApplicationKernel,
+)
 from core.memory.auto_pilot import MemoryAutoPilotService, MemoryDecisionState
 from core.memory.manager import PersistentMemoryManager
 from core.operator.history import append_history, get_history
@@ -753,6 +758,32 @@ memory_auto_pilot = MemoryAutoPilotService()
 _operator_repo_root = resolve_operator_repo_root()
 operator_manager = OperatorManager(repo_root=_operator_repo_root)
 
+
+def _build_xoduz_kernel() -> XoduzApplicationKernel:
+    kernel_resolution_dependencies = KernelRuntimeDependencies(
+        answer_contract=brain_context_manager.answer_contract,
+        operator_manager=operator_manager,
+        persistent_memory_manager=persistent_memory_manager,
+        memory_auto_pilot=memory_auto_pilot,
+        classify_speech_act=_classify_speech_act,
+        extract_active_focus_instruction=_extract_active_focus_instruction,
+        active_focus_candidate_checker=_is_active_focus_candidate,
+        is_runtime_clock_question=_is_runtime_clock_question,
+        normalize_text=_normalize_intent_text,
+    )
+    return XoduzApplicationKernel(
+        mode_resolver=KernelModeResolver(),
+        resolution_dependencies=kernel_resolution_dependencies,
+        execute_resolved=lambda session_id, payload, resolved_mode, kernel_plan: _legacy_add_session_message(
+            session_id,
+            payload,
+            resolved_mode=resolved_mode,
+            kernel_plan=kernel_plan,
+        ),
+        load_session=memory_manager.get_session,
+        normalize_message=_normalize_intent_text,
+    )
+
 configure_runtime_routes(
     build_runtime_status=build_runtime_status,
     fetch_ollama_status=fetch_ollama_status,
@@ -887,6 +918,16 @@ async def add_session_message(
     session_id: UUID,
     payload: AddMessageRequest,
 ) -> SessionState:
+    return await _build_xoduz_kernel().handle_request(session_id, payload)
+
+
+async def _legacy_add_session_message(
+    session_id: UUID,
+    payload: AddMessageRequest,
+    *,
+    resolved_mode: str | None = None,
+    kernel_plan: dict[str, Any] | None = None,
+) -> SessionState:
     """Run a full user -> inference -> assistant memory round trip."""
     user_state = await memory_manager.add_message(
         session_id=session_id,
@@ -897,6 +938,11 @@ async def add_session_message(
     user_role = user_state.messages[-1].role
 
     session_state = await memory_manager.get_session(session_id)
+    resolved_mode = str(resolved_mode or "legacy_auto").strip() or "legacy_auto"
+    kernel_reason = str((kernel_plan or {}).get("reason") or "").strip()
+    session_state.metadata["kernel_mode"] = resolved_mode
+    if isinstance(kernel_plan, dict) and kernel_plan:
+        session_state.metadata["kernel_plan"] = kernel_plan
     session_state.metadata["operator_mode_enabled"] = bool(payload.operator_mode)
     resolved_focus = _resolve_effective_active_focus(session_state.metadata)
     if isinstance(resolved_focus, dict):
@@ -933,6 +979,8 @@ async def add_session_message(
     }
     x_kernel_decision_metadata = session_state.metadata.get("x_kernel_decision")
     if (
+        resolved_mode in {"legacy_auto", "status"}
+        and
         x_kernel_visible_bridge_enabled
         and
         isinstance(x_kernel_decision_metadata, dict)
@@ -1032,7 +1080,7 @@ async def add_session_message(
         session_state.metadata[key] = value
 
     normalized_fast_policy_text = _normalize_intent_text(payload.raw_text)
-    if normalized_fast_policy_text in {
+    if resolved_mode in {"legacy_auto", "unknown_safe_chat"} and normalized_fast_policy_text in {
         "what is your name?",
         "what is your name",
         "whats your name?",
@@ -1109,7 +1157,7 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
-    if auto_decision.state in {
+    if resolved_mode in {"legacy_auto", "normal_chat", "learning_preference"} and auto_decision.state in {
         MemoryDecisionState.save_active,
         MemoryDecisionState.save_pending_review,
         MemoryDecisionState.ask_clarification,
@@ -1476,7 +1524,7 @@ async def add_session_message(
         payload.raw_text
     )
 
-    if is_first_class_operator_prompt and not is_post_apply_targeted_validation_prompt:
+    if resolved_mode in {"legacy_auto", "normal_chat", "status", "operator", "protected_confirmation"} and is_first_class_operator_prompt and not is_post_apply_targeted_validation_prompt:
         github_operator_action = operator_manager.try_handle_chat(
             payload.raw_text,
             session_metadata=session_state.metadata,
@@ -1485,7 +1533,7 @@ async def add_session_message(
         if github_operator_action is not None:
             return await _store_operator_response(github_operator_action)
 
-    if is_v1e_operator_prompt and not is_post_apply_targeted_validation_prompt:
+    if resolved_mode in {"legacy_auto", "normal_chat", "status", "operator", "protected_confirmation"} and is_v1e_operator_prompt and not is_post_apply_targeted_validation_prompt:
         early_operator_action = operator_manager.try_handle_chat(
             payload.raw_text,
             session_metadata=session_state.metadata,
@@ -1494,7 +1542,25 @@ async def add_session_message(
         if early_operator_action is not None:
             return await _store_operator_response(early_operator_action)
 
-    if _is_runtime_clock_question(payload.raw_text):
+    if (
+        any(
+            phrase in normalized_fast_policy_text
+            for phrase in (
+                "what did you just check",
+                "last operator receipt",
+                "operator actions have run",
+            )
+        )
+    ):
+        history_operator_action = operator_manager.try_handle_chat(
+            payload.raw_text,
+            session_metadata=session_state.metadata,
+            operator_mode_enabled=operator_mode_enabled,
+        )
+        if history_operator_action is not None:
+            return await _store_operator_response(history_operator_action)
+
+    if resolved_mode in {"legacy_auto", "status"} and _is_runtime_clock_question(payload.raw_text):
         visible_text, clock_context_receipt = _runtime_clock_answer()
         policy_provenance = {
             "answer_source": "brain_policy",
@@ -1543,7 +1609,7 @@ async def add_session_message(
         payload.raw_text,
         brain_context_manager.loader.load_records(),
     )
-    if learned_rule_answer is not None and learned_rule_record is not None:
+    if resolved_mode not in {"operator", "preview", "build", "export", "artifact_revision"} and learned_rule_answer is not None and learned_rule_record is not None:
         visible_text = sanitize_visible_answer_text(learned_rule_answer.strip())
         record_id = learned_rule_record.record_id
         policy_provenance = {
@@ -1603,7 +1669,7 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
-    if intent_class in {
+    if resolved_mode in {"legacy_auto", "normal_chat", "learning_preference"} and intent_class in {
         "user_correction",
         "communication_preference",
         "workflow_habit_learning",
@@ -1924,7 +1990,126 @@ async def add_session_message(
         or prioritize_artifact_over_build_guard
     )
 
-    if is_artifact_patch_lane_prompt and active_focus_instruction is None:
+    if normalized_question in {"verify it", "preview it"}:
+        applied = brain_context_manager.answer_contract._latest_applied_patch_proposal(
+            session_state.messages,
+            session_state.metadata,
+        )
+        if applied is None:
+            visible_text = "I do not have an applied patch to verify in this session."
+            artifact_patch_proposal: dict[str, Any] = {}
+            artifact_provenance = {
+                "artifact_patch": "post_apply_unavailable",
+                "applied": False,
+                "requires_confirmation": True,
+                "failure_reason": "no_applied_patch",
+            }
+        elif normalized_question == "verify it":
+            target_path = str(applied.get("target_path") or "")
+            preview_path = str(applied.get("preview_path") or f"/{target_path}")
+            verification, _verify_data = (
+                brain_context_manager.answer_contract._verify_applied_patch_content(
+                    proposal=applied,
+                    include_business_name=True,
+                )
+            )
+            artifact_patch_proposal = (
+                brain_context_manager.answer_contract._applied_patch_with_runtime_fields(
+                    proposal=applied,
+                    verification=verification,
+                    preview_path=preview_path,
+                )
+            )
+            checks_raw = verification.get("checks")
+            failures_raw = verification.get("failures")
+            checks_total = len(checks_raw) if isinstance(checks_raw, list) else 0
+            failures_total = len(failures_raw) if isinstance(failures_raw, list) else 0
+            visible_text = (
+                f"Post-apply verification {'passed' if verification.get('status') == 'passed' else 'failed'} for {target_path}. "
+                f"Checked {checks_total} items with {failures_total} failure(s)."
+            )
+            artifact_provenance = {
+                "artifact_patch": "post_apply_verified",
+                "applied": True,
+                "requires_confirmation": True,
+                "target_path": target_path,
+                "preview_path": preview_path,
+                "verification_status": verification.get("status"),
+                "tests_run": False,
+                "commit_created": False,
+                "push_performed": False,
+            }
+        else:
+            target_path = str(applied.get("target_path") or "")
+            preview_path = str(applied.get("preview_path") or f"/{target_path}")
+            artifact_patch_proposal = (
+                brain_context_manager.answer_contract._applied_patch_with_runtime_fields(
+                    proposal=applied,
+                    preview_path=preview_path,
+                )
+            )
+            visible_text = (
+                f"Preview path is {preview_path}. If the local app is running, open that route in your browser to view {target_path}."
+            )
+            artifact_provenance = {
+                "artifact_patch": "post_apply_preview",
+                "applied": True,
+                "requires_confirmation": True,
+                "target_path": target_path,
+                "preview_path": preview_path,
+                "tests_run": False,
+                "commit_created": False,
+                "push_performed": False,
+            }
+
+        assistant_payload = build_assistant_payload(
+            visible_text=visible_text,
+            context_receipt={
+                "compact": "Memory: -; Knowledge: -; Focus: -; Proof: artifact-patch-post-apply",
+                "context_receipts": [],
+                "record_ids": [],
+            },
+            operator_receipts=[],
+            memory_receipts=[],
+            model_use_receipt={},
+            policy_provenance={
+                "answer_source": "brain_policy",
+                "policy_source": "answer_contract",
+                "brain_answer_source": "code_artifact_request",
+                "request_id": str(uuid4()),
+                "session_id": str(session_id),
+                "runtime_model_inference_proven": False,
+                **artifact_provenance,
+            },
+            warnings=[],
+            action_history_refs=action_history_refs,
+            artifact_patch_proposal=artifact_patch_proposal,
+        )
+        updated_state = await memory_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            raw_text=visible_text,
+            message_metadata=assistant_payload,
+        )
+        assistant_message = updated_state.messages[-1]
+        vector_memory_receipt = await persist_vector_memory_round_trip(
+            vector_store,
+            session_id=str(session_id),
+            user_role=user_role,
+            user_content=user_visible_content,
+            assistant_role=assistant_message.role,
+            assistant_content=assistant_message.content,
+        )
+        updated_state.metadata["answer_provenance"] = assistant_payload[
+            "policy_provenance"
+        ]
+        updated_state.metadata["vector_memory"] = vector_memory_receipt
+        updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+        updated_state.metadata["last_assistant_payload"] = assistant_payload
+        await memory_manager.update_session(updated_state)
+        return updated_state
+
+    if resolved_mode in {"legacy_auto", "preview", "build", "export", "artifact_revision"} and is_artifact_patch_lane_prompt and active_focus_instruction is None:
         brain_context = brain_context_manager.build_context_for_question(
             payload.raw_text
         )
@@ -2066,7 +2251,18 @@ async def add_session_message(
             return updated_state
 
     if (
-        intent_class == "implementation_task"
+        (
+            resolved_mode in {"legacy_auto", "coding"}
+            or (
+                resolved_mode == "protected_confirmation"
+                and kernel_reason == "implementation_repo_mutation_guard"
+            )
+        )
+        and
+        (
+            intent_class == "implementation_task"
+            or kernel_reason == "implementation_repo_mutation_guard"
+        )
         and not is_artifact_patch_lane_prompt
         and not prioritize_artifact_over_build_guard
     ):
@@ -2115,6 +2311,8 @@ async def add_session_message(
 
     active_focus_instruction = _extract_active_focus_instruction(payload.raw_text)
     if (
+        resolved_mode in {"legacy_auto", "normal_chat", "memory_context"}
+        and
         _is_active_focus_candidate(payload.raw_text)
         and active_focus_instruction is None
     ):
@@ -2184,6 +2382,8 @@ async def add_session_message(
         return updated_state
 
     if (
+        resolved_mode in {"legacy_auto", "normal_chat", "memory_context"}
+        and
         _is_communication_workflow_focus(session_state.metadata)
         and _is_focus_guided_follow_up(payload.raw_text)
         and not _is_local_scan_or_operator_prompt(payload.raw_text)
@@ -2258,7 +2458,7 @@ async def add_session_message(
         await memory_manager.update_session(updated_state)
         return updated_state
 
-    if active_focus_instruction is not None:
+    if resolved_mode in {"legacy_auto", "normal_chat", "memory_context"} and active_focus_instruction is not None:
         if _is_unclear_focus_instruction(active_focus_instruction):
             visible_text = (
                 "I heard an Active Focus change, but it is still too broad. "
@@ -2704,7 +2904,7 @@ async def add_session_message(
         session_metadata=session_state.metadata,
         operator_mode_enabled=operator_mode_enabled,
     )
-    if operator_action is not None:
+    if resolved_mode in {"legacy_auto", "normal_chat", "status", "operator", "protected_confirmation", "memory_context"} and operator_action is not None:
         visible_text = sanitize_visible_answer_text(operator_action.answer.strip())
         assistant_output = visible_text
         structured_receipt = operator_action.result.structured_receipt()
@@ -2797,6 +2997,62 @@ async def add_session_message(
         )
     )
     if (
+        resolved_mode in {"legacy_auto", "normal_chat", "status", "operator", "protected_confirmation", "memory_context"}
+        and is_explicit_commit_approval
+        and normalized_for_commit_check in {"commit it", "push it"}
+    ):
+        pending_commit = brain_context_manager.answer_contract._latest_pending_commit_proposal(
+            session_state.messages,
+            session_state.metadata,
+        )
+        if pending_commit is None:
+            visible_text = (
+                "I do not have a pending commit proposal to approve in this session."
+            )
+            assistant_payload = build_assistant_payload(
+                visible_text=visible_text,
+                context_receipt=_merge_focus_context_receipt({}, session_state.metadata),
+                operator_receipts=[],
+                memory_receipts=[],
+                model_use_receipt={},
+                policy_provenance={
+                    "answer_source": "brain_policy",
+                    "policy_source": "answer_contract",
+                    "brain_answer_source": "commit_proposal_request",
+                    "request_id": str(uuid4()),
+                    "session_id": str(session_id),
+                    "runtime_model_inference_proven": False,
+                    "commit_proposal": "approval_refused",
+                    "failure_reason": "no_pending_commit_proposal",
+                },
+                warnings=[],
+                action_history_refs=action_history_refs,
+                commit_proposal={},
+            )
+            updated_state = await memory_manager.add_message(
+                session_id=session_id,
+                role="assistant",
+                raw_text=visible_text,
+                message_metadata=assistant_payload,
+            )
+            assistant_message = updated_state.messages[-1]
+            vector_memory_receipt = await persist_vector_memory_round_trip(
+                vector_store,
+                session_id=str(session_id),
+                user_role=user_role,
+                user_content=user_visible_content,
+                assistant_role=assistant_message.role,
+                assistant_content=assistant_message.content,
+            )
+            updated_state.metadata["answer_provenance"] = assistant_payload[
+                "policy_provenance"
+            ]
+            updated_state.metadata["vector_memory"] = vector_memory_receipt
+            updated_state.metadata["context_receipt"] = assistant_payload["context_receipt"]
+            updated_state.metadata["last_assistant_payload"] = assistant_payload
+            await memory_manager.update_session(updated_state)
+            return updated_state
+    if (
         _is_build_follow_up_prompt(payload.raw_text)
         and _lacks_verified_operator_success(session_state.metadata)
         and not is_explicit_commit_approval
@@ -2850,7 +3106,7 @@ async def add_session_message(
         payload.raw_text,
         session_metadata=session_state.metadata,
     )
-    if memory_action is not None:
+    if resolved_mode in {"legacy_auto", "normal_chat", "memory_context"} and memory_action is not None:
         visible_text = sanitize_visible_answer_text(memory_action.answer.strip())
         assistant_output = visible_text
 
@@ -2906,7 +3162,7 @@ async def add_session_message(
         payload.raw_text,
         learned_records,
     )
-    if learned_rule_answer is not None and learned_rule_record is not None:
+    if resolved_mode not in {"operator", "preview", "build", "export", "artifact_revision"} and learned_rule_answer is not None and learned_rule_record is not None:
         visible_text = sanitize_visible_answer_text(learned_rule_answer.strip())
         record_id = learned_rule_record.record_id
         policy_provenance = {
@@ -2971,76 +3227,78 @@ async def add_session_message(
         0,
         ConversationMessage(role="system", content=brain_context.prompt),
     )
-    try:
-        artifact_response = await brain_context_manager.code_artifact_response(
-            payload.raw_text,
-            session_messages=[
-                msg.model_dump(mode="json") for msg in session_state.messages
-            ],
-            session_metadata=session_state.metadata,
-        )
-    except RuntimeError as artifact_error:
-        artifact_error_text = str(artifact_error).lower()
-        if (
-            "artifact revision failed validation" in artifact_error_text
-            or "artifact generation failed validation" in artifact_error_text
-        ):
-            brain_answer_source = (
-                "artifact_revision_error"
-                if "artifact revision failed validation" in artifact_error_text
-                else "artifact_generation_error"
-            )
-            visible_text = sanitize_visible_answer_text(str(artifact_error).strip())
-            assistant_payload = build_assistant_payload(
-                visible_text=visible_text,
-                context_receipt=_merge_focus_context_receipt(
-                    brain_context.receipt, session_state.metadata
-                ),
-                operator_receipts=[],
-                memory_receipts=[],
-                model_use_receipt={},
-                policy_provenance={
-                    "answer_source": "brain_policy",
-                    "policy_source": "answer_contract",
-                    "brain_answer_source": brain_answer_source,
-                    "request_id": str(uuid4()),
-                    "session_id": str(session_id),
-                    "runtime_model_inference_proven": False,
-                },
-                warnings=[],
-                action_history_refs=[
-                    str(item.get("action_id", ""))
-                    for item in get_history(session_state.metadata)[-5:]
-                    if isinstance(item, dict) and str(item.get("action_id", ""))
+    artifact_response = None
+    if resolved_mode in {"legacy_auto", "preview", "build", "export", "artifact_revision"}:
+        try:
+            artifact_response = await brain_context_manager.code_artifact_response(
+                payload.raw_text,
+                session_messages=[
+                    msg.model_dump(mode="json") for msg in session_state.messages
                 ],
+                session_metadata=session_state.metadata,
             )
+        except RuntimeError as artifact_error:
+            artifact_error_text = str(artifact_error).lower()
+            if (
+                "artifact revision failed validation" in artifact_error_text
+                or "artifact generation failed validation" in artifact_error_text
+            ):
+                brain_answer_source = (
+                    "artifact_revision_error"
+                    if "artifact revision failed validation" in artifact_error_text
+                    else "artifact_generation_error"
+                )
+                visible_text = sanitize_visible_answer_text(str(artifact_error).strip())
+                assistant_payload = build_assistant_payload(
+                    visible_text=visible_text,
+                    context_receipt=_merge_focus_context_receipt(
+                        brain_context.receipt, session_state.metadata
+                    ),
+                    operator_receipts=[],
+                    memory_receipts=[],
+                    model_use_receipt={},
+                    policy_provenance={
+                        "answer_source": "brain_policy",
+                        "policy_source": "answer_contract",
+                        "brain_answer_source": brain_answer_source,
+                        "request_id": str(uuid4()),
+                        "session_id": str(session_id),
+                        "runtime_model_inference_proven": False,
+                    },
+                    warnings=[],
+                    action_history_refs=[
+                        str(item.get("action_id", ""))
+                        for item in get_history(session_state.metadata)[-5:]
+                        if isinstance(item, dict) and str(item.get("action_id", ""))
+                    ],
+                )
 
-            updated_state = await memory_manager.add_message(
-                session_id=session_id,
-                role="assistant",
-                raw_text=visible_text,
-                message_metadata=assistant_payload,
-            )
-            assistant_message = updated_state.messages[-1]
-            vector_memory_receipt = await persist_vector_memory_round_trip(
-                vector_store,
-                session_id=str(session_id),
-                user_role=user_role,
-                user_content=user_visible_content,
-                assistant_role=assistant_message.role,
-                assistant_content=assistant_message.content,
-            )
-            updated_state.metadata["answer_provenance"] = assistant_payload[
-                "policy_provenance"
-            ]
-            updated_state.metadata["vector_memory"] = vector_memory_receipt
-            updated_state.metadata["context_receipt"] = assistant_payload[
-                "context_receipt"
-            ]
-            updated_state.metadata["last_assistant_payload"] = assistant_payload
-            await memory_manager.update_session(updated_state)
-            return updated_state
-        raise
+                updated_state = await memory_manager.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    raw_text=visible_text,
+                    message_metadata=assistant_payload,
+                )
+                assistant_message = updated_state.messages[-1]
+                vector_memory_receipt = await persist_vector_memory_round_trip(
+                    vector_store,
+                    session_id=str(session_id),
+                    user_role=user_role,
+                    user_content=user_visible_content,
+                    assistant_role=assistant_message.role,
+                    assistant_content=assistant_message.content,
+                )
+                updated_state.metadata["answer_provenance"] = assistant_payload[
+                    "policy_provenance"
+                ]
+                updated_state.metadata["vector_memory"] = vector_memory_receipt
+                updated_state.metadata["context_receipt"] = assistant_payload[
+                    "context_receipt"
+                ]
+                updated_state.metadata["last_assistant_payload"] = assistant_payload
+                await memory_manager.update_session(updated_state)
+                return updated_state
+            raise
 
     if artifact_response is not None:
         visible_text = str(artifact_response.get("visible_text", "")).strip()
