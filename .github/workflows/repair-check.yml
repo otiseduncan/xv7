@@ -1,0 +1,31 @@
+name: repair check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - repair/not-safe-build-yets-final
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run repair scripts
+        run: |
+          python scripts/repair_active_export.py
+          python scripts/split_artifact_renderer.py
+          python scripts/extract_session_message_handler.py
+      - name: Check line counts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for path in ['core/main.py', 'public/app/artifact-renderer.js']:
+              count = len(Path(path).read_text(encoding='utf-8').splitlines())
+              print(path, count)
+              if count > 1000:
+                  raise SystemExit(1)
+          PY
